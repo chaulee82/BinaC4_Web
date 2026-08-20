@@ -169,7 +169,7 @@ def main():
                 darvas_results = darvas_results[:10]
                 
                 print("\n" + "=" * 135)
-                print(f"📦 BẢNG CHẤM ĐIỂM MACRO GRID DARVAS (ĐỘNG CƠ 1 - TÌM KIẾM SÀN BÊ TÔNG)")
+                print(f"📦 ĐỘNG CƠ 1: DARVAS GRID (Dành cho Chiến lược Phòng thủ Móng nhà)")
                 print("=" * 135)
                 print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'Trạng Thái Bảng 1':<35} | {'Hành Động'}")
                 print("-" * 135)

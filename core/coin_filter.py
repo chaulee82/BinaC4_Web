@@ -862,7 +862,8 @@ def get_filtered_symbols():
 
         # ── 6. 🏆 BẢNG THAM SỐ GRID (in trước) ─────────────────────────────────
         print("\n" + "=" * _TW2)
-        print(f"🏆 BẢNG THAM SỐ GRID TỰ ĐỘNG CHUẨN BINANCE (CHỈ DÀNH CHO MÃ THỎA '4 KHÔNG')")
+        print(f"🏆 BẢNG THAM SỐ GRID CHUẨN (Dành cho Chiến lược 4 Không - Rủi ro vi mô cao)")
+        print(f"(Lưu ý: Các tham số này chưa được kiểm duyệt qua Động Cơ 1 Darvas)")
         print("=" * _TW2)
 
         if df_safe.empty:
