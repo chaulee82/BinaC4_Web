@@ -81,7 +81,7 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
     
     with gr.Row():
         copy_btn = gr.Button("📋 Copy Kết Quả", size="sm")
-        share_btn = gr.Button("🔗 Copy Link Trang Web (Chia Sẻ)", size="sm")
+        summary_copy_btn = gr.Button("✂️ Copy Tóm Tắt (Gửi Điện Thoại)", size="sm")
     
     with gr.Row():
         output_box = gr.Textbox(
@@ -118,22 +118,34 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
     }
     """
     
-    js_copy_link = """
-    () => {
-        let text = window.location.href;
+    # Javascript fallback for copying summary text (filtering important lines)
+    js_copy_summary = """
+    (text) => {
+        let lines = text.split('\\n');
+        let summaryLines = lines.filter(line => 
+            line.includes('CẤP 3') || 
+            line.includes('CẤP 2') || 
+            line.includes('CẤP 1') || 
+            line.includes('SETUP') || 
+            line.includes('TÍN HIỆU') ||
+            line.includes('Kích hoạt')
+        );
+        let summaryText = "🔥 TÓM TẮT TÍN HIỆU BINAC4 🔥\\n\\n" + summaryLines.join('\\n');
+        if (summaryLines.length === 0) summaryText = "Không có tín hiệu hoặc cảnh báo nào đáng chú ý trong lần quét này.";
+        
         if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(text);
-            alert('Đã copy link trang web!');
+            navigator.clipboard.writeText(summaryText);
+            alert('Đã copy bản TÓM TẮT (ngắn gọn)!');
         } else {
             let textArea = document.createElement("textarea");
-            textArea.value = text;
+            textArea.value = summaryText;
             textArea.style.position = "fixed";
             document.body.appendChild(textArea);
             textArea.focus();
             textArea.select();
             document.execCommand('copy');
             textArea.remove();
-            alert('Đã copy link trang web (Chế độ tương thích)!');
+            alert('Đã copy bản TÓM TẮT (ngắn gọn) bằng chế độ tương thích!');
         }
     }
     """
@@ -146,12 +158,12 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
         js=js_copy_text
     )
     
-    # Connect share button using Javascript
-    share_btn.click(
+    # Connect summary copy button using Javascript
+    summary_copy_btn.click(
         fn=None,
-        inputs=[],
+        inputs=[output_box],
         outputs=[],
-        js=js_copy_link
+        js=js_copy_summary
     )
 
 if __name__ == "__main__":
