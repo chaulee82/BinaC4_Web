@@ -1,0 +1,9 @@
+ccxt
+pandas
+numpy
+ta
+python-dotenv
+cloudscraper
+requests
+pandas_ta
+gradio

@@ -1,0 +1,18 @@
+{
+    "trading": {
+        "max_risk_per_trade_pct": 2.0,
+        "default_timeframe": "4h",
+        "grid_trading": {
+            "max_grids": 10,
+            "min_spacing_pct": 1.5
+        }
+    },
+    "system": {
+        "log_level": "INFO",
+        "watchlist": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "SOL/USDT"
+        ]
+    }
+}
