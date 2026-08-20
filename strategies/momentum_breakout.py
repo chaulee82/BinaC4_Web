@@ -129,7 +129,7 @@ class MomentumBreakout:
                 action = "🟡 THEO DÕI: Cần tích lũy thêm Volume"
                 
             trade_setup = {}
-            if total_score >= 85:
+            if total_score >= 70:
                 trade_setup = {
                     "entry": current_price,
                     "stop_loss": c4.get('sl'),

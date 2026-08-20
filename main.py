@@ -75,7 +75,7 @@ def main():
             if not watchlist:
                 logger.warning("Không tìm thấy mã nào đạt điều kiện từ coin_filter.")
             else:
-                logger.info(f"Đã lọc được {len(watchlist)} mã: {watchlist}")
+                logger.info(f"Đã lọc được {len(watchlist)} mã tiềm năng.")
             
             # ── 1. In ⏰ Thời điểm + số lượng mã trước tiên ─────────────────
             _timestamp_line = ""
@@ -128,11 +128,11 @@ def main():
                         safe_watchlist.append(symbol) # Tạm thời cho qua nếu API lỗi
                 
                 # In Bảng Cảnh Báo
-                print("\n" + "!" * 135)
+                print("\n" + "!" * 115)
                 print(f"🚨 HỆ THỐNG CẢNH BÁO SỚM & RỦI RO SẬP (EARLY WARNING MATRIX)")
-                print("!" * 135)
+                print("!" * 115)
                 print(f"{'Mã (Symbol)':<15} | {'Cấp Độ':<45} | {'Tín Hiệu (Trigger)':<45}")
-                print("-" * 135)
+                print("| --- | --- | --- |")
                 
                 # Sắp xếp theo cấp độ từ lớn đến nhỏ (Cấp 3 -> Cấp 0)
                 # Vì Python sort là stable nên thứ hạng gốc (theo điểm từ coin_filter) vẫn được giữ nguyên trong cùng 1 Cấp
@@ -147,7 +147,7 @@ def main():
                         print(f"{sym:<15} | {lbl:<45} | {trig:<45}")
                 else:
                     print(f"{'(Không có mã nào ở Cấp 1 hoặc Cấp 3)':<15}")
-                print("!" * 135 + "\n")
+                print("!" * 115 + "\n")
                 
                 # Cập nhật watchlist thành safe_watchlist
                 watchlist = safe_watchlist
@@ -168,18 +168,18 @@ def main():
                 darvas_results.sort(key=lambda x: x.get('total_score', 0), reverse=True)
                 darvas_results = darvas_results[:10]
                 
-                print("\n" + "=" * 135)
+                print("\n" + "=" * 115)
                 print(f"📦 ĐỘNG CƠ 1: DARVAS GRID (Dành cho Chiến lược Phòng thủ Móng nhà)")
-                print("=" * 135)
+                print("=" * 115)
                 print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'Trạng Thái Bảng 1':<35} | {'Hành Động'}")
-                print("-" * 135)
+                print("| --- | --- | --- | --- |")
                 for res in darvas_results:
                     sym = res.get('symbol', '')
                     score = res.get('total_score', 0)
                     act = res.get('action', '')
                     safe_tag = safety_map.get(sym, "⚠️ CHƯA XÉT")
                     print(f"{sym:<15} | {score:<10} | {safe_tag:<35} | {act}")
-                print("=" * 135 + "\n")
+                print("=" * 115 + "\n")
 
                 
                 # Kích hoạt GridManager
@@ -230,7 +230,7 @@ def main():
                 print(f"🎯 BẢNG CHẤM ĐIỂM PULLBACK SNIPER (ĐỘNG CƠ 2 - TÌM LỆNH THỰC THI CHÍNH XÁC)")
                 print("=" * 175)
                 print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'Trạng Thái Bảng 1':<35} | {'C1 (Hội Tụ)':<12} | {'C2 (Vol)':<10} | {'C3 (Sổ Lệnh)':<12} | {'C4 (R/R)':<10} | {'Hành Động'}")
-                print("-" * 175)
+                print("| --- | --- | --- | --- | --- | --- | --- | --- |")
                 
                 for res in sniper_results:
                     sym = res.get('symbol', '')
@@ -299,11 +299,11 @@ def main():
                 breakout_results = breakout_results[:10]
                 
                 # In bảng dữ liệu cho MomentumBreakout
-                print("\n" + "=" * 135)
+                print("\n" + "=" * 175)
                 print(f"🚀 BẢNG CHẤM ĐIỂM MOMENTUM BREAKOUT (ĐỘNG CƠ 3 - SĂN BỨT PHÁ ĐỘNG LƯỢNG)")
-                print("=" * 135)
-                print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'C1 (PriceAct)':<25} | {'C2 (Volume)':<25} | {'C3 (OrderBook)':<25} | {'C4 (R/R)':<25}")
-                print("-" * 135)
+                print("=" * 175)
+                print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'C1 (PriceAct)':<25} | {'C2 (Volume)':<25} | {'C3 (OrderBook)':<25} | {'C4 (R/R)':<25} | {'Hành Động'}")
+                print("| --- | --- | --- | --- | --- | --- | --- |")
                 
                 for res in breakout_results:
                     sym = res.get('symbol', '')
@@ -316,11 +316,22 @@ def main():
                     c3 = dt.get('Gate_3_OrderBook', '')[:25]
                     c4 = dt.get('Gate_4_RR', '')[:25]
                     
-                    print(f"{sym:<15} | {score:<10} | {c1:<25} | {c2:<25} | {c3:<25} | {c4:<25}")
-                    print(f"   ↳ Hành Động: {act}")
-                    print("-" * 135)
+                    print(f"{sym:<15} | {score:<10} | {c1:<25} | {c2:<25} | {c3:<25} | {c4:<25} | {act}")
+                    
+                    # In thông số Setup nếu đạt >= 70 điểm (tương tự Pullback Sniper)
+                    if score >= 70:
+                        setup = res.get('trade_setup', {})
+                        entry = setup.get('entry')
+                        sl = setup.get('stop_loss')
+                        tp = setup.get('take_profit')
+                        if entry and sl and tp:
+                            sl_pct = (entry - sl) / entry * 100
+                            tp_pct = (tp - entry) / entry * 100
+                            rr_ratio = tp_pct / sl_pct if sl_pct > 0 else 0
+                            print(f"   ↳ ⚙️ SETUP: Buy Market = {entry:.6f} | Chốt Lời (TP) = {tp:.6f} (+{tp_pct:.1f}%) | Cắt Lỗ (SL) = {sl:.6f} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
+                    print("-" * 175)
                 
-                print("=" * 135 + "\n")
+                print("=" * 175 + "\n")
                 
                 # ── 6-8. In các bảng từ coin_filter sau cùng ────────────────
                 if _coin_filter_output:
@@ -336,29 +347,26 @@ def main():
                         _filtered_lines.append(_line)
                     print("\n".join(_filtered_lines))
                 
-                # Kích hoạt thực thi cho các mã đạt điểm
-                for res in breakout_results:
-                    score = res.get('total_score', 0)
-                    if score >= 85:
-                        symbol = res.get('symbol')
-                        setup = res.get('trade_setup', {})
-                        entry = setup.get('entry')
-                        sl = setup.get('stop_loss')
-                        tp = setup.get('take_profit')
-                        
-                        if entry is not None and sl is not None and tp is not None:
-                            test_amount = 0.01
-                            logger.warning(f"🚀 [TÍN HIỆU ĐỘNG CƠ 3] Kích hoạt Executor cho {symbol} tại giá {entry}")
-                            if api_key:
+                # Kích hoạt thực thi cho các mã đạt điểm (chỉ khi có API key thật)
+                if api_key:
+                    for res in breakout_results:
+                        score = res.get('total_score', 0)
+                        if score >= 85:
+                            symbol = res.get('symbol')
+                            setup = res.get('trade_setup', {})
+                            entry = setup.get('entry')
+                            sl = setup.get('stop_loss')
+                            tp = setup.get('take_profit')
+                            
+                            if entry is not None and sl is not None and tp is not None:
+                                logger.warning(f"🚀 [EXECUTOR] Bắn lệnh Buy Market {symbol} @ {entry}")
                                 executor.execute_trade(
                                     symbol=symbol,
                                     entry=entry,
                                     sl=sl,
                                     tp=tp,
-                                    amount=test_amount
+                                    amount=0.01
                                 )
-                            else:
-                                logger.info(f"[MOCK MODE] Sẽ đặt lệnh Buy Limit {symbol} tại {entry}, SL: {sl}, TP: {tp}")
 
                 # =========================================================
             logger.info("Hoàn tất quét thị trường. Chương trình kết thúc.")
