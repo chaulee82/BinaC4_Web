@@ -139,31 +139,28 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
     # Javascript fallback for copying summary text (filtering important lines)
     js_copy_summary = """
     (text) => {
-        let lines = text.split('\\n');
-        let summaryLines = lines.filter(line => 
-            line.includes('CẤP 3') || 
-            line.includes('CẤP 2') || 
-            line.includes('CẤP 1') || 
-            line.includes('SETUP') || 
-            line.includes('TÍN HIỆU') ||
-            line.includes('Kích hoạt')
-        );
-        let summaryText = "🔥 TÓM TẮT TÍN HIỆU BINAC4 🔥\\n\\n" + summaryLines.join('\\n');
-        if (summaryLines.length === 0) summaryText = "Không có tín hiệu hoặc cảnh báo nào đáng chú ý trong lần quét này.";
+        // Người dùng muốn giữ lại TẤT CẢ các bảng và thời gian
+        // Nên ta chỉ tối ưu hóa các đường kẻ dài để tiết kiệm không gian trên màn hình điện thoại
+        let summaryText = text.replace(/={50,}/g, '==================================================');
+        summaryText = summaryText.replace(/-{50,}/g, '--------------------------------------------------');
+        summaryText = summaryText.replace(/!{50,}/g, '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+        
+        // Xóa bớt dòng trống thừa
+        summaryText = summaryText.replace(/\\n{3,}/g, '\\n\\n');
         
         if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(summaryText);
-            alert('Đã copy bản TÓM TẮT (ngắn gọn)!');
+            navigator.clipboard.writeText(summaryText.trim());
+            alert('Đã copy toàn bộ (Đã chuyển Rebalance xuống cuối)!');
         } else {
             let textArea = document.createElement("textarea");
-            textArea.value = summaryText;
+            textArea.value = summaryText.trim();
             textArea.style.position = "fixed";
             document.body.appendChild(textArea);
             textArea.focus();
             textArea.select();
             document.execCommand('copy');
             textArea.remove();
-            alert('Đã copy bản TÓM TẮT (ngắn gọn) bằng chế độ tương thích!');
+            alert('Đã copy toàn bộ bằng chế độ tương thích!');
         }
     }
     """

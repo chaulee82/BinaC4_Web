@@ -122,58 +122,6 @@ def main():
                     logger.warning("Toàn bộ danh mục bị BẤT HOẠT do rủi ro sập. Nghỉ ngơi chu kỳ này.")
                     
             if watchlist:
-                # =========================================================
-                # 1. Chạy Động Cơ 1 (Macro Grid Darvas)
-                # =========================================================
-                darvas_results = []
-                for symbol in watchlist:
-                    result = darvas.scan_grid_candidate(symbol, timeframe)
-                    darvas_results.append(result)
-                    
-                # Sắp xếp theo điểm tổng giảm dần và chỉ lấy Top 10 mã xuất sắc nhất
-                darvas_results.sort(key=lambda x: x.get('total_score', 0), reverse=True)
-                darvas_results = darvas_results[:10]
-                
-                print("\n" + "=" * 135)
-                print(f"📦 BẢNG CHẤM ĐIỂM MACRO GRID DARVAS (ĐỘNG CƠ 1 - TÌM KIẾM SÀN BÊ TÔNG)")
-                print("=" * 135)
-                print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'Trạng Thái Bảng 1':<35} | {'Hành Động'}")
-                print("-" * 135)
-                for res in darvas_results:
-                    sym = res.get('symbol', '')
-                    score = res.get('total_score', 0)
-                    act = res.get('action', '')
-                    safe_tag = safety_map.get(sym, "⚠️ CHƯA XÉT")
-                    print(f"{sym:<15} | {score:<10} | {safe_tag:<35} | {act}")
-                print("=" * 135 + "\n")
-
-                
-                # Kích hoạt GridManager
-                for res in darvas_results:
-                    score = res.get('total_score', 0)
-                    if score >= 80:
-                        symbol = res.get('symbol')
-                        g_setup = res.get('grid_setup', {})
-                        
-                        lower_price = g_setup.get('lower_price')
-                        upper_price = g_setup.get('upper_price')
-                        grids = g_setup.get('grid_quantity')
-                        
-                        if lower_price and upper_price and grids:
-                            amount_per_grid = 10.0 # Test amount
-                            logger.warning(f"🤖 [GRID TÍN HIỆU] Khởi tạo Bot Grid cho {symbol}")
-                            if api_key:
-                                grid_manager.launch_grid(
-                                    symbol=symbol,
-                                    upper_price=upper_price,
-                                    lower_price=lower_price,
-                                    grids=grids,
-                                    amount_per_grid=amount_per_grid
-                                )
-                            else:
-                                logger.info(f"[MOCK MODE] Sẽ kích hoạt Bot Grid {symbol}: Lower={lower_price}, Upper={upper_price}, Lưới={grids}")
-
-                # =========================================================
                 # 2. Chạy Động Cơ 2 (Pullback Sniper)
                 # =========================================================
                 sniper_results = []
@@ -313,6 +261,58 @@ def main():
                                 logger.info(f"[MOCK MODE] Sẽ đặt lệnh Buy Limit {symbol} tại {entry}, SL: {sl}, TP: {tp}")
 
             
+                # =========================================================
+                # 1. Chạy Động Cơ 1 (Macro Grid Darvas)
+                # =========================================================
+                darvas_results = []
+                for symbol in watchlist:
+                    result = darvas.scan_grid_candidate(symbol, timeframe)
+                    darvas_results.append(result)
+                    
+                # Sắp xếp theo điểm tổng giảm dần và chỉ lấy Top 10 mã xuất sắc nhất
+                darvas_results.sort(key=lambda x: x.get('total_score', 0), reverse=True)
+                darvas_results = darvas_results[:10]
+                
+                print("\n" + "=" * 135)
+                print(f"📦 BẢNG CHẤM ĐIỂM MACRO GRID DARVAS (ĐỘNG CƠ 1 - TÌM KIẾM SÀN BÊ TÔNG)")
+                print("=" * 135)
+                print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'Trạng Thái Bảng 1':<35} | {'Hành Động'}")
+                print("-" * 135)
+                for res in darvas_results:
+                    sym = res.get('symbol', '')
+                    score = res.get('total_score', 0)
+                    act = res.get('action', '')
+                    safe_tag = safety_map.get(sym, "⚠️ CHƯA XÉT")
+                    print(f"{sym:<15} | {score:<10} | {safe_tag:<35} | {act}")
+                print("=" * 135 + "\n")
+
+                
+                # Kích hoạt GridManager
+                for res in darvas_results:
+                    score = res.get('total_score', 0)
+                    if score >= 80:
+                        symbol = res.get('symbol')
+                        g_setup = res.get('grid_setup', {})
+                        
+                        lower_price = g_setup.get('lower_price')
+                        upper_price = g_setup.get('upper_price')
+                        grids = g_setup.get('grid_quantity')
+                        
+                        if lower_price and upper_price and grids:
+                            amount_per_grid = 10.0 # Test amount
+                            logger.warning(f"🤖 [GRID TÍN HIỆU] Khởi tạo Bot Grid cho {symbol}")
+                            if api_key:
+                                grid_manager.launch_grid(
+                                    symbol=symbol,
+                                    upper_price=upper_price,
+                                    lower_price=lower_price,
+                                    grids=grids,
+                                    amount_per_grid=amount_per_grid
+                                )
+                            else:
+                                logger.info(f"[MOCK MODE] Sẽ kích hoạt Bot Grid {symbol}: Lower={lower_price}, Upper={upper_price}, Lưới={grids}")
+
+                # =========================================================
             logger.info("Hoàn tất quét thị trường. Chương trình kết thúc.")
             
         except Exception as e:
