@@ -136,45 +136,85 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
     }
     """
     
-    # Javascript fallback for copying summary text (filtering important lines)
     js_copy_summary = """
     (text) => {
-        // Dời bảng Rebalance xuống cuối
-        let warningIndex = text.indexOf("🚨 HỆ THỐNG CẢNH BÁO SỚM");
-        let rebalanceIndex = text.indexOf("🏆 BẢNG CHẤM ĐIỂM REBALANCE");
-
-        if (rebalanceIndex !== -1 && warningIndex !== -1 && rebalanceIndex < warningIndex) {
-            let startOfRebalance = text.lastIndexOf("=", rebalanceIndex);
-            startOfRebalance = text.lastIndexOf("\\n", startOfRebalance) + 1;
-            if (startOfRebalance === -1 || startOfRebalance === 0) startOfRebalance = text.lastIndexOf("=", rebalanceIndex - 1) !== -1 ? text.lastIndexOf("\\n", text.lastIndexOf("=", rebalanceIndex - 1)) + 1 : 0;
+        let lines = text.split('\\n');
+        let summaryLines = [];
+        let captureMode = '';
+        
+        for (let i = 0; i < lines.length; i++) {
+            let line = lines[i].trim();
+            if (!line) continue;
             
-            let startOfWarning = text.lastIndexOf("!", warningIndex);
-            startOfWarning = text.lastIndexOf("\\n", startOfWarning) + 1;
-            
-            let part1 = text.substring(0, startOfRebalance); 
-            let part2 = text.substring(startOfRebalance, startOfWarning); // Bảng Rebalance
-            let part3 = text.substring(startOfWarning); // Các bảng còn lại
-            
-            // Tách dòng thời gian để đưa lên đầu
-            let timeMatch = part2.match(/⏰ Thời điểm cập nhật.*?\\n/);
-            if (timeMatch) {
-                part1 = timeMatch[0] + "\\n" + part1;
+            if (line.includes('⏰ Thời điểm cập nhật')) {
+                summaryLines.push(line);
+                continue;
+            }
+            if (line.includes('ĐỘNG CƠ 1: DARVAS GRID')) {
+                captureMode = 'DARVAS';
+                summaryLines.push('');
+                summaryLines.push('📦 ĐỘNG CƠ 1: DARVAS GRID');
+                summaryLines.push('Mã | Điểm | Trạng Thái | Hành Động');
+                continue;
+            }
+            if (line.includes('ĐỘNG CƠ 2 - TÌM LỆNH THỰC THI CHÍNH XÁC')) {
+                captureMode = 'SNIPER';
+                summaryLines.push('');
+                summaryLines.push('🎯 ĐỘNG CƠ 2: PULLBACK SNIPER');
+                summaryLines.push('Mã | Điểm | Trạng Thái | Hành Động');
+                continue;
+            }
+            if (line.includes('ĐỘNG CƠ 3 - SĂN BỨT PHÁ ĐỘNG LƯỢNG')) {
+                captureMode = 'BREAKOUT';
+                summaryLines.push('');
+                summaryLines.push('🚀 ĐỘNG CƠ 3: MOMENTUM BREAKOUT');
+                summaryLines.push('Mã | Điểm | Hành Động');
+                continue;
             }
             
-            text = part1 + part3 + "\\n" + part2;
+            if (line.startsWith('====') || line.startsWith('----') && captureMode) {
+                continue;
+            }
+            if (line.includes('KẾT QUẢ PHÂN TÍCH THỊ TRƯỜNG')) {
+                captureMode = '';
+                continue;
+            }
+            
+            if (captureMode === 'DARVAS') {
+                if (line.includes('|') && !line.includes('Mã (Symbol)')) {
+                    let parts = line.split('|').map(s => s.trim());
+                    if (parts.length >= 4) {
+                        summaryLines.push(`${parts[0]} | ${parts[1]} | ${parts[2].replace(/✅ |⚠️ /g, '')} | ${parts[3]}`);
+                    }
+                }
+            } else if (captureMode === 'SNIPER') {
+                if (line.includes('|') && !line.includes('Mã (Symbol)')) {
+                    let parts = line.split('|').map(s => s.trim());
+                    if (parts.length >= 8) {
+                        summaryLines.push(`${parts[0]} | ${parts[1]} | ${parts[2].replace(/✅ |⚠️ /g, '')} | ${parts[7]}`);
+                    }
+                } else if (line.includes('↳ ⚙️ SETUP:')) {
+                    summaryLines.push('  ' + line.replace('↳ ⚙️ SETUP:', '↳').replace(/\\s+/g, ' '));
+                }
+            } else if (captureMode === 'BREAKOUT') {
+                if (line.includes('|') && !line.includes('Mã (Symbol)')) {
+                    let parts = line.split('|').map(s => s.trim());
+                    if (parts.length >= 6) {
+                        let hanhDong = '';
+                        if (i + 1 < lines.length && lines[i+1].includes('↳ Hành Động:')) {
+                            hanhDong = lines[i+1].split('↳ Hành Động:')[1].trim();
+                        }
+                        summaryLines.push(`${parts[0]} | ${parts[1]} | ${hanhDong}`);
+                    }
+                }
+            }
         }
-
-        // Tối ưu hóa các đường kẻ dài để tiết kiệm không gian trên màn hình điện thoại
-        let summaryText = text.replace(/={50,}/g, '==================================================');
-        summaryText = summaryText.replace(/-{50,}/g, '--------------------------------------------------');
-        summaryText = summaryText.replace(/!{50,}/g, '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
         
-        // Xóa bớt dòng trống thừa
-        summaryText = summaryText.replace(/\\n{3,}/g, '\\n\\n');
+        let summaryText = summaryLines.join('\\n');
         
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(summaryText.trim());
-            alert('Đã copy Tóm Tắt (Đã chuyển Rebalance xuống cuối)!');
+            alert('Đã copy Tóm Tắt Ngắn Gọn!');
         } else {
             let textArea = document.createElement("textarea");
             textArea.value = summaryText.trim();
@@ -184,7 +224,7 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
             textArea.select();
             document.execCommand('copy');
             textArea.remove();
-            alert('Đã copy Tóm Tắt bằng chế độ tương thích!');
+            alert('Đã copy Tóm Tắt Ngắn Gọn bằng chế độ tương thích!');
         }
     }
     """
