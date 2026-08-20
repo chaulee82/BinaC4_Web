@@ -1,4 +1,6 @@
 import os
+import sys
+import io
 import time
 import json
 import logging
@@ -58,13 +60,41 @@ def main():
     if True:
         try:
             logger.info("Đang chạy module coin_filter để quét các mã tiềm năng...")
-            watchlist, safety_map = get_filtered_symbols()
+            
+            # ── Bắt đầu chụp stdout của coin_filter để in sau ──────────────
+            _coin_filter_buf = io.StringIO()
+            _real_stdout = sys.stdout
+            sys.stdout = _coin_filter_buf
+            try:
+                watchlist, safety_map = get_filtered_symbols()
+            finally:
+                sys.stdout = _real_stdout
+            _coin_filter_output = _coin_filter_buf.getvalue()
+            # ────────────────────────────────────────────────────────────────
+            
             if not watchlist:
                 logger.warning("Không tìm thấy mã nào đạt điều kiện từ coin_filter.")
             else:
                 logger.info(f"Đã lọc được {len(watchlist)} mã: {watchlist}")
+            
+            # ── 1. In ⏰ Thời điểm + số lượng mã trước tiên ─────────────────
+            _timestamp_line = ""
+            _count_line = ""
+            for _line in _coin_filter_output.splitlines():
+                if "⏰ Thời điểm cập nhật" in _line and not _timestamp_line:
+                    _timestamp_line = _line.strip()
+                if "MÃ ĐƯỢC ĐƯA VÀO BẢNG CHẤM ĐIỂM" in _line and not _count_line:
+                    _count_line = _line.strip()
+            
+            print()
+            if _timestamp_line:
+                print(_timestamp_line)
+            if _count_line:
+                print(_count_line)
+            if watchlist:
+                print(f"📋 Danh mục watchlist: {len(watchlist)} mã đủ điều kiện vào động cơ phân tích.")
+            print()
 
-                
             if watchlist:
                 # =========================================================
                 # 0. HỆ THỐNG CẢNH BÁO SỚM & RỦI RO SẬP (Early Warning Matrix)
@@ -108,11 +138,15 @@ def main():
                 # Vì Python sort là stable nên thứ hạng gốc (theo điểm từ coin_filter) vẫn được giữ nguyên trong cùng 1 Cấp
                 warning_results.sort(key=lambda x: x.get('level', 0), reverse=True)
                 
-                for res in warning_results:
-                    sym = res.get('symbol', '')
-                    lbl = res.get('label', '')
-                    trig = res.get('trigger', '')
-                    print(f"{sym:<15} | {lbl:<45} | {trig:<45}")
+                filtered_warnings = [r for r in warning_results if r.get('level') in (1, 3)]
+                if filtered_warnings:
+                    for res in filtered_warnings:
+                        sym = res.get('symbol', '')
+                        lbl = res.get('label', '')
+                        trig = res.get('trigger', '')
+                        print(f"{sym:<15} | {lbl:<45} | {trig:<45}")
+                else:
+                    print(f"{'(Không có mã nào ở Cấp 1 hoặc Cấp 3)':<15}")
                 print("!" * 135 + "\n")
                 
                 # Cập nhật watchlist thành safe_watchlist
@@ -235,6 +269,20 @@ def main():
                     print("-" * 135)
                 
                 print("=" * 135 + "\n")
+                
+                # ── 6-8. In các bảng từ coin_filter sau cùng ────────────────
+                if _coin_filter_output:
+                    print("\n" + "=" * 80)
+                    print("📊 KẾT QUẢ PHÂN TÍCH THỊ TRƯỜNG (COIN FILTER)")
+                    print("=" * 80)
+                    # Lọc bỏ các dòng thông tin ngắn (đã in ở đầu) để tránh trùng
+                    _skip_prefixes = ("🔍 Đang gọi", "🎯 TỔNG CỘNG", "🌱 Đang quét", "🚀 Đang quét")
+                    _filtered_lines = []
+                    for _line in _coin_filter_output.splitlines():
+                        if any(_line.strip().startswith(p) for p in _skip_prefixes):
+                            continue
+                        _filtered_lines.append(_line)
+                    print("\n".join(_filtered_lines))
                 
                 # Kích hoạt thực thi cho các mã đạt điểm
                 for res in breakout_results:

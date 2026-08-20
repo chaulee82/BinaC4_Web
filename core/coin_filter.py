@@ -853,38 +853,6 @@ def get_filtered_symbols():
         vietnam_tz = timezone(timedelta(hours=7))
         current_time_str = datetime.now(vietnam_tz).strftime("%Y-%m-%d %H:%M:%S")
 
-        print("=" * _TW)
-        print(f"🏆 BẢNG CHẤM ĐIỂM REBALANCE / SPOT GRID (THANG ĐIỂM 100 - TUYẾN TÍNH & 4 KHÔNG)")
-        print(f"⏰ Thời điểm cập nhật (UTC+7): {current_time_str}")
-        print("=" * _TW)
-
-        print(fmt_row(["Hạng", "Mã", "Trạng Thái", "Phân Loại Grid", "TỔNG",
-                       "Chế Độ", "Tín Hiệu Cảnh Báo", "Đ.Nến15M", "Đ.Râu24H", "Đ.Entry",
-                       "Đ.RSI", "RSI1H", "Giá Live", "Giá Limit", "Cần Giảm",
-                       "Vol24H(M)", "Vola24H%"]))
-        print("-" * _TW)
-
-        for rank, row in enumerate(df_summary.to_dict(orient='records'), 1):
-            print(fmt_row([
-                "#" + str(rank),
-                row["Symbol"],
-                row["Trạng Thái"],
-                row["Phân Loại Grid"],
-                row["TỔNG"],
-                row["Chế Độ"],
-                row["Cảnh Báo"],
-                row["Đ.Nến15M"],
-                row["Đ.Râu24H"],
-                row["Đ.Entry"],
-                row["Đ.RSI"],
-                row["RSI1H"],
-                row["Giá Live"],
-                row["Giá Mua Limit"],
-                f"{row['Cần Giảm']:.2f}%",
-                f"${row['Vol24H(M)']}M",
-                f"{row['Vola24H%']}%",
-            ]))
-
         df_safe = df_summary[df_summary["is_safe"] == True]
 
         _WCOLS2 = [7, 12, 16, 14, 28, 6, 14, 14, 18]
@@ -892,6 +860,7 @@ def get_filtered_symbols():
         def fmt_row_safe(cells):
             return _SEP.join(ljust_w(trunc_w(c, w), w) for c, w in zip(cells, _WCOLS2))
 
+        # ── 6. 🏆 BẢNG THAM SỐ GRID (in trước) ─────────────────────────────────
         print("\n" + "=" * _TW2)
         print(f"🏆 BẢNG THAM SỐ GRID TỰ ĐỘNG CHUẨN BINANCE (CHỈ DÀNH CHO MÃ THỎA '4 KHÔNG')")
         print("=" * _TW2)
@@ -939,6 +908,7 @@ def get_filtered_symbols():
 
         print("\n" + "=" * _TW + "\n")
 
+    # ── 7. 🌱 BẢNG 3 - BẮ SỜM NỀN TĂNG (in sau GRID) ───────────────────
     early_symbols = [
         s for s in live_data_map
         if s.endswith('USDT') and s not in EXCLUDE
@@ -983,6 +953,40 @@ def get_filtered_symbols():
             ]))
 
     print("=" * _TW3 + "\n")
+
+    # ── 8. 🏆 BẢNG CHẤM ĐIỂM REBALANCE (in sau cùng) ──────────────────
+    if summary_list:
+        print("=" * _TW)
+        print(f"🏆 BẢNG CHẤM ĐIỂM REBALANCE / SPOT GRID (THANG ĐIỂM 100 - TUYẾN TÍNH & 4 KHÔNG)")
+        print(f"⏰ Thời điểm cập nhật (UTC+7): {current_time_str}")
+        print("=" * _TW)
+        print(fmt_row(["Hạng", "Mã", "Trạng Thái", "Phân Loại Grid", "TỔNG",
+                       "Chế Độ", "Tín Hiệu Cảnh Báo", "Đ.Nến15M", "Đ.Râu24H", "Đ.Entry",
+                       "Đ.RSI", "RSI1H", "Giá Live", "Giá Limit", "Cần Giảm",
+                       "Vol24H(M)", "Vola24H%"]))
+        print("-" * _TW)
+        for rank, row in enumerate(df_summary.to_dict(orient='records'), 1):
+            print(fmt_row([
+                "#" + str(rank),
+                row["Symbol"],
+                row["Trạng Thái"],
+                row["Phân Loại Grid"],
+                row["TỔNG"],
+                row["Chế Độ"],
+                row["Cảnh Báo"],
+                row["Đ.Nến15M"],
+                row["Đ.Râu24H"],
+                row["Đ.Entry"],
+                row["Đ.RSI"],
+                row["RSI1H"],
+                row["Giá Live"],
+                row["Giá Mua Limit"],
+                f"{row['Cần Giảm']:.2f}%",
+                f"${row['Vol24H(M)']}M",
+                f"{row['Vola24H%']}%",
+            ]))
+        print("\n" + "=" * _TW + "\n")
+
 
     momentum_symbols = [
         s for s in live_data_map
