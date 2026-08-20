@@ -6,25 +6,41 @@ import os
 def run_binac4():
     """Executes main.py and yields its output line by line to the Gradio UI."""
     script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'main.py')
-    log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'BinaC4_latest_log.txt')
+    html_log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'BinaC4_latest_log.html')
     
     # Prepare environment variables to force UTF-8 encoding for prints
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     
-    # Clear previous log file
-    with open(log_file_path, 'w', encoding='utf-8') as f:
-        f.write("")
+    html_header = \"\"\"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>BinaC4 Log</title>
+    <style>
+        body { background-color: #1e1e1e; padding: 20px; margin: 0; }
+        pre { font-family: Consolas, 'Courier New', monospace; white-space: pre; font-size: 14px; color: #d4d4d4; line-height: 1.5; }
+    </style>
+</head>
+<body>
+<pre>\"\"\"
+    html_footer = \"\"\"</pre>
+</body>
+</html>\"\"\"
+
+    # Clear previous HTML log file and write header
+    with open(html_log_file_path, 'w', encoding='utf-8') as f:
+        f.write(html_header)
         
     process = subprocess.Popen(
         [sys.executable, script_path],
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT, # Redirect stderr to stdout
+        stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
         universal_newlines=True,
         env=env,
-        encoding='utf-8' # Ensure we read it as utf-8
+        encoding='utf-8'
     )
     
     output_str = ""
@@ -32,15 +48,15 @@ def run_binac4():
     
     # Read output line by line as it is generated
     for line in iter(process.stdout.readline, ''):
-        # Lọc bớt các dòng không quan trọng để kết quả ngắn gọn hơn
         if "✅ AN TOÀN" in line:
             continue
             
         output_str += line
         
-        # Ghi vào file log
-        with open(log_file_path, 'a', encoding='utf-8') as f:
-            f.write(line)
+        # Append line to HTML file (escape < and > just in case)
+        safe_line = line.replace('<', '&lt;').replace('>', '&gt;')
+        with open(html_log_file_path, 'a', encoding='utf-8') as f:
+            f.write(safe_line)
             
         yield output_str, None
         
@@ -52,10 +68,12 @@ def run_binac4():
     else:
         output_str += f"\n\n[SUCCESS] Hoàn tất quá trình quét."
     
-    with open(log_file_path, 'a', encoding='utf-8') as f:
+    # Write footer to HTML file
+    with open(html_log_file_path, 'a', encoding='utf-8') as f:
         f.write(f"\nReturn code: {return_code}")
+        f.write(html_footer)
         
-    yield output_str, log_file_path
+    yield output_str, html_log_file_path
 
 # Custom CSS to make the Textbox behave like a Terminal (Monospace, no wrapping)
 css = """
