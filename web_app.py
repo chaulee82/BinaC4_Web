@@ -98,12 +98,52 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
     # Connect run button to the generator function
     run_btn.click(fn=run_binac4, inputs=None, outputs=[output_box, file_download])
     
+    # Javascript fallback for copying on HTTP (non-secure) connections
+    js_copy_text = """
+    (text) => {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text);
+            alert('Đã copy kết quả!');
+        } else {
+            let textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            document.execCommand('copy');
+            textArea.remove();
+            alert('Đã copy kết quả (Chế độ tương thích)!');
+        }
+    }
+    """
+    
+    js_copy_link = """
+    () => {
+        let text = window.location.href;
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text);
+            alert('Đã copy link trang web!');
+        } else {
+            let textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            document.execCommand('copy');
+            textArea.remove();
+            alert('Đã copy link trang web (Chế độ tương thích)!');
+        }
+    }
+    """
+    
     # Connect copy button using Javascript
     copy_btn.click(
         fn=None,
         inputs=[output_box],
         outputs=[],
-        js="(text) => { navigator.clipboard.writeText(text); alert('Đã copy kết quả vào khay nhớ tạm!'); }"
+        js=js_copy_text
     )
     
     # Connect share button using Javascript
@@ -111,7 +151,7 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
         fn=None,
         inputs=[],
         outputs=[],
-        js="() => { navigator.clipboard.writeText(window.location.href); alert('Đã copy link trang web! Bạn có thể dán (Paste) để gửi cho người khác.'); }"
+        js=js_copy_link
     )
 
 if __name__ == "__main__":
