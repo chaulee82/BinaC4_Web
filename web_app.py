@@ -12,7 +12,7 @@ def run_binac4():
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     
-    html_header = \"\"\"<!DOCTYPE html>
+    html_header = """<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -23,10 +23,10 @@ def run_binac4():
     </style>
 </head>
 <body>
-<pre>\"\"\"
-    html_footer = \"\"\"</pre>
+<pre>"""
+    html_footer = """</pre>
 </body>
-</html>\"\"\"
+</html>"""
 
     # Clear previous HTML log file and write header
     with open(html_log_file_path, 'w', encoding='utf-8') as f:
