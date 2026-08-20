@@ -115,6 +115,7 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
     )
 
 if __name__ == "__main__":
-    # Launch with share=True to attempt generating a public link via Gradio (if server is up)
+    # Launch with share=True to attempt generating a public link via Gradio
+    # Bind to 0.0.0.0 so it can be accessed directly via VPS IP
     demo.queue() # Enable queuing for streaming outputs
-    demo.launch(share=True, inbrowser=False, theme=gr.themes.Monochrome())
+    demo.launch(server_name="0.0.0.0", share=True, inbrowser=False)
