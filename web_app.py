@@ -139,8 +139,32 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
     # Javascript fallback for copying summary text (filtering important lines)
     js_copy_summary = """
     (text) => {
-        // Người dùng muốn giữ lại TẤT CẢ các bảng và thời gian
-        // Nên ta chỉ tối ưu hóa các đường kẻ dài để tiết kiệm không gian trên màn hình điện thoại
+        // Dời bảng Rebalance xuống cuối
+        let warningIndex = text.indexOf("🚨 HỆ THỐNG CẢNH BÁO SỚM");
+        let rebalanceIndex = text.indexOf("🏆 BẢNG CHẤM ĐIỂM REBALANCE");
+
+        if (rebalanceIndex !== -1 && warningIndex !== -1 && rebalanceIndex < warningIndex) {
+            let startOfRebalance = text.lastIndexOf("=", rebalanceIndex);
+            startOfRebalance = text.lastIndexOf("\\n", startOfRebalance) + 1;
+            if (startOfRebalance === -1 || startOfRebalance === 0) startOfRebalance = text.lastIndexOf("=", rebalanceIndex - 1) !== -1 ? text.lastIndexOf("\\n", text.lastIndexOf("=", rebalanceIndex - 1)) + 1 : 0;
+            
+            let startOfWarning = text.lastIndexOf("!", warningIndex);
+            startOfWarning = text.lastIndexOf("\\n", startOfWarning) + 1;
+            
+            let part1 = text.substring(0, startOfRebalance); 
+            let part2 = text.substring(startOfRebalance, startOfWarning); // Bảng Rebalance
+            let part3 = text.substring(startOfWarning); // Các bảng còn lại
+            
+            // Tách dòng thời gian để đưa lên đầu
+            let timeMatch = part2.match(/⏰ Thời điểm cập nhật.*?\\n/);
+            if (timeMatch) {
+                part1 = timeMatch[0] + "\\n" + part1;
+            }
+            
+            text = part1 + part3 + "\\n" + part2;
+        }
+
+        // Tối ưu hóa các đường kẻ dài để tiết kiệm không gian trên màn hình điện thoại
         let summaryText = text.replace(/={50,}/g, '==================================================');
         summaryText = summaryText.replace(/-{50,}/g, '--------------------------------------------------');
         summaryText = summaryText.replace(/!{50,}/g, '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
@@ -150,7 +174,7 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
         
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(summaryText.trim());
-            alert('Đã copy toàn bộ (Đã chuyển Rebalance xuống cuối)!');
+            alert('Đã copy Tóm Tắt (Đã chuyển Rebalance xuống cuối)!');
         } else {
             let textArea = document.createElement("textarea");
             textArea.value = summaryText.trim();
@@ -160,7 +184,7 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
             textArea.select();
             document.execCommand('copy');
             textArea.remove();
-            alert('Đã copy toàn bộ bằng chế độ tương thích!');
+            alert('Đã copy Tóm Tắt bằng chế độ tương thích!');
         }
     }
     """
