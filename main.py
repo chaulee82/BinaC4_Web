@@ -257,7 +257,7 @@ def main():
                             sl_pct = (entry - sl) / entry * 100
                             tp_pct = (tp - entry) / entry * 100
                             rr_ratio = tp_pct / sl_pct if sl_pct > 0 else 0
-                            print(f"   ↳ ⚙️ SETUP: Limit Buy = {entry:.6f} | Chốt Lời (TP) = {tp:.6f} (+{tp_pct:.1f}%) | Cắt Lỗ (SL) = {sl:.6f} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
+                            print(f"   ↳ ⚙️ SETUP: [{sym}] Limit Buy = {entry:.6f} | Chốt Lời (TP) = {tp:.6f} (+{tp_pct:.1f}%) | Cắt Lỗ (SL) = {sl:.6f} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
                             print("-" * 175)
                 
                 print("=" * 175 + "\n")
@@ -328,7 +328,7 @@ def main():
                             sl_pct = (entry - sl) / entry * 100
                             tp_pct = (tp - entry) / entry * 100
                             rr_ratio = tp_pct / sl_pct if sl_pct > 0 else 0
-                            print(f"   ↳ ⚙️ SETUP: Buy Market = {entry:.6f} | Chốt Lời (TP) = {tp:.6f} (+{tp_pct:.1f}%) | Cắt Lỗ (SL) = {sl:.6f} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
+                            print(f"   ↳ ⚙️ SETUP: [{sym}] Buy Market = {entry:.6f} | Chốt Lời (TP) = {tp:.6f} (+{tp_pct:.1f}%) | Cắt Lỗ (SL) = {sl:.6f} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
                     print("-" * 175)
                 
                 print("=" * 175 + "\n")
