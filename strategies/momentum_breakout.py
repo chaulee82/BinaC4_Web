@@ -122,6 +122,19 @@ class MomentumBreakout:
             
             total_score = c1['score'] + c2['score'] + c3['score'] + c4['score']
             
+            # Tính R/R ratio thực tế để dùng làm tiebreaker khi sort
+            sl_price = c4.get('sl')
+            tp_price = current_price * 1.08  # TP1 = +8%
+            rr_ratio = 0.0
+            if sl_price and sl_price < current_price:
+                sl_dist = current_price - sl_price
+                tp_dist = tp_price - current_price
+                if sl_dist > 0:
+                    rr_ratio = round(tp_dist / sl_dist, 2)
+            
+            # sort_score = total_score + rr_ratio (tiebreaker: cùng điểm thì R/R cao hơn lên trước)
+            sort_score = total_score + rr_ratio
+            
             action = "🔴 TỪ CHỐI"
             if total_score >= 85:
                 action = "🟢 BREAKOUT HÀNG THẬT: Bắn lệnh Hybrid Executor"
@@ -132,14 +145,16 @@ class MomentumBreakout:
             if total_score >= 70:
                 trade_setup = {
                     "entry": current_price,
-                    "stop_loss": c4.get('sl'),
-                    "take_profit": current_price * 1.08  # TP1 là +8% theo thiết kế
+                    "stop_loss": sl_price,
+                    "take_profit": tp_price
                 }
 
             return {
                 "symbol": symbol,
                 "price": current_price,
                 "total_score": total_score,
+                "rr_ratio": rr_ratio,
+                "sort_score": sort_score,
                 "action": action,
                 "details": {
                     "Gate_1_PriceAction": c1['status'],

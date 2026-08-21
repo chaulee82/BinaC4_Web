@@ -30,6 +30,33 @@ def load_settings():
         logger.error(f"Không tìm thấy file cấu hình tại {config_path}")
         return {}
 
+def fmt_price(price: float) -> str:
+    """Format giá tự động: đủ số lẻ cho MEME coin (PEPE, SHIB...) mà không thừa số 0.
+    Ví dụ: 0.00001234 → '0.00001234', 0.1234 → '0.1234', 65000.5 → '65000.5'
+    """
+    if price is None:
+        return "N/A"
+    if price == 0:
+        return "0"
+    # Tìm số chữ số thập phân cần thiết để hiện tối thiểu 4 chữ số có nghĩa
+    import math
+    if price >= 1:
+        # Coin lớn: tối đa 4 số lẻ
+        decimals = 4
+    else:
+        # Tính vị trí chữ số có nghĩa đầu tiên
+        first_sig = -math.floor(math.log10(abs(price)))
+        # Hiển thị đủ 4 chữ số có nghĩa sau chữ số 0
+        decimals = first_sig + 3  # 4 chữ số có nghĩa
+        decimals = min(decimals, 12)  # tối đa 12 số lẻ
+    formatted = f"{price:.{decimals}f}"
+    # Bỏ số 0 thừa cuối (nhưng giữ lại ít nhất 1 số lẻ)
+    if '.' in formatted:
+        formatted = formatted.rstrip('0').rstrip('.')
+        if '.' not in formatted:
+            formatted += '.0'
+    return formatted
+
 def main():
     logger.info("Khởi động hệ thống giao dịch CN4-Platform...")
     
@@ -257,7 +284,7 @@ def main():
                             sl_pct = (entry - sl) / entry * 100
                             tp_pct = (tp - entry) / entry * 100
                             rr_ratio = tp_pct / sl_pct if sl_pct > 0 else 0
-                            print(f"   ↳ ⚙️ SETUP: [{sym}] Limit Buy = {entry:.6f} | Chốt Lời (TP) = {tp:.6f} (+{tp_pct:.1f}%) | Cắt Lỗ (SL) = {sl:.6f} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
+                            print(f"   ↳ ⚙️ SETUP: [{sym}] Limit Buy = {fmt_price(entry)} | Chốt Lời (TP) = {fmt_price(tp)} (+{tp_pct:.1f}%) | Cắt Lỗ (SL) = {fmt_price(sl)} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
                             print("-" * 175)
                 
                 print("=" * 175 + "\n")
@@ -294,8 +321,8 @@ def main():
                     result = breakout.evaluate_breakout(symbol, timeframe)
                     breakout_results.append(result)
                     
-                # Sắp xếp theo điểm tổng giảm dần và chỉ lấy Top 10
-                breakout_results.sort(key=lambda x: x.get('total_score', 0), reverse=True)
+                # Sắp xếp theo sort_score (total_score + rr_ratio) giảm dần, chỉ lấy Top 10
+                breakout_results.sort(key=lambda x: x.get('sort_score', x.get('total_score', 0)), reverse=True)
                 breakout_results = breakout_results[:10]
                 
                 # In bảng dữ liệu cho MomentumBreakout
@@ -327,8 +354,8 @@ def main():
                         if entry and sl and tp:
                             sl_pct = (entry - sl) / entry * 100
                             tp_pct = (tp - entry) / entry * 100
-                            rr_ratio = tp_pct / sl_pct if sl_pct > 0 else 0
-                            print(f"   ↳ ⚙️ SETUP: [{sym}] Buy Market = {entry:.6f} | Chốt Lời (TP) = {tp:.6f} (+{tp_pct:.1f}%) | Cắt Lỗ (SL) = {sl:.6f} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
+                            rr_ratio = res.get('rr_ratio', (tp_pct / sl_pct if sl_pct > 0 else 0))
+                            print(f"   ↳ ⚙️ SETUP: [{sym}] Buy Market = {fmt_price(entry)} | Chốt Lời (TP) = {fmt_price(tp)} (+{tp_pct:.1f}%) | Cắt Lỗ (SL) = {fmt_price(sl)} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
                     print("-" * 175)
                 
                 print("=" * 175 + "\n")
