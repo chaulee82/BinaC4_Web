@@ -172,6 +172,7 @@ class MacroGridDarvas:
                     "lower_price": round(floor * 0.99, 5),     # Đặt sàn lưới dưới đáy thực tế 1%
                     "upper_price": round(ceiling * 0.99, 5),   # Đặt trần lưới ngay sát dưới đỉnh cũ
                     "stop_loss": round(floor * 0.95, 5),       # Cắt lỗ cứng khi thủng sàn 5%
+                    "take_profit": round(ceiling * 1.01, 5),   # TP cao hơn Upper (ceiling) 1 chút
                     "grid_quantity": int((c2['amplitude'] * 100) / 0.8) # Cấu hình mỗi lưới ăn khoảng ~0.8%
                 }
 

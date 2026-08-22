@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from strategies.macro_pullback.pullback_sniper import PullbackSniper
 from strategies.macro_grid_darvas import MacroGridDarvas
 from strategies.momentum_breakout import MomentumBreakout
+from strategies.hot_trend_pullback import HotTrendPullback
 from execution.hybrid_executor import HybridExecutor
 from execution.grid_manager import GridManager
 from core.coin_filter import get_filtered_symbols
@@ -80,6 +81,7 @@ def main():
     sniper = PullbackSniper()
     darvas = MacroGridDarvas()
     breakout = MomentumBreakout()
+    hot_trend = HotTrendPullback()
     executor = HybridExecutor(api_key=api_key, secret_key=secret_key)
     grid_manager = GridManager(api_key=api_key, secret_key=secret_key)
     
@@ -195,9 +197,9 @@ def main():
                     result = darvas.scan_grid_candidate(symbol, timeframe)
                     darvas_results.append(result)
                     
-                # Sắp xếp theo điểm tổng giảm dần và chỉ lấy Top 10
+                # Sắp xếp theo điểm tổng giảm dần và chỉ lấy Top 5
                 darvas_results.sort(key=lambda x: x.get('total_score', 0), reverse=True)
-                darvas_results = darvas_results[:10]
+                darvas_results = darvas_results[:5]
                 
                 print("\n" + "=" * 115)
                 print(f"📦 ĐỘNG CƠ 1: DARVAS GRID (Dành cho Chiến lược Phòng thủ Móng nhà)")
@@ -209,7 +211,18 @@ def main():
                     score = res.get('total_score', 0)
                     act = res.get('action', '')
                     safe_tag = safety_map.get(sym, "⚠️ CHƯA XÉT")
+                    
                     print(f"{sym:<15} | {score:<10} | {safe_tag:<35} | {act}")
+                    if score >= 60:
+                        g_setup = res.get('grid_setup', {})
+                        if g_setup:
+                            lower = g_setup.get('lower_price', 0)
+                            upper = g_setup.get('upper_price', 0)
+                            sl = g_setup.get('stop_loss', 0)
+                            tp = g_setup.get('take_profit', 0)
+                            qty = g_setup.get('grid_quantity', 0)
+                            print(f"  ↳ ⚙️ SETUP GRID: [{sym}] Lower = {lower} | Uper = {upper} | Grids = {qty}| SL = {sl} | TP = {tp}")
+                            
                 print("=" * 115 + "\n")
 
                 
@@ -254,9 +267,9 @@ def main():
                     result = sniper.evaluate_candidate(symbol, timeframe, macro_gate=macro_gate)
                     sniper_results.append(result)
                     
-                # Sắp xếp theo điểm tổng giảm dần và chỉ lấy Top 10
+                # Sắp xếp theo điểm tổng giảm dần và chỉ lấy Top 5
                 sniper_results.sort(key=lambda x: x.get('total_score', 0), reverse=True)
-                sniper_results = sniper_results[:10]
+                sniper_results = sniper_results[:5]
                 
                 # In bảng dữ liệu cho PullbackSniper
                 # In bảng dữ liệu cho PullbackSniper
@@ -337,9 +350,9 @@ def main():
                     result = breakout.evaluate_breakout(symbol, timeframe, btc_gate=btc_gate)
                     breakout_results.append(result)
                     
-                # Sắp xếp theo sort_score (total_score + rr_ratio) giảm dần, chỉ lấy Top 10
+                # Sắp xếp theo sort_score (total_score + rr_ratio) giảm dần, chỉ lấy Top 5
                 breakout_results.sort(key=lambda x: x.get('sort_score', x.get('total_score', 0)), reverse=True)
-                breakout_results = breakout_results[:10]
+                breakout_results = breakout_results[:5]
                 
                 # In bảng dữ liệu cho MomentumBreakout
                 print("\n" + "=" * 175)
@@ -386,6 +399,52 @@ def main():
                                 print(f"   ↳ ⚙️ SETUP: [{sym}] Buy Market = {fmt_price(entry)} | Chốt Lời (TP1) = {fmt_price(tp1)} (+{tp1_pct:.1f}%) | Cắt Lỗ (SL) = {fmt_price(sl)} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
                     print("-" * 175)
 
+                print("=" * 175 + "\n")
+                
+                # =========================================================
+                # 4. Chạy Động Cơ 4 (Hot Trend Pullback)
+                # =========================================================
+                print("\n" + "=" * 175)
+                print(f"🚀 BẢNG CHẤM ĐIỂM HOT TREND PULLBACK (ĐỘNG CƠ 4 - SĂN ĐIỂM VÀO LỆNH PULLBACK)")
+                print("=" * 175)
+                
+                hot_trend_results = []
+                for symbol in watchlist:
+                    res = hot_trend.evaluate_pullback(symbol, timeframe)
+                    hot_trend_results.append(res)
+                    
+                hot_trend_results.sort(key=lambda x: x.get('sort_score', x.get('total_score', 0)), reverse=True)
+                hot_trend_results = hot_trend_results[:5]
+                
+                print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'C1 (Trend)':<25} | {'C2 (Vol)':<25} | {'C3 (Taker)':<25} | {'C4 (Entry)':<25} | {'C5 (Risk)':<25} | {'Hành Động'}")
+                print("| --- | --- | --- | --- | --- | --- | --- | --- |")
+                
+                for res in hot_trend_results:
+                    sym = res.get('symbol', '')
+                    score = res.get('total_score', 0)
+                    act = res.get('action', '')
+                    dt = res.get('details', {})
+                    
+                    c1 = dt.get('Gate_1_Trend', '')[:25]
+                    c2 = dt.get('Gate_2_Volume', '')[:25]
+                    c3 = dt.get('Gate_3_Taker', '')[:25]
+                    c4 = dt.get('Gate_4_Entry', '')[:25]
+                    c5 = dt.get('Gate_5_Risk', '')[:25]
+                    
+                    print(f"{sym:<15} | {score:<10} | {c1:<25} | {c2:<25} | {c3:<25} | {c4:<25} | {c5:<25} | {act}")
+                    
+                    setup = res.get('trade_setup', {})
+                    if setup:
+                        entry = setup.get('entry')
+                        sl = setup.get('stop_loss')
+                        tp1 = setup.get('tp1')
+                        if entry and sl and tp1:
+                            sl_pct = (entry - sl) / entry * 100
+                            tp1_pct = (tp1 - entry) / entry * 100
+                            rr_ratio = res.get('rr_ratio', (tp1_pct / sl_pct if sl_pct > 0 else 0))
+                            print(f"   ↳ ⚙️ SETUP: [{sym}] Buy Limit = {fmt_price(entry)} | Chốt Lời (TP1) = {fmt_price(tp1)} (+{tp1_pct:.1f}%) | Cắt Lỗ (SL) = {fmt_price(sl)} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
+                    print("-" * 175)
+                
                 print("=" * 175 + "\n")
                 
                 # ── 6-8. In các bảng từ coin_filter sau cùng ────────────────

@@ -171,6 +171,13 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
                 summaryLines.push('Mã | Điểm | Hành Động');
                 continue;
             }
+            if (line.includes('ĐỘNG CƠ 4 - SĂN ĐIỂM VÀO LỆNH PULLBACK')) {
+                captureMode = 'HOT_TREND';
+                summaryLines.push('');
+                summaryLines.push('🔥 ĐỘNG CƠ 4: HOT TREND PULLBACK');
+                summaryLines.push('Mã | Điểm | Hành Động');
+                continue;
+            }
             
             if (line.startsWith('====') || line.startsWith('----') && captureMode) {
                 continue;
@@ -206,6 +213,17 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
                         }
                         summaryLines.push(`${parts[0]} | ${parts[1]} | ${hanhDong}`);
                     }
+                }
+            } else if (captureMode === 'HOT_TREND') {
+                if (line.includes('|') && !line.includes('Mã (Symbol)')) {
+                    let parts = line.split('|').map(s => s.trim());
+                    if (parts.length >= 8) {
+                        // Col 0: Mã, Col 1: Điểm, Col 7: Hành Động
+                        let hanhDong = parts[7].replace(/✅ |⚠️ |🟡 |🛑 |🚀 |⏳ /g, '');
+                        summaryLines.push(`${parts[0]} | ${parts[1]} | ${hanhDong}`);
+                    }
+                } else if (line.includes('↳ ⚙️ SETUP:')) {
+                    summaryLines.push('  ' + line.replace('↳ ⚙️ SETUP:', '↳').replace(/\\s+/g, ' '));
                 }
             }
         }

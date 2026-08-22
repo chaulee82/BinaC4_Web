@@ -560,7 +560,8 @@ def process_symbol(symbol):
     _change24_ok = (live_info['change_24h'] < 12.0)
     # Phương pháp 3: Nới lỏng Discount lên 10% để bắt sóng (Bot tự chia lưới)
     _discount_ok = (discount_pct < 10.0)
-    _nen_ok      = (score_nen_15m >= 40.0)
+    # Nới lỏng điểm nến 15M nếu đang ở chế độ Tích Lũy (Grid dài hạn 2-3 ngày)
+    _nen_ok      = (score_nen_15m >= 20.0) if mode_tich_luy else (score_nen_15m >= 40.0)
     _no_wick_heavy = ("Chuyên Úp Bô" not in warning_str)
 
     _macro_trend_ok = close_live >= ma50_1d
@@ -943,8 +944,8 @@ def get_filtered_symbols():
         df_summary = (
             pd.DataFrame(summary_list)
             .sort_values(
-                by=["is_safe", "TỔNG", "Cần Giảm"],
-                ascending=[False, False, True]
+                by=["is_safe", "Has_Darvas", "TỔNG", "Cần Giảm"],
+                ascending=[False, False, False, True]
             )
             .reset_index(drop=True)
         )
