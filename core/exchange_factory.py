@@ -30,10 +30,10 @@ def get_working_exchange(api_key=None, secret_key=None):
     for name, ExchangeClass in exchanges_to_try:
         try:
             exchange = ExchangeClass(config)
-            logger.info(f"Đang kiểm tra kết nối tới sàn: {name.upper()}...")
+            logger.debug(f"Đang kiểm tra kết nối tới sàn: {name.upper()}...")
             # Kiểm tra kết nối bằng cách lấy thời gian server
             exchange.fetch_time()
-            logger.info(f"✅ Đã kết nối thành công tới {name.upper()}")
+            logger.debug(f"✅ Đã kết nối thành công tới {name.upper()}")
             return exchange
         except Exception as e:
             logger.warning(f"❌ Không thể kết nối tới {name.upper()}: {e}. Đang thử sàn khác...")
