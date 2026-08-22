@@ -158,22 +158,26 @@ def main():
                 print("\n" + "!" * 115)
                 print(f"🚨 HỆ THỐNG CẢNH BÁO SỚM & RỦI RO SẬP (EARLY WARNING MATRIX)")
                 print("!" * 115)
-                print(f"{'Mã (Symbol)':<15} | {'Cấp Độ':<45} | {'Tín Hiệu (Trigger)':<45}")
-                print("| --- | --- | --- |")
-                
-                # Sắp xếp theo cấp độ từ lớn đến nhỏ (Cấp 3 -> Cấp 0)
-                # Vì Python sort là stable nên thứ hạng gốc (theo điểm từ coin_filter) vẫn được giữ nguyên trong cùng 1 Cấp
-                warning_results.sort(key=lambda x: x.get('level', 0), reverse=True)
+                # In bảng theo chuẩn Markdown
+                print(f"| {'Mức Độ (Level)':<40} | {'Tín Hiệu (Trigger)':<35} | {'Danh Sách Mã (Symbols)'}")
+                print(f"|{'-'*42}|{'-'*37}|{'-'*60}")
                 
                 filtered_warnings = [r for r in warning_results if r.get('level') in (1, 3)]
                 if filtered_warnings:
+                    from collections import defaultdict
+                    grouped = defaultdict(list)
                     for res in filtered_warnings:
-                        sym = res.get('symbol', '')
-                        lbl = res.get('label', '')
-                        trig = res.get('trigger', '')
-                        print(f"{sym:<15} | {lbl:<45} | {trig:<45}")
+                        # Tách riêng label và trigger để đưa vào cột
+                        key = (res.get('label', ''), res.get('trigger', ''))
+                        grouped[key].append(res.get('symbol', '').replace('/USDT', ''))
+                    
+                    for (lbl, trig), symbols in grouped.items():
+                        # Nối danh sách các mã
+                        sym_str = ", ".join(symbols)
+                        # In thành 1 hàng markdown
+                        print(f"| {lbl:<40} | {trig:<35} | {sym_str}")
                 else:
-                    print(f"{'(Không có mã nào ở Cấp 1 hoặc Cấp 3)':<15}")
+                    print(f"| {'(Không có mã nào)':<40} | {'-':<35} | {'-'}")
                 print("!" * 115 + "\n")
                 
                 # Cập nhật watchlist thành safe_watchlist
@@ -360,9 +364,9 @@ def main():
 
                     print(f"{sym:<15} | {score:<10} | {c1:<25} | {c2:<25} | {c3:<25} | {c4:<25} | {bonus:<25} | {act}")
 
-                    # In thông số Setup nếu đạt >= 65 điểm
-                    if score >= 65:
-                        setup = res.get('trade_setup', {})
+                    # In thông số Setup nếu Động cơ 3 có cung cấp
+                    setup = res.get('trade_setup', {})
+                    if setup:
                         entry = setup.get('entry')
                         sl = setup.get('stop_loss')
                         tp1 = setup.get('tp1', setup.get('take_profit'))

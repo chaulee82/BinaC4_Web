@@ -53,14 +53,26 @@ class DynamicPricingOracle:
             # SL = Giá Mua - (Biên độ dao động thực tế x 1.5)
             atr_stop_loss = optimal_entry - (self.atr_multiplier * current_atr)
             
-            # Đối chiếu chéo với Đáy gần nhất. Nếu ATR vẫn cao hơn đáy, đẩy SL xuống dưới đáy để an toàn tuyệt đối.
-            final_stop_loss = min(atr_stop_loss, recent_low * 0.99)
+            # Khóa bảo vệ rủi ro: Không cho phép SL lớn hơn 10% (tránh bị kéo TP lên quá cao)
+            max_sl_distance = optimal_entry * 0.10
+            
+            # Đối chiếu chéo với Đáy gần nhất. Ưu tiên điểm sâu hơn (min) nhưng không vượt quá max_sl_distance
+            deepest_sl = min(atr_stop_loss, recent_low * 0.99)
+            if (optimal_entry - deepest_sl) > max_sl_distance:
+                final_stop_loss = optimal_entry - max_sl_distance
+            else:
+                final_stop_loss = deepest_sl
 
             # ==========================================
             # BƯỚC 3: KIẾN TẠO MỤC TIÊU BẤT ĐỐI XỨNG (TAKE-PROFIT)
             # ==========================================
             risk_amount = optimal_entry - final_stop_loss
             target_take_profit = optimal_entry + (self.min_rr_ratio * risk_amount)
+            
+            # Khóa bảo vệ kỳ vọng: TP của sóng hồi (Pullback) thường không nên vượt quá 20-25%
+            max_tp_distance = optimal_entry * 0.25
+            if (target_take_profit - optimal_entry) > max_tp_distance:
+                target_take_profit = optimal_entry + max_tp_distance
 
             # Đóng gói tọa độ
             setup = {

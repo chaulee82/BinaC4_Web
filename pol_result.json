@@ -1,0 +1,17 @@
+{
+    "symbol": "POL/USDT",
+    "price": 0.11889,
+    "total_score": 45,
+    "rr_ratio": 3.68,
+    "sort_score": 48.68,
+    "action": "🔴 TỪ CHỐI",
+    "details": {
+        "Gate_0_BTC": "⚠️ CẢNH BÁO: BTC gãy MA25 1H (RSI=51.7) — Fakeout Risk Cao",
+        "Gate_1_PriceAction": "Breakout nhưng bị dội ngược (Râu dài)",
+        "Gate_2_Volume": "Dòng tiền Bạo Phát (3.1x MA20)",
+        "Gate_3_OrderBook": "Tường Sell cản đường",
+        "Gate_4_RR": "SL Chấp Nhận Được (-4.1%)"
+    },
+    "trade_setup": {},
+    "btc_rsi": 51.7
+}

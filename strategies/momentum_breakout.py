@@ -101,9 +101,15 @@ class MomentumBreakout:
         upper_wick = high_price - max(close_price, open_price)
 
         if close_price > resistance:
-            if upper_wick > body * 0.3:
-                return {"score": 10, "status": "Breakout nhưng bị dội ngược (Râu dài)", "resistance": resistance}
-            return {"score": 30, "status": "Breakout Sạch (Đóng nến qua kháng cự)", "resistance": resistance}
+            if upper_wick >= body:
+                # Râu trên dài bằng hoặc hơn thân nến -> Phe bán đạp xuống cực mạnh (Shooting Star/Pinbar)
+                return {"score": 10, "status": "Breakout bị dội ngược (Râu dài)", "resistance": resistance}
+            elif upper_wick > body * 0.4:
+                # Râu trên dài từ 40% đến dưới 100% thân nến -> Vẫn là Breakout nhưng có lực chốt lời
+                return {"score": 25, "status": "Breakout (Có râu nến xả nhẹ)", "resistance": resistance}
+            else:
+                # Breakout đẹp, nến đặc hoặc râu rất ngắn
+                return {"score": 30, "status": "Breakout Sạch (Đóng nến qua kháng cự)", "resistance": resistance}
         elif close_price >= resistance * 0.99:
             return {"score": 15, "status": "Tiệm cận Kháng cự (Chờ Breakout)", "resistance": resistance}
         else:
@@ -282,9 +288,9 @@ class MomentumBreakout:
                 tp1_tech_pct = box_size / current_price
                 tp2_tech_pct = (box_size * 2.0) / current_price
                 
-                # Cân đối với kỳ vọng 4-8% và 8-12%
-                tp1_pct = max(0.04, min(0.08, tp1_tech_pct))
-                tp2_pct = max(0.08, min(0.12, tp2_tech_pct))
+                # Cân đối: Đảm bảo tối thiểu 4% và 8%, nhưng nới lỏng trần trên để số liệu chạy động theo thực tế
+                tp1_pct = max(0.04, min(0.15, tp1_tech_pct))
+                tp2_pct = max(0.08, min(0.25, tp2_tech_pct))
                 
                 tp1_price = current_price * (1 + tp1_pct)
                 tp2_price = current_price * (1 + tp2_pct)
@@ -308,7 +314,8 @@ class MomentumBreakout:
                 action = "🟡 THEO DÕI: Cần tích lũy thêm Volume"
 
             trade_setup = {}
-            if total_score >= 65:
+            is_real_breakout = (c1['score'] >= 25)
+            if total_score >= 65 or is_real_breakout:
                 trade_setup = {
                     "entry": current_price,
                     "stop_loss": sl_price,
