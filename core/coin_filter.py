@@ -941,7 +941,7 @@ def get_filtered_symbols():
 
         df_safe = df_summary[df_summary["is_safe"] == True]
 
-        _WCOLS2 = [7, 21, 10, 11, 28, 5, 11, 11, 10]
+        _WCOLS2 = [7, 21, 10, 11, 28, 14, 5, 11, 11, 10]
         _TW2    = sum(_WCOLS2) + len(_SEP) * (len(_WCOLS2) - 1)
         def fmt_row_safe(cells):
             return _SEP.join(ljust_w(trunc_w(c, w), w) for c, w in zip(cells, _WCOLS2))
@@ -956,7 +956,7 @@ def get_filtered_symbols():
             print("⚠️ KHÔNG CÓ MÃ NÀO ĐẠT CHUẨN 4 KHÔNG ĐỂ MỞ GRID LÚC NÀY! THỊ TRƯỜNG ĐANG DẦN BỊ NHIỄU.")
         else:
             print(fmt_row_safe(["Mã", "Loại Grid", "Giá Live", "Trigger(P)",
-                                "Price Range (Low - High)", "Lưới", "SL", "TP", "Xác Suất"]))
+                                "Price Range (Low - High)", "Bước Lưới(%)", "Lưới", "SL", "TP", "Xác Suất"]))
             print("-" * _TW2)
             for r in df_safe.to_dict(orient='records'):
                 is_tich_luy = "TÍCH LŨY" in r["Phân Loại Grid"]
@@ -1017,11 +1017,15 @@ def get_filtered_symbols():
                     p_sl = p_low * 0.960
                     p_tp = p_up * 1.020
                     xac_suat = "88% - 93%"
+                
+                step_pct = (grid_step / p_trig) * 100 if p_trig > 0 else 0
+                step_str = f"{step_pct:.2f}%"
+
                 print(fmt_row_safe([
                     r["Symbol"], loai, r["Giá Live"],
                     smart_price(p_trig),
                     smart_price(p_low) + " - " + smart_price(p_up),
-                    num_luoi, smart_price(p_sl), smart_price(p_tp), xac_suat
+                    step_str, num_luoi, smart_price(p_sl), smart_price(p_tp), xac_suat
                 ]))
 
         if len(df_safe) < 3:
