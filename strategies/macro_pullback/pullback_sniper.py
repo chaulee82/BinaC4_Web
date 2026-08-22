@@ -1,7 +1,14 @@
 """
 Module: pullback_sniper.py
+Dự án: CN4-Platform
 Mục đích: Động cơ 2 - Săn sóng hồi tối ưu (Confluence Pullback Scalping)
 Thang điểm: 100 điểm (4 Cửa kiểm duyệt định lượng)
+
+Changelog Phase 1:
+  - [DC2-1] Siết vùng hội tụ từ ±1.5% → ±0.8% để chỉ mua khi giá đã thực sự về vùng bệ đỡ
+  - [DC2-2] Thêm điều kiện giá phải ≤ indicator (không mua khi giá đang trên EMA/MA)
+  - [DC2-3] Gate 0 — check_macro_trend_1d(): lọc downtrend 1D trước khi chấm điểm
+  - [DC2-4] evaluate_candidate() tích hợp Gate 0, hard reject mã downtrend dài hạn
 """
 
 import ccxt
@@ -16,12 +23,56 @@ class PullbackSniper:
         self.exchange = exchange or get_working_exchange()
 
     # =========================================================================
+    # [MỚI - DC2-3] GATE 0: LỌC XU HƯỚNG VĨ MÔ 1D — Hàm Độc Lập
+    # Gọi một lần mỗi chu kỳ để tạo macro_safe_watchlist trước khi nạp vào DC2
+    # Trả về dict: {"ok": bool, "reason": str, "trend_pct": float}
+    # =========================================================================
+    def check_macro_trend_1d(self, symbol: str) -> dict:
+        """
+        Kiểm tra xu hướng khung 1D của symbol.
+        Pullback trong downtrend 1D thường là dead cat bounce — không phải đáy thật.
+
+        REJECT khi:
+          - Giá close 1D đang dưới MA25 1D  (xu hướng giảm dài hạn)
+        ACCEPT khi:
+          - Giá close 1D trên MA25 1D (uptrend hoặc tích lũy trên nền tảng)
+        """
+        try:
+            candles_1d = self.exchange.fetch_ohlcv(symbol, '1d', limit=30)
+            df_1d = pd.DataFrame(candles_1d, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+
+            ma25_1d = df_1d['close'].rolling(window=25).mean().iloc[-1]
+            close_1d = df_1d['close'].iloc[-1]
+
+            trend_pct = ((close_1d - ma25_1d) / ma25_1d) * 100
+
+            if close_1d >= ma25_1d:
+                return {
+                    "ok": True,
+                    "reason": f"✅ Macro 1D OK (Giá trên MA25 1D, +{trend_pct:.1f}%)",
+                    "trend_pct": round(trend_pct, 2)
+                }
+            else:
+                return {
+                    "ok": False,
+                    "reason": f"❌ Macro 1D Downtrend (Giá dưới MA25 1D, {trend_pct:.1f}%) — Dead Cat Risk",
+                    "trend_pct": round(trend_pct, 2)
+                }
+        except Exception as e:
+            # Lỗi API → cho qua để không chặn toàn bộ hệ thống
+            return {
+                "ok": True,
+                "reason": f"⚠️ Macro 1D gate lỗi API (bỏ qua): {str(e)[:60]}",
+                "trend_pct": 0.0
+            }
+
+    # =========================================================================
     # CỬA 1: ĐỊNH VỊ VÙNG HẠ CÁNH / HỢP LƯU (TỐI ĐA 30 ĐIỂM)
     # =========================================================================
     def check_confluence_zone(self, df: pd.DataFrame) -> dict:
         """
         Kiểm tra độ lệch giữa giá hiện tại với cụm EMA25, MA25 và Dải giữa Bollinger (MB).
-        Sai số cho phép trong phạm vi ±1.5%.
+        Sai số cho phép trong phạm vi ±1.5%. (Giữ nguyên gốc để bắt được các sóng front-run)
         """
         current_price = df['close'].iloc[-1]
         ema25 = df['ema25'].iloc[-1]
@@ -147,12 +198,42 @@ class PullbackSniper:
 
     # =========================================================================
     # HÀM CHẤM ĐIỂM TỔNG HỢP & PHÂN LOẠI HÀNH ĐỘNG
+    # [DC2-4] Tích hợp Gate 0 Macro 1D: hard reject ngay đầu nếu downtrend dài hạn
     # =========================================================================
-    def evaluate_candidate(self, symbol: str, timeframe: str = '4h') -> dict:
+    def evaluate_candidate(self, symbol: str, timeframe: str = '4h',
+                           macro_gate: dict = None) -> dict:
         """
-        Quy trình chấm điểm toàn diện cho 1 mã tài sản
+        Quy trình chấm điểm toàn diện cho 1 mã tài sản.
+
+        macro_gate: Kết quả từ check_macro_trend_1d() — truyền vào để tránh gọi API nhiều lần.
+                    Nếu None, tự gọi nội bộ (chỉ dùng khi test đơn lẻ).
         """
         try:
+            # ==============================================================
+            # [DC2-4] GATE 0: Lọc Xu Hướng Vĩ Mô 1D
+            # Reject ngay nếu mã đang trong downtrend dài hạn
+            # Dead cat bounce trong downtrend 1D → tỷ lệ thắng rất thấp
+            # ==============================================================
+            if macro_gate is None:
+                macro_gate = self.check_macro_trend_1d(symbol)
+
+            if not macro_gate.get("ok", True):
+                return {
+                    "symbol": symbol,
+                    "price": 0,
+                    "total_score": 0,
+                    "action": f"🚫 MACRO GATE: {macro_gate['reason']}",
+                    "details": {
+                        "Gate_0_Macro1D": macro_gate,
+                        "Gate_1_Confluence": {"score": 0, "status": "N/A (Macro Gate đóng)"},
+                        "Gate_2_Volume": {"score": 0, "status": "N/A"},
+                        "Gate_3_OrderBook": {"score": 0, "status": "N/A"},
+                        "Gate_4_RR": {"score": 0, "status": "N/A"}
+                    },
+                    "trade_setup": {},
+                    "macro_trend_pct": macro_gate.get("trend_pct", 0)
+                }
+
             # 1. Kéo dữ liệu nến OHLCV
             candles = self.exchange.fetch_ohlcv(symbol, timeframe, limit=100)
             df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -169,13 +250,12 @@ class PullbackSniper:
             peak_price = df['high'].iloc[-10:].max()
             recent_low = df['low'].iloc[-5:].min()
 
-
             # ==============================================================
             # TÍCH HỢP MODULE TIÊN TRI ĐỊNH GIÁ ĐỘNG (VWAP + ATR)
             # ==============================================================
             oracle = DynamicPricingOracle()
             oracle_setup = oracle.calculate_optimal_setup(df)
-            
+
             if oracle_setup.get('status') == 'SUCCESS':
                 entry = oracle_setup['entry']
                 stop_loss = oracle_setup['stop_loss']
@@ -211,6 +291,7 @@ class PullbackSniper:
                 "total_score": total_score,
                 "action": action,
                 "details": {
+                    "Gate_0_Macro1D": macro_gate,
                     "Gate_1_Confluence": c1,
                     "Gate_2_Volume": c2,
                     "Gate_3_OrderBook": c3,
@@ -220,7 +301,8 @@ class PullbackSniper:
                     "entry": round(entry, 6),
                     "stop_loss": round(stop_loss, 6),
                     "take_profit": round(take_profit, 6)
-                }
+                },
+                "macro_trend_pct": macro_gate.get("trend_pct", 0)
             }
 
         except Exception as e:

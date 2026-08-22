@@ -238,13 +238,19 @@ def main():
                 # 2. Chạy Động Cơ 2 (Pullback Sniper)
                 # =========================================================
                 sniper_results = []
+                logger.info("🔍 [DC2] Kiểm tra Macro Trend 1D trước khi chấm điểm Pullback...")
                 for symbol in watchlist:
                     # Động cơ 2 chỉ lấy các mã is_safe (Bảng 1 An Toàn)
                     if "✅" not in safety_map.get(symbol, "⚠️"):
                         continue
-                        
-                    # Gọi bộ não chấm điểm Pullback Sniper
-                    result = sniper.evaluate_candidate(symbol, timeframe)
+
+                    # [DC2-4] Gate 0: Kiểm tra Macro Trend 1D trước mỗi mã
+                    macro_gate = sniper.check_macro_trend_1d(symbol)
+                    if not macro_gate.get("ok", True):
+                        logger.debug(f"[DC2] {symbol} bị Macro Gate loại: {macro_gate['reason']}")
+
+                    # Gọi bộ não chấm điểm Pullback Sniper (truyền macro_gate để không gọi API lại)
+                    result = sniper.evaluate_candidate(symbol, timeframe, macro_gate=macro_gate)
                     sniper_results.append(result)
                     
                 # Sắp xếp theo điểm tổng giảm dần và chỉ lấy Top 10
@@ -316,9 +322,18 @@ def main():
                 # =========================================================
                 # 3. Chạy Động Cơ 3 (Momentum Breakout)
                 # =========================================================
+                # [DC3-3] Gọi BTC 1H Gate MỘT LẦN, truyền kết quả vào từng mã — tiết kiệm API
+                logger.info("🔍 [DC3] Kiểm tra BTC 1H Gate trước khi quét Breakout...")
+                btc_gate = breakout.check_btc_trend_1h()
+                btc_gate_label = btc_gate.get('reason', '')
+                if not btc_gate.get('ok', True):
+                    logger.warning(f"🚱 [DC3] BTC Gate đóng: {btc_gate_label}")
+                else:
+                    logger.info(f"✅ [DC3] BTC Gate mở: {btc_gate_label}")
+
                 breakout_results = []
                 for symbol in watchlist:
-                    result = breakout.evaluate_breakout(symbol, timeframe)
+                    result = breakout.evaluate_breakout(symbol, timeframe, btc_gate=btc_gate)
                     breakout_results.append(result)
                     
                 # Sắp xếp theo sort_score (total_score + rr_ratio) giảm dần, chỉ lấy Top 10
@@ -328,36 +343,48 @@ def main():
                 # In bảng dữ liệu cho MomentumBreakout
                 print("\n" + "=" * 175)
                 print(f"🚀 BẢNG CHẤM ĐIỂM MOMENTUM BREAKOUT (ĐỘNG CƠ 3 - SĂN BỨT PHÁ ĐỘNG LƯỢNG)")
+                # [DC3-3] Hiển thị trạng thái BTC Gate ngay trong header bảng
+                print(f"   📡 BTC 1H Gate: {btc_gate_label}")
                 print("=" * 175)
-                print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'C1 (PriceAct)':<25} | {'C2 (Volume)':<25} | {'C3 (OrderBook)':<25} | {'C4 (R/R)':<25} | {'Hành Động'}")
-                print("| --- | --- | --- | --- | --- | --- | --- |")
-                
+                print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'C1 (PriceAct)':<25} | {'C2 (Volume)':<25} | {'C3 (OrderBook)':<25} | {'C4 (R/R)':<25} | {'Bonus (Taker)':<25} | {'Hành Động'}")
+                print("| --- | --- | --- | --- | --- | --- | --- | --- |")
+
                 for res in breakout_results:
                     sym = res.get('symbol', '')
                     score = res.get('total_score', 0)
                     act = res.get('action', '')
                     dt = res.get('details', {})
-                    
+
                     c1 = dt.get('Gate_1_PriceAction', '')[:25]
                     c2 = dt.get('Gate_2_Volume', '')[:25]
                     c3 = dt.get('Gate_3_OrderBook', '')[:25]
                     c4 = dt.get('Gate_4_RR', '')[:25]
-                    
-                    print(f"{sym:<15} | {score:<10} | {c1:<25} | {c2:<25} | {c3:<25} | {c4:<25} | {act}")
-                    
-                    # In thông số Setup nếu đạt >= 70 điểm (tương tự Pullback Sniper)
+                    bonus = dt.get('Bonus_TakerBuy', '')[:25]
+
+                    print(f"{sym:<15} | {score:<10} | {c1:<25} | {c2:<25} | {c3:<25} | {c4:<25} | {bonus:<25} | {act}")
+
+                    # In thông số Setup nếu đạt >= 70 điểm
                     if score >= 70:
                         setup = res.get('trade_setup', {})
                         entry = setup.get('entry')
                         sl = setup.get('stop_loss')
-                        tp = setup.get('take_profit')
-                        if entry and sl and tp:
+                        tp1 = setup.get('tp1', setup.get('take_profit'))
+                        tp2 = setup.get('tp2')
+                        tp_trail = setup.get('tp_trail')
+                        if entry and sl and tp1:
                             sl_pct = (entry - sl) / entry * 100
-                            tp_pct = (tp - entry) / entry * 100
-                            rr_ratio = res.get('rr_ratio', (tp_pct / sl_pct if sl_pct > 0 else 0))
-                            print(f"   ↳ ⚙️ SETUP: [{sym}] Buy Market = {fmt_price(entry)} | Chốt Lời (TP) = {fmt_price(tp)} (+{tp_pct:.1f}%) | Cắt Lỗ (SL) = {fmt_price(sl)} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
+                            tp1_pct = (tp1 - entry) / entry * 100
+                            rr_ratio = res.get('rr_ratio', (tp1_pct / sl_pct if sl_pct > 0 else 0))
+                            # [DC3-5] Scale-out Mock Log
+                            print(f"   ↳ ⚙️ SETUP [{sym}] Entry = {fmt_price(entry)} | SL = {fmt_price(sl)} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
+                            if tp2 and tp_trail:
+                                tp2_pct = (tp2 - entry) / entry * 100
+                                trail_pct = (tp_trail - entry) / entry * 100
+                                print(f"       📄 [MOCK SCALE-OUT] TP1={fmt_price(tp1)} (+{tp1_pct:.1f}%) | TP2={fmt_price(tp2)} (+{tp2_pct:.1f}%) | Trail={fmt_price(tp_trail)} (+{trail_pct:.1f}%)")
+                            else:
+                                print(f"   ↳ ⚙️ SETUP: [{sym}] Buy Market = {fmt_price(entry)} | Chốt Lời (TP1) = {fmt_price(tp1)} (+{tp1_pct:.1f}%) | Cắt Lỗ (SL) = {fmt_price(sl)} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
                     print("-" * 175)
-                
+
                 print("=" * 175 + "\n")
                 
                 # ── 6-8. In các bảng từ coin_filter sau cùng ────────────────
@@ -385,14 +412,13 @@ def main():
                             sl = setup.get('stop_loss')
                             tp = setup.get('take_profit')
                             
-                            if entry is not None and sl is not None and tp is not None:
-                                logger.warning(f"🚀 [EXECUTOR] Bắn lệnh Buy Market {symbol} @ {entry}")
+                            if entry is not None and sl is not None:
+                                o_type = setup.get('order_type', 'market').upper()
+                                logger.warning(f"🚀 [EXECUTOR] Bắn lệnh BUY {o_type} {symbol} @ {entry}")
                                 executor.execute_trade(
                                     symbol=symbol,
-                                    entry=entry,
-                                    sl=sl,
-                                    tp=tp,
-                                    amount=0.01
+                                    amount=0.01,
+                                    setup=setup
                                 )
 
                 # =========================================================
