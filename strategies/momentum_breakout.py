@@ -174,12 +174,13 @@ class MomentumBreakout:
 
         sl_percent = (entry - sl) / entry
 
-        if sl_percent <= 0.05:
-            return {"score": 25, "status": f"SL Chính Xác ({-sl_percent*100:.1f}%) — Kháng Cự → Hỗ Trợ | R/R Đẹp", "sl": sl}
-        elif sl_percent <= 0.08:
-            return {"score": 10, "status": f"SL Chấp Nhận được ({-sl_percent*100:.1f}%)", "sl": sl}
+        if sl_percent <= 0.035:
+            return {"score": 25, "status": f"SL Cực Đẹp ({-sl_percent*100:.1f}%) — R/R Tối Ưu", "sl": sl}
+        elif sl_percent <= 0.05:
+            return {"score": 10, "status": f"SL Chấp Nhận Được ({-sl_percent*100:.1f}%)", "sl": sl}
         else:
-            return {"score": 0, "status": f"Nến Breakout Quá Dài (SL {-sl_percent*100:.1f}%) → Bỏ qua", "sl": sl}
+            # Phạt nặng -100 điểm để tạch ngay lập tức (Không rượt giá, lỡ tàu thì bỏ)
+            return {"score": -100, "status": f"🚫 LỠ TÀU (SL {-sl_percent*100:.1f}% quá rủi ro) → HỦY SETUP", "sl": sl}
 
     # =========================================================================
     # ĐIỂM THƯỞNG: TAKER BUY RATIO (Lực mua chủ động) — MAX +10 ĐIỂM (OVERCAP)
