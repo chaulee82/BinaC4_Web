@@ -323,13 +323,13 @@ def main():
                 # 3. Chạy Động Cơ 3 (Momentum Breakout)
                 # =========================================================
                 # [DC3-3] Gọi BTC 1H Gate MỘT LẦN, truyền kết quả vào từng mã — tiết kiệm API
-                logger.info("🔍 [DC3] Kiểm tra BTC 1H Gate trước khi quét Breakout...")
+                print("\n🔍 [DC3] Kiểm tra BTC 1H Gate trước khi quét Breakout...")
                 btc_gate = breakout.check_btc_trend_1h()
                 btc_gate_label = btc_gate.get('reason', '')
                 if not btc_gate.get('ok', True):
-                    logger.warning(f"🚱 [DC3] BTC Gate đóng: {btc_gate_label}")
+                    print(f"🚱 [DC3] BTC Gate đóng: {btc_gate_label}")
                 else:
-                    logger.info(f"✅ [DC3] BTC Gate mở: {btc_gate_label}")
+                    print(f"✅ [DC3] BTC Gate mở: {btc_gate_label}")
 
                 breakout_results = []
                 for symbol in watchlist:
