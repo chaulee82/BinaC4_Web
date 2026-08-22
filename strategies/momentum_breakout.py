@@ -163,15 +163,16 @@ class MomentumBreakout:
         past_highs = df['high'].iloc[-100:-1]
         resistance = past_highs.max()
 
+        candle_low = df['low'].iloc[-1]
+
         if entry < resistance:
             # Chưa vượt kháng cự: SL đặt dưới đáy nến hiện tại
-            sl = df['low'].iloc[-1] * 0.99
+            sl = candle_low * 0.99
         else:
-            # Đã vượt kháng cự: SL đặt ngay dưới đỉnh hộp cũ 1% (buffer chống quét râu).
-            # Kháng cự cũ = Hỗ trợ mới. Giữ SL sát resistance bảo toàn:
-            #   - SL distance nhỏ → score Garageute 4 đạt 25 điểm (không xuống 10/0)
-            #   - R/R với TP1=+5% vẫn dương (> 1:1)
-            sl = resistance * 0.99
+            # Đã vượt kháng cự: Áp dụng Phương án 1 (Né quét râu)
+            # Lấy vùng thấp nhất giữa Đáy nến Breakout và Hỗ trợ mới (Kháng cự cũ * 0.99)
+            base_sl = resistance * 0.99
+            sl = min(candle_low, base_sl)
 
         sl_percent = (entry - sl) / entry
 
