@@ -197,6 +197,60 @@ class PullbackSniper:
         return {"score": score, "rr_ratio": rr_ratio, "status": status}
 
     # =========================================================================
+    # CHẾ ĐỘ: DEEP PANIC SNIPER (NHÁNH BẮT DAO RƠI HOẢNG LOẠN)
+    # =========================================================================
+    def check_deep_panic(self, symbol: str) -> dict:
+        """
+        Nhánh logic song song chuyên trị Flash Crash:
+        - Giá đâm thủng mép dưới Bollinger Bands (BOLL DN) ít nhất 1-2%
+        - Cột Volume nổ đột biến (gấp 3-5 lần MA20 Volume) ở khung 15m
+        - RSI 15M rớt thẳng xuống vùng siêu bán (dưới 20)
+        """
+        try:
+            candles_15m = self.exchange.fetch_ohlcv(symbol, '15m', limit=100)
+            df_15m = pd.DataFrame(candles_15m, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            
+            # Tính RSI 15m
+            delta = df_15m['close'].diff()
+            gain = delta.where(delta > 0, 0).ewm(alpha=1/14, adjust=False).mean()
+            loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+            rs = gain / loss
+            df_15m['rsi'] = 100 - (100 / (1 + rs))
+            rsi_15m = df_15m['rsi'].iloc[-1]
+            
+            # Tính BB 15m
+            df_15m['bb_mid'] = df_15m['close'].rolling(window=20).mean()
+            df_15m['bb_std'] = df_15m['close'].rolling(window=20).std()
+            df_15m['bb_lower'] = df_15m['bb_mid'] - (df_15m['bb_std'] * 2)
+            
+            # Tính Volume MA20 15m
+            df_15m['vol_ma20'] = df_15m['volume'].rolling(window=20).mean()
+            
+            current_price = df_15m['close'].iloc[-1]
+            bb_lower = df_15m['bb_lower'].iloc[-1]
+            current_vol = df_15m['volume'].iloc[-1]
+            vol_ma20 = df_15m['vol_ma20'].iloc[-1]
+            
+            # Điều kiện 1: Giá đâm thủng BOLL DN ít nhất 1%
+            is_price_dumped = current_price < (bb_lower * 0.99)
+            
+            # Điều kiện 2: Volume nổ đột biến (> 3x MA20 Volume)
+            is_volume_capitulation = current_vol >= (3 * vol_ma20)
+            
+            # Điều kiện 3: RSI 15m < 20
+            is_rsi_oversold = rsi_15m < 20
+            
+            if is_price_dumped and is_volume_capitulation and is_rsi_oversold:
+                return {
+                    "is_panic": True,
+                    "status": f"Panic Sell: Giá {current_price} < BB_Low {bb_lower:.4f}, Vol {current_vol/vol_ma20:.1f}x > 3x MA20, RSI 15m = {rsi_15m:.1f}"
+                }
+            
+            return {"is_panic": False, "status": "Không có dấu hiệu Flash Crash"}
+        except Exception as e:
+            return {"is_panic": False, "status": f"Lỗi kiểm tra Deep Panic: {str(e)}"}
+
+    # =========================================================================
     # HÀM CHẤM ĐIỂM TỔNG HỢP & PHÂN LOẠI HÀNH ĐỘNG
     # [DC2-4] Tích hợp Gate 0 Macro 1D: hard reject ngay đầu nếu downtrend dài hạn
     # =========================================================================
@@ -269,11 +323,18 @@ class PullbackSniper:
             # 3. Kéo Sổ lệnh Level 2
             order_book = self.exchange.fetch_order_book(symbol, limit=50)
 
-            # 4. Chạy qua 4 Cửa kiểm duyệt
+            # 4. Chạy qua 4 Cửa kiểm duyệt (Chế độ Pullback thông thường)
             c1 = self.check_confluence_zone(df)
             c2 = self.check_volume_dryup(df)
             c3 = self.analyze_buy_walls(order_book, entry)
             c4 = self.calculate_rr_ratio(entry, stop_loss, take_profit)
+
+            # 4.5 NHÁNH DEEP PANIC SNIPER (Bắt dao rơi)
+            # Nếu thị trường có Flash Crash, sẽ ghi đè Cửa 1 và Cửa 2 bằng điểm tuyệt đối
+            panic_check = self.check_deep_panic(symbol)
+            if panic_check.get("is_panic", False):
+                c1 = {"score": 30, "confluence_count": 0, "status": "🔥 KÍCH HOẠT DEEP PANIC SNIPER (Ghi đè hội tụ)"}
+                c2 = {"score": 25, "vol_ratio": 0, "status": panic_check["status"]}
 
             total_score = c1['score'] + c2['score'] + c3['score'] + c4['score']
 

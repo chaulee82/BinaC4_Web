@@ -240,10 +240,7 @@ def main():
                 sniper_results = []
                 logger.info("🔍 [DC2] Kiểm tra Macro Trend 1D trước khi chấm điểm Pullback...")
                 for symbol in watchlist:
-                    # Động cơ 2 chỉ lấy các mã is_safe (Bảng 1 An Toàn)
-                    if "✅" not in safety_map.get(symbol, "⚠️"):
-                        continue
-
+                    # [Đã gỡ bỏ màng lọc Bảng 1 An Toàn để Động cơ 2 có thể quét các mã đang Panic Sell]
                     # [DC2-4] Gate 0: Kiểm tra Macro Trend 1D trước mỗi mã
                     macro_gate = sniper.check_macro_trend_1d(symbol)
                     if not macro_gate.get("ok", True):
@@ -363,8 +360,8 @@ def main():
 
                     print(f"{sym:<15} | {score:<10} | {c1:<25} | {c2:<25} | {c3:<25} | {c4:<25} | {bonus:<25} | {act}")
 
-                    # In thông số Setup nếu đạt >= 70 điểm
-                    if score >= 70:
+                    # In thông số Setup nếu đạt >= 65 điểm
+                    if score >= 65:
                         setup = res.get('trade_setup', {})
                         entry = setup.get('entry')
                         sl = setup.get('stop_loss')

@@ -56,14 +56,14 @@ class MomentumBreakout:
 
             if not btc_above_ma25:
                 return {
-                    "ok": False,
-                    "reason": f"❌ BTC gãy MA25 1H (RSI={rsi:.1f}) — Fakeout Risk Cao",
+                    "ok": True,
+                    "reason": f"⚠️ CẢNH BÁO: BTC gãy MA25 1H (RSI={rsi:.1f}) — Fakeout Risk Cao",
                     "rsi": round(rsi, 1)
                 }
             if not btc_rsi_ok:
                 return {
-                    "ok": False,
-                    "reason": f"❌ BTC RSI 1H Yếu ({rsi:.1f} < 45) — Không Đủ Đà Breakout",
+                    "ok": True,
+                    "reason": f"⚠️ CẢNH BÁO: BTC RSI 1H Yếu ({rsi:.1f} < 45) — Cẩn Thận Breakout Giả",
                     "rsi": round(rsi, 1)
                 }
 
@@ -266,30 +266,49 @@ class MomentumBreakout:
 
             total_score = c1['score'] + c2['score'] + c3['score'] + c4['score'] + bonus['score']
 
-            # Tính R/R ratio thực tế để dùng làm tiebreaker khi sort
+            # Tính R/R ratio thực tế và Dynamic TP
             sl_price = c4.get('sl')
-            # [DC3-5] Scale-out TP: TP1=+5% (40%), TP2=+12% (40%), Trail=+20% (20%)
-            tp1_price  = current_price * 1.05
-            tp2_price  = current_price * 1.12
-            tp_trail   = current_price * 1.20
             rr_ratio = 0.0
+            
             if sl_price and sl_price < current_price:
+                # Căn cứ số liệu kỹ thuật: Biên độ hộp tích lũy (Measured Move)
+                past_highs = df['high'].iloc[-100:-1]
+                past_lows = df['low'].iloc[-100:-1]
+                box_size = past_highs.max() - past_lows.min()
+                
+                # Kỹ thuật Measured Move: 
+                # Mức 1: Bứt phá 100% chiều cao hộp (Standard Measured Move)
+                # Mức 2: Bứt phá 200% chiều cao hộp (Extended Momentum)
+                tp1_tech_pct = box_size / current_price
+                tp2_tech_pct = (box_size * 2.0) / current_price
+                
+                # Cân đối với kỳ vọng 4-8% và 8-12%
+                tp1_pct = max(0.04, min(0.08, tp1_tech_pct))
+                tp2_pct = max(0.08, min(0.12, tp2_tech_pct))
+                
+                tp1_price = current_price * (1 + tp1_pct)
+                tp2_price = current_price * (1 + tp2_pct)
+                tp_trail  = current_price * (1 + tp2_pct + 0.05) # Trail sau TP2 5%
+                
                 sl_dist = current_price - sl_price
                 tp1_dist = tp1_price - current_price
-                if sl_dist > 0:
-                    rr_ratio = round(tp1_dist / sl_dist, 2)
-
+                rr_ratio = round(tp1_dist / sl_dist, 2)
+            else:
+                tp1_price = current_price * 1.05
+                tp2_price = current_price * 1.10
+                tp_trail  = current_price * 1.15
+            
             # sort_score = total_score + rr_ratio (tiebreaker: cùng điểm thì R/R cao hơn lên trước)
             sort_score = total_score + rr_ratio
 
             action = "🔴 TỪ CHỐI"
             if total_score >= 85:
                 action = "🟢 BREAKOUT HÀNG THẬT: Bắn lệnh Hybrid Executor"
-            elif total_score >= 70:
+            elif total_score >= 65:
                 action = "🟡 THEO DÕI: Cần tích lũy thêm Volume"
 
             trade_setup = {}
-            if total_score >= 70:
+            if total_score >= 65:
                 trade_setup = {
                     "entry": current_price,
                     "stop_loss": sl_price,
