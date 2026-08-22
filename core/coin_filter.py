@@ -14,7 +14,7 @@ except ImportError:
 
 # 1. Danh sách ưu tiên theo dõi cố định + Mở rộng TOP 50 tự động
 MANUAL_SYMBOLS = ["KAITOUSDT", "ENAUSDT", "ZAMAUSDT", "REUSDT", "UNIUSDT", "TUTUSDT", "ADAUSDT", "FILUSDT", "ONDOUSDT"]
-TOP_AUTO_COUNT = 100
+TOP_AUTO_COUNT = 200
 
 # Danh sách Large-Cap ưu tiên cho chế độ Tích Lũy 2-3 Ngày
 LARGECAP_SYMBOLS = ["SOLUSDT", "ETHUSDT", "NEARUSDT", "AVAXUSDT", "LINKUSDT", "TRXUSDT", "BNBUSDT", "DOTUSDT"]
@@ -241,6 +241,15 @@ def process_symbol(symbol):
 
     close_1d = df_1d['Close'].iloc[-1]
     ma25_1d = df_1d['Close'].tail(25).mean()
+    ma50_1d = float(df_1d['Close'].tail(50).mean()) if len(df_1d) >= 50 else float(ma25_1d)
+    
+    rsi_1d = calculate_rsi(df_1d, period=14)
+    
+    tr1 = df_1d['High'] - df_1d['Low']
+    tr2 = abs(df_1d['High'] - df_1d['Close'].shift(1))
+    tr3 = abs(df_1d['Low'] - df_1d['Close'].shift(1))
+    df_1d_tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr_1d = float(df_1d_tr.tail(14).mean())
 
     df_4h['Volatility_%'] = ((df_4h['High'] - df_4h['Low']) / df_4h['Low']) * 100
     avg_vola_4h = df_4h['Volatility_%'].tail(12).mean()
@@ -400,12 +409,13 @@ def process_symbol(symbol):
 
     df_1h['drop_1h_%'] = ((df_1h['High'] - df_1h['Low']) / df_1h['High']) * 100
     max_dump_7d = df_1h['drop_1h_%'].tail(168).max() if len(df_1h) >= 168 else 0.0
-    is_long_term_dump_history = (max_dump_7d > 7.0)
+    # Nới lỏng từ 7.0% lên 10.0% vì altcoin giật 10% trong 1H là bình thường và tốt cho Grid
+    is_long_term_dump_history = (max_dump_7d > 10.0)
 
     # Dùng nến 1H đã đóng (confirmed) thay giá live để tránh nhiễu giữa nến đang mở
     is_1h_broken = close_1h_confirmed < ma25_1h
-    # Buffer 0.3%: chỉ báo gãy 4H khi thực sự dưới MA25 rõ ràng, tránh nhiễu kỹ thuật
-    is_4h_broken = close_4h < (ma25_4h * 0.997)
+    # Nới lỏng buffer từ 0.3% lên 1.0% (0.990) để tránh quét râu giả trên nến 4H
+    is_4h_broken = close_4h < (ma25_4h * 0.990)
     penalty = 0.0
 
     recent_high_1h = df_1h['High'].tail(3).max()
@@ -503,7 +513,8 @@ def process_symbol(symbol):
     elif is_long_term_dump_history:
         phan_loai_grid = "⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)"
         warning_reasons.append(f"⚠️ SAFETY GATE: Tiền Sử Xả Dốc 7D: -{max_dump_7d:.1f}% ")
-    elif score_rau_24h <= 30.0:
+    # Nới lỏng ngưỡng điểm râu từ <= 30.0 xuống <= 20.0 (chấp nhận râu trên dài hơn một chút)
+    elif score_rau_24h <= 20.0:
         phan_loai_grid = "⛔ NÉ GRID (Bơm Xả Râu Dài)"
     elif is_1h_broken and not mode_tich_luy:
         phan_loai_grid = "⛔ NÉ GRID (Cạn Cầu / Trượt Giá)"
@@ -518,13 +529,16 @@ def process_symbol(symbol):
         else:
             phan_loai_grid = "🛡️ GRID HẸP (12 Lưới)"
 
-    total_score_raw = (avg_trend_score * 0.20) + (score_nen_15m * 0.15) + (score_rau_24h * 0.05) + \
-                      (score_flow * 0.20) + (score_giat * 0.15) + (score_vol * 0.05) + \
-                      (score_entry * 0.10) + (score_rsi * 0.10)
+    total_score_raw = (avg_trend_score * 0.15) + (score_nen_15m * 0.15) + (score_rau_24h * 0.15) + \
+                      (score_flow * 0.15) + (score_giat * 0.15) + (score_vol * 0.10) + \
+                      (score_entry * 0.10) + (score_rsi * 0.05)
 
     # Hình phạt định lượng (Dynamic Penalty): Trừng phạt nặng tay các mã gãy cấu trúc
     if "⛔" in phan_loai_grid:
         total_score_raw -= 40.0
+    # Trừ điểm thêm nếu mã đang trong trạng thái Downtrend để không ngoi lên top đầu
+    elif "🔴 DOWNTREND" in trang_thai:
+        total_score_raw -= 20.0
 
     total_score = round(max(0.0, min(100.0, total_score_raw - penalty * 3.0)), 1)
 
@@ -541,22 +555,45 @@ def process_symbol(symbol):
         "🛡️ GRID HẸP (12 Lưới)", "🔥 GRID RỘNG (16 Lưới)",
         "🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)"
     )
-    _rsi_ok      = (rsi_1h < 68.0)
+    _rsi_ok      = (rsi_1h < 70.0)
     _change24_ok = (live_info['change_24h'] < 12.0)
-    # Nới discount: lướt ngắn 1.5→2.5%, tích lũy 3→4%
-    # Tránh loại mã tốt chỉ vì giá chưa về sát MA25 tại thời điểm quét
-    _discount_ok = (discount_pct < 4.0) if mode_tich_luy else (discount_pct < 2.5)
-    # Nến 15M: hạ 50→40 — 1 nến xấu không nên phủ quyết toàn bộ
+    # Phương pháp 3: Nới lỏng Discount lên 10% để bắt sóng (Bot tự chia lưới)
+    _discount_ok = (discount_pct < 10.0)
     _nen_ok      = (score_nen_15m >= 40.0)
-    # Râu: chỉ chặn mức RẤT NẶNG "Chuyên Úp Bô" (< -15%)
-    # Không chặn "Net Giật Râu Âm" (-5% đến -15%) vì hay gây false-positive
     _no_wick_heavy = ("Chuyên Úp Bô" not in warning_str)
 
-    is_safe = _nen_ok and \
-              ("DOWNTREND" not in trang_thai) and \
-              _no_wick_heavy and \
-              ("Tiền Sử Xả Dốc" not in warning_str) and \
-              _is_grid_ok and _rsi_ok and _change24_ok and _discount_ok
+    _macro_trend_ok = close_live >= ma50_1d
+    _macro_rsi_ok   = rsi_1d < 75.0
+    
+    _base_safe = _nen_ok and \
+                 ("DOWNTREND" not in trang_thai) and \
+                 _no_wick_heavy and \
+                 ("Tiền Sử Xả Dốc" not in warning_str) and \
+                 _is_grid_ok and _rsi_ok and _change24_ok and _discount_ok and _macro_rsi_ok
+
+    darvas_floor = 0.0
+    has_darvas_floor = False
+
+    # Phương pháp 2: Gọi Darvas bảo lãnh nếu vượt qua được màng lọc cơ sở (Giảm tải API)
+    if _base_safe:
+        from strategies.macro_grid_darvas import MacroGridDarvas
+        darvas = MacroGridDarvas()
+        darvas_res = darvas.scan_grid_candidate(symbol, '4h')
+        darvas_floor = darvas_res.get('grid_setup', {}).get('lower_price', 0)
+        darvas_score = darvas_res.get('total_score', 0)
+        has_darvas_floor = darvas_floor > 0 and darvas_score >= 60
+
+    _trend_or_darvas_ok = _macro_trend_ok or has_darvas_floor
+    
+    if not _trend_or_darvas_ok:
+        warning_reasons.append("⛔ Gãy Trend 1D & Không Có Móng")
+    elif not _macro_trend_ok and has_darvas_floor:
+        warning_reasons.append("🛡️ Đáy Darvas Bảo Lãnh (Dưới MA50)")
+
+    if not _macro_rsi_ok:
+        warning_reasons.append(f"⛔ RSI 1D Đu Đỉnh ({rsi_1d:.1f})")
+
+    is_safe = _base_safe and _trend_or_darvas_ok
 
     che_do = "🌊 Tích Lũy" if mode_tich_luy else "⚡ Lướt Ngắn"
 
@@ -598,7 +635,10 @@ def process_symbol(symbol):
         "Đ.Trend": round(avg_trend_score, 1),
         "is_safe": is_safe,
         "raw_close": close_live,
-        "raw_limit": buy_target_price
+        "raw_limit": buy_target_price,
+        "ATR_1D": atr_1d,
+        "Darvas_Floor": darvas_floor,
+        "Has_Darvas": has_darvas_floor
     }
 
 def _cw(ch):
@@ -653,7 +693,7 @@ def analyze_early(symbol):
     df_15m = get_klines_live(symbol, "15m", limit=20)
     df_1h  = get_klines_live(symbol, "1h",  limit=30)
     df_4h  = get_klines_live(symbol, "4h",  limit=25)
-    df_1d  = get_klines_live(symbol, "1d",  limit=8)
+    df_1d  = get_klines_live(symbol, "1d",  limit=180)
     if any(x is None or x.empty for x in [df_15m, df_1h, df_4h, df_1d]):
         return None
 
@@ -701,7 +741,7 @@ def analyze_early(symbol):
         score_swing = 0.0
 
     close_now    = float(df_1d['Close'].iloc[-1])
-    price_7d_ago = float(df_1d['Close'].iloc[0])
+    price_7d_ago = float(df_1d['Close'].iloc[0]) if len(df_1d) >= 7 else float(df_1d['Close'].iloc[0])
     change_7d    = ((close_now - price_7d_ago) / price_7d_ago) * 100
     if change_7d >= EARLY_MIN_7D_CHG:
         score_7d = 10.0
@@ -710,18 +750,64 @@ def analyze_early(symbol):
     else:
         score_7d = 0.0
 
-    total_early_score = score_wick + score_rsi + score_ma + score_swing + score_7d
+    # 1. Nén giá 30 ngày (Consolidation)
+    df_1d_30 = df_1d.tail(30)
+    if len(df_1d_30) >= 15:
+        max_high_30d = float(df_1d_30['High'].max())
+        min_low_30d = float(df_1d_30['Low'].min())
+        range_30d = ((max_high_30d - min_low_30d) / min_low_30d) * 100 if min_low_30d > 0 else 999
+    else:
+        range_30d = 999
+        
+    score_consolidation = 0.0
+    if range_30d <= 30.0:
+        score_consolidation = 20.0
+    elif 30.0 < range_30d <= 60.0:
+        score_consolidation = ((60.0 - range_30d) / 30.0) * 20.0
+
+    # 2. Đột biến Volume 1D (Volume Spike) - Điều kiện Nến Xanh
+    last_1d = df_1d.iloc[-1]
+    is_green_1d = float(last_1d['Close']) > float(last_1d['Open'])
+    
+    avg_vol_30d = float(df_1d_30['Quote_Volume'].mean())
+    current_vol_1d = float(last_1d['Quote_Volume'])
+    vol_spike = (current_vol_1d / avg_vol_30d) if avg_vol_30d > 0 else 1.0
+    
+    score_vol_spike = 0.0
+    if is_green_1d and vol_spike >= 3.0:
+        score_vol_spike = 20.0
+    elif is_green_1d and 1.5 < vol_spike < 3.0:
+        score_vol_spike = ((vol_spike - 1.5) / 1.5) * 20.0
+
+    # 3. Chiết khấu từ đỉnh 180D (Drawdown)
+    max_high_180d = float(df_1d['High'].max())
+    drop_180d = ((max_high_180d - close_now) / max_high_180d) * 100 if max_high_180d > 0 else 0
+    score_drawdown = 0.0
+    if drop_180d >= 70.0:
+        score_drawdown = 15.0
+    elif 40.0 < drop_180d < 70.0:
+        score_drawdown = ((drop_180d - 40.0) / 30.0) * 15.0
+
+    # 4. Quy mô dòng tiền (Cap Proxy / Volume Floor đã lọc >= 2M USDT ở đầu hàm)
+    vol_24h_m = info.get('quote_vol', 0) / 1_000_000
+    score_cap = 0.0
+    if 2.0 <= vol_24h_m <= 30.0:
+        score_cap = 10.0
+    elif 30.0 < vol_24h_m <= 100.0:
+        score_cap = ((100.0 - vol_24h_m) / 70.0) * 10.0
+
+    total_early_score = (score_wick * 0.4) + (score_rsi * 0.4) + (score_ma * 0.4) + (score_swing * 0.4) + (score_7d * 0.4) + score_consolidation + score_vol_spike + score_drawdown + score_cap
 
     return {
         'Symbol':      symbol.replace('USDT', ''),
         'Giá':         close_now,
         'Điểm':        round(total_early_score, 1),
         'Rút Chân':    valid_wicks,
-        'Giật 4H':     round(swing_4h, 2),
-        'RSI 1H':      round(rsi_1h, 1),
-        'Vol 24H (M)': round(info['quote_vol'] / 1_000_000, 1),
-        'Tăng 7D':     round(change_7d, 2),
-        'Tăng 24H':    round(info.get('change_24h', 0), 2),
+        'Giật 4H':     round(swing_4h, 1),
+        'Vol 24H (M)': round(vol_24h_m, 1),
+        'Nén 30D':     round(range_30d, 1) if range_30d != 999 else 0.0,
+        'Đột Biến':    round(vol_spike, 1) if is_green_1d else 0.0,
+        'Đỉnh 180D':   round(drop_180d, 1),
     }
 
 def analyze_momentum(symbol):
@@ -855,57 +941,100 @@ def get_filtered_symbols():
 
         df_safe = df_summary[df_summary["is_safe"] == True]
 
-        _WCOLS2 = [7, 12, 16, 14, 28, 6, 14, 14, 18]
+        _WCOLS2 = [7, 21, 10, 11, 28, 5, 11, 11, 10]
         _TW2    = sum(_WCOLS2) + len(_SEP) * (len(_WCOLS2) - 1)
         def fmt_row_safe(cells):
             return _SEP.join(ljust_w(trunc_w(c, w), w) for c, w in zip(cells, _WCOLS2))
 
-        # ── 6. 🏆 BẢNG THAM SỐ GRID (in trước) ─────────────────────────────────
+        # ── 6. 🏆 BẢNG THAM SỐ GRID (HỢP THỂ DARVAS ĐỘNG CƠ 1) ─────────────────
         print("\n" + "=" * _TW2)
-        print(f"🏆 BẢNG THAM SỐ GRID CHUẨN (Dành cho Chiến lược 4 Không - Rủi ro vi mô cao)")
-        print(f"(Lưu ý: Các tham số này chưa được kiểm duyệt qua Động Cơ 1 Darvas)")
+        print(f"🏆 BẢNG THAM SỐ GRID CHUẨN (Hợp Thể Động Cơ 1 Darvas + ATR 1D)")
+        print(f"(Sàn Lưới Darvas siêu cứng / Trần Lưới ATR siêu sóng)")
         print("=" * _TW2)
 
         if df_safe.empty:
             print("⚠️ KHÔNG CÓ MÃ NÀO ĐẠT CHUẨN 4 KHÔNG ĐỂ MỞ GRID LÚC NÀY! THỊ TRƯỜNG ĐANG DẦN BỊ NHIỄU.")
         else:
-            print(fmt_row_safe(["Mã", "Loại Grid", "Giá Live", "Trigger (P)",
-                                "Price Range (Low - High)", "Lưới", "SL", "TP", "Xác Suất Active"]))
+            print(fmt_row_safe(["Mã", "Loại Grid", "Giá Live", "Trigger(P)",
+                                "Price Range (Low - High)", "Lưới", "SL", "TP", "Xác Suất"]))
             print("-" * _TW2)
             for r in df_safe.to_dict(orient='records'):
                 is_tich_luy = "TÍCH LŨY" in r["Phân Loại Grid"]
                 is_wide     = "RỘNG"    in r["Phân Loại Grid"]
                 p_trig      = r["raw_limit"]
+                atr         = r.get("ATR_1D", p_trig * 0.05)
+                
+                floor = r.get("Darvas_Floor", 0)
+                has_darvas_floor = r.get("Has_Darvas", False)
+
                 if is_tich_luy:
-                    num_luoi = "24"
-                    p_low    = p_trig * 0.950
-                    p_up     = p_trig * 1.100
-                    p_sl     = p_low  * 0.970
-                    p_tp     = p_up   * 1.030
-                    xac_suat = "75.0% - 85.0%"
-                    loai     = "TICH_LUY"
+                    grid_step = 0.5 * atr
+                    if has_darvas_floor:
+                        loai = "TÍCH LŨY+DARVAS✅"
+                        p_low = floor
+                        p_up = p_trig + (8.0 * atr)
+                    else:
+                        loai = "TÍCH LŨY (NO MÓNG)"
+                        p_low = p_trig - (6.0 * atr)
+                        p_up = p_trig + (6.0 * atr)
+                    
+                    num_luoi_int = int((p_up - p_low) / grid_step)
+                    num_luoi = str(max(10, num_luoi_int))
+                    p_sl = p_low * 0.970
+                    p_tp = p_up * 1.030
+                    xac_suat = "75% - 85%"
+
                 elif is_wide:
-                    num_luoi = "16"
-                    p_low    = p_trig * 0.980
-                    p_up     = p_low  * 1.10
-                    p_sl     = p_low  * 0.955
-                    p_tp     = p_up   * 1.02
-                    xac_suat = "80.0% - 88.0%"
-                    loai     = "RONG"
+                    grid_step = 0.7 * atr
+                    if has_darvas_floor:
+                        loai = "RỘNG+DARVAS✅"
+                        p_low = floor
+                        p_up = p_trig + (8.0 * atr)
+                    else:
+                        loai = "RỘNG (NO MÓNG)"
+                        p_low = p_trig - (5.6 * atr)
+                        p_up = p_trig + (5.6 * atr)
+
+                    num_luoi_int = int((p_up - p_low) / grid_step)
+                    num_luoi = str(max(10, num_luoi_int))
+                    p_sl = p_low * 0.955
+                    p_tp = p_up * 1.020
+                    xac_suat = "80% - 88%"
+
                 else:
-                    num_luoi = "12"
-                    p_low    = p_trig * 0.985
-                    p_up     = p_low  * 1.084
-                    p_sl     = p_low  * 0.96
-                    p_tp     = p_up   * 1.02
-                    xac_suat = "88.0% - 93.5%"
-                    loai     = "HEP"
+                    grid_step = 0.4 * atr
+                    if has_darvas_floor:
+                        loai = "HẸP+DARVAS✅"
+                        p_low = floor
+                        p_up = p_trig + (4.0 * atr)
+                    else:
+                        loai = "HẸP (NO MÓNG)"
+                        p_low = p_trig - (2.4 * atr)
+                        p_up = p_trig + (2.4 * atr)
+                        
+                    num_luoi_int = int((p_up - p_low) / grid_step)
+                    num_luoi = str(max(8, num_luoi_int))
+                    p_sl = p_low * 0.960
+                    p_tp = p_up * 1.020
+                    xac_suat = "88% - 93%"
                 print(fmt_row_safe([
                     r["Symbol"], loai, r["Giá Live"],
                     smart_price(p_trig),
                     smart_price(p_low) + " - " + smart_price(p_up),
                     num_luoi, smart_price(p_sl), smart_price(p_tp), xac_suat
                 ]))
+
+        if len(df_safe) < 3:
+            print("-" * _TW2)
+            print("💡 Top 3 Mã Tiềm Năng Nhất (Radar Cảnh Giới Dự Phòng):")
+            top3_df = df_summary.sort_values(by="TỔNG", ascending=False).head(3)
+            for r in top3_df.to_dict(orient='records'):
+                sym = r.get("Symbol", "UNK")
+                score = r.get("TỔNG", 0)
+                warn = r.get("Cảnh Báo", "")
+                grid_type = r.get("Phân Loại Grid", "")
+                print(f"  • {sym:<6} | Điểm: {score:<4.1f} | Grid: {grid_type}")
+                print(f"    └─ Lỗi: {warn}")
 
         print("\n" + "=" * _TW + "\n")
 
@@ -925,32 +1054,32 @@ def get_filtered_symbols():
     early_list.sort(key=lambda x: x['Điểm'], reverse=True)
     early_list = early_list[:5]
 
-    _WCOLS3 = [8, 14, 7, 14, 10, 8, 11, 10, 10]
+    _WCOLS3 = [8, 12, 7, 14, 9, 10, 9, 9, 11]
     _TW3    = sum(_WCOLS3) + len(_SEP) * (len(_WCOLS3) - 1)
     def fmt_row3(cells):
         return _SEP.join(ljust_w(trunc_w(c, w), w) for c, w in zip(cells, _WCOLS3))
 
     print("=" * _TW3)
-    print("🌱 BẢNG 3: BẮT SỚM NỀN TĂNG SPOT GRID (TOP 5 MÃ TIỀM NĂNG NHẤT)")
+    print("🌱 BẢNG 3: BẮT SỚM NỀN TĂNG SPOT GRID (KỲ VỌNG X2, X3 - TOP 5 MÃ TIỀM NĂNG)")
     print("=" * _TW3)
 
     if not early_list:
         print("⚠️ KHÔNG TÌM THẤY MÃ NÀO ĐỦ THANH KHOẢN ĐỂ PHÂN TÍCH.")
     else:
         print(fmt_row3(["Mã", "Giá Live", "Điểm", "Rút Chân 15M", "Giật 4H",
-                        "RSI 1H", "Vol 24H", "Tăng 7D", "Tăng 24H"]))
+                        "Vol 24H", "Nén(30D)", "ĐộtBiến", "Đỉnh(180D)"]))
         print("-" * _TW3)
         for r in early_list:
             print(fmt_row3([
                 r['Symbol'],
                 smart_price(r['Giá']),
                 str(r['Điểm']),
-                f"{r['Rút Chân']}/20 nến",
+                f"{r['Rút Chân']}/20",
                 f"{r['Giật 4H']}%",
-                str(r['RSI 1H']),
                 f"${r['Vol 24H (M)']}M",
-                f"{r['Tăng 7D']}%",
-                f"{r['Tăng 24H']}%",
+                f"{r['Nén 30D']}%" if r['Nén 30D'] > 0 else "N/A",
+                f"{r['Đột Biến']}x" if r['Đột Biến'] > 0 else "-",
+                f"-{r['Đỉnh 180D']}%",
             ]))
 
     print("=" * _TW3 + "\n")
@@ -966,7 +1095,7 @@ def get_filtered_symbols():
                        "Đ.RSI", "RSI1H", "Giá Live", "Giá Limit", "Cần Giảm",
                        "Vol24H(M)", "Vola24H%"]))
         print("-" * _TW)
-        for rank, row in enumerate(df_summary.to_dict(orient='records'), 1):
+        for rank, row in enumerate(df_summary.head(30).to_dict(orient='records'), 1):
             print(fmt_row([
                 "#" + str(rank),
                 row["Symbol"],
@@ -1009,7 +1138,9 @@ def get_filtered_symbols():
     safety_map = {}
 
     if summary_list:
-        df_candidates = df_summary[df_summary["TỔNG"] >= 30].head(60)
+        # Bỏ lọc TỔNG >= 30 để truyền toàn bộ TOP 100 mã sang cho các Động cơ.
+        # Điều này rất quan trọng để Động cơ 2 (Panic Sniper) có thể quét được các mã sập mạnh (TỔNG = 0)
+        df_candidates = df_summary
         for r in df_candidates.to_dict(orient='records'):
             sym_ccxt = r['Symbol'] + "/USDT"
             final_symbols.add(r['Symbol'] + "USDT")
