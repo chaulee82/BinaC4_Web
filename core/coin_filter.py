@@ -31,10 +31,11 @@ MOM_MIN_VOL_USDT   = 2_000_000   # Vol 24h tối thiểu để vào pool quét
 MOM_TOP_N          = 8      # Hiển thị Top N kết quả
 
 # Cấu hình Bảng 3 - Bắt sớm nền tăng
-EARLY_MIN_VOL_USDT = 2_000_000  # Vol 24h >= 2 triệu USDT (Hạ xuống để quét được nhiều mã hơn)
+EARLY_MIN_VOL_USDT = 2_000_000  # Vol 24h >= 2 triệu USDT
+EARLY_MAX_VOL_USDT = 50_000_000 # Lọc bỏ Large Cap (> 50M USDT) để dễ x2, x3
 EARLY_MIN_SWING_4H = 4.5         # Biên độ giật 4H >= 4.5%
 EARLY_MAX_SWING_4H = 9.5         # Biên độ giật 4H <= 9.5%
-EARLY_MIN_WICK_CNT = 4           # Tối thiểu 4/20 nến 15M rút chân đẹp
+EARLY_MIN_WICK_CNT = 5           # Tối thiểu 5/20 nến 15M rút chân đẹp (Tăng độ uy tín)
 EARLY_MAX_UPPER_W  = 0.25        # Râu trên <= 25% (Siết chặt hơn)
 EARLY_MIN_7D_CHG   = -2.0        # Cho phép sideway / vừa đảo chiều
 EARLY_MIN_24H_CHG  = -3.0        # Tránh bắt dao rơi (không bắt mã đang xả mạnh trong ngày)
@@ -684,7 +685,11 @@ def smart_price(p):
 
 def analyze_early(symbol):
     info = live_data_map.get(symbol, {})
-    if not info or info.get('quote_vol', 0) < EARLY_MIN_VOL_USDT:
+    if not info:
+        return None
+        
+    vol_24h = info.get('quote_vol', 0)
+    if vol_24h < EARLY_MIN_VOL_USDT or vol_24h > EARLY_MAX_VOL_USDT:
         return None
         
     if info.get('change_24h', 0) < EARLY_MIN_24H_CHG:
@@ -791,12 +796,20 @@ def analyze_early(symbol):
     # 4. Quy mô dòng tiền (Cap Proxy / Volume Floor đã lọc >= 2M USDT ở đầu hàm)
     vol_24h_m = info.get('quote_vol', 0) / 1_000_000
     score_cap = 0.0
-    if 2.0 <= vol_24h_m <= 30.0:
+    if 2.0 <= vol_24h_m <= 15.0:
+        score_cap = 15.0  # Ưu tiên cực mạnh low-mid cap để dễ bay
+    elif 15.0 < vol_24h_m <= 30.0:
         score_cap = 10.0
-    elif 30.0 < vol_24h_m <= 100.0:
-        score_cap = ((100.0 - vol_24h_m) / 70.0) * 10.0
+    elif 30.0 < vol_24h_m <= 50.0:
+        score_cap = ((50.0 - vol_24h_m) / 20.0) * 10.0
 
-    total_early_score = (score_wick * 0.4) + (score_rsi * 0.4) + (score_ma * 0.4) + (score_swing * 0.4) + (score_7d * 0.4) + score_consolidation + score_vol_spike + score_drawdown + score_cap
+    # 5. Màng lọc Cản (MA50 1D)
+    ma50_1d = float(df_1d['Close'].tail(50).mean()) if len(df_1d) >= 50 else float(df_1d['Close'].mean())
+    score_ma50 = 0.0
+    if close_now >= ma50_1d:
+        score_ma50 = 10.0 # Thưởng thêm nếu giá đã vượt qua cản tâm lý MA50 (Bắt đầu uptrend rõ)
+
+    total_early_score = (score_wick * 0.4) + (score_rsi * 0.4) + (score_ma * 0.4) + (score_swing * 0.4) + (score_7d * 0.4) + score_consolidation + score_vol_spike + score_drawdown + score_cap + score_ma50
 
     return {
         'Symbol':      symbol.replace('USDT', ''),
@@ -1085,6 +1098,20 @@ def get_filtered_symbols():
                 f"{r['Đột Biến']}x" if r['Đột Biến'] > 0 else "-",
                 f"-{r['Đỉnh 180D']}%",
             ]))
+            
+            # Tính toán gợi ý Scale Order cho 1000 USDT (10 lệnh -> 100 USDT/lệnh)
+            sym = r['Symbol']
+            gia = float(r['Giá'])
+            
+            # Tối ưu giá vốn: Rải lệnh từ -3% đến -20% so với giá Live
+            upper = round(gia * 0.97, 5)
+            lower = round(gia * 0.80, 5)
+            
+            # Size là TỔNG SỐ LƯỢNG coin (Total Quantity) cho 1000 USDT
+            avg_price = (upper + lower) / 2
+            size = round(1000 / avg_price, 2) if avg_price > 0 else 0
+            
+            print(f"  ↳ ⚙️ Buy Scale Order: [{sym}] cho 1000 USDT, Lower = {lower} | Upper = {upper} | Size = {size} {sym} | Order Count = 10")
 
     print("=" * _TW3 + "\n")
 
