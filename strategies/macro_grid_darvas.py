@@ -8,6 +8,7 @@ Thang điểm: 100 điểm (4 Cửa kiểm duyệt định lượng)
 import ccxt
 import pandas as pd
 import numpy as np
+import pandas_ta as ta
 
 class MacroGridDarvas:
     def __init__(self, exchange=None):
@@ -32,10 +33,10 @@ class MacroGridDarvas:
         bounce_count = len(bounces)
 
         if bounce_count >= 2:
-            score = 30
+            score = 25
             status = f"Sàn bê tông vững chắc ({bounce_count} lần test thành công)"
         elif bounce_count == 1:
-            score = 20
+            score = 15
             status = "Sàn hộp cơ bản (1 lần test)"
         else:
             score = 0
@@ -63,10 +64,10 @@ class MacroGridDarvas:
             score = 0
             status = f"Sóng 24h quá yếu ({vola_24h*100:.1f}%). Khước từ."
         elif 0.15 <= amplitude <= 0.30:
-            score = 25
+            score = 20
             status = f"Biên độ Vàng cho Grid ({amplitude*100:.1f}%)"
         elif (0.10 <= amplitude < 0.15) or (0.30 < amplitude <= 0.45):
-            score = 15
+            score = 10
             status = f"Biên độ khả thi ({amplitude*100:.1f}%)"
         else:
             score = 0
@@ -88,10 +89,10 @@ class MacroGridDarvas:
         position_ratio = (current_price - floor) / (ceiling - floor)
 
         if position_ratio <= 0.45:
-            score = 25
+            score = 15
             status = "Giá nằm ở nửa dưới hộp (Vị thế mua an toàn)"
         elif position_ratio <= 0.55:
-            score = 10
+            score = 5
             status = "Giá lơ lửng giữa tâm hộp (Cân bằng)"
         else:
             score = 0
@@ -135,6 +136,47 @@ class MacroGridDarvas:
             return {"score": 0, "status": f"Lỗi truy xuất Order Book: {str(e)}"}
 
     # =========================================================================
+    # CỬA 5: DẤU CHÂN DÒNG TIỀN VÀ XU HƯỚNG VĨ MÔ (TỐI ĐA 20 ĐIỂM)
+    # =========================================================================
+    def evaluate_macro_and_volume(self, df: pd.DataFrame) -> dict:
+        """
+        Quét dòng tiền trong 4 ngày đi ngang và kiểm tra xu hướng MA50.
+        """
+        score = 0
+        status_parts = []
+
+        # 1. Volume Flow (Max 10)
+        recent_df = df.tail(24) # 24 nến 4H = 4 ngày
+        green_vol = recent_df[recent_df['close'] > recent_df['open']]['volume'].sum()
+        red_vol = recent_df[recent_df['close'] < recent_df['open']]['volume'].sum()
+
+        if green_vol > red_vol * 1.2:
+            score += 10
+            status_parts.append("Dòng tiền gom hàng tốt")
+        elif red_vol > green_vol * 1.2:
+            score += 0
+            status_parts.append("Phe bán áp đảo (Rủi ro phân phối)")
+        else:
+            score += 5
+            status_parts.append("Dòng tiền cân bằng")
+
+        # 2. Macro Trend (Max 10)
+        if len(df) >= 100:
+            ma50_current = df['close'].tail(50).mean()
+            ma50_past = df['close'].iloc[-100:-50].mean()
+            if ma50_current >= ma50_past * 0.95:
+                score += 10
+                status_parts.append("Trend MA50 an toàn")
+            else:
+                score += 0
+                status_parts.append("Trend MA50 cắm đầu gắt (Rủi ro cờ giảm)")
+        else:
+            score += 5
+            status_parts.append("Thiếu data trend dài hạn")
+
+        return {"score": score, "status": " | ".join(status_parts)}
+
+    # =========================================================================
     # ĐIỀU PHỐI VÀ CHẤM ĐIỂM TỔNG HỢP
     # =========================================================================
     def scan_grid_candidate(self, symbol: str, timeframe: str = '4h') -> dict:
@@ -154,8 +196,9 @@ class MacroGridDarvas:
             
             c3 = self.evaluate_current_position(current_price, floor, ceiling)
             c4 = self.analyze_grid_order_book(order_book, floor, ceiling)
+            c5 = self.evaluate_macro_and_volume(df)
 
-            total_score = c1['score'] + c2['score'] + c3['score'] + c4['score']
+            total_score = c1['score'] + c2['score'] + c3['score'] + c4['score'] + c5['score']
             
             # 3. Phân loại thực thi
             if total_score >= 80:
@@ -168,11 +211,15 @@ class MacroGridDarvas:
             # 4. Tính toán thông số Bot Grid (Nếu đủ điều kiện)
             grid_setup = {}
             if total_score >= 60:
+                # Tính ATR 4H
+                df.ta.atr(length=14, append=True)
+                atr_4h = df['ATRr_14'].iloc[-1] if 'ATRr_14' in df.columns else (ceiling - floor) * 0.1
+                
                 grid_setup = {
                     "lower_price": round(floor * 0.99, 5),     # Đặt sàn lưới dưới đáy thực tế 1%
                     "upper_price": round(ceiling * 0.99, 5),   # Đặt trần lưới ngay sát dưới đỉnh cũ
-                    "stop_loss": round(floor * 0.95, 5),       # Cắt lỗ cứng khi thủng sàn 5%
-                    "take_profit": round(ceiling * 1.01, 5),   # TP cao hơn Upper (ceiling) 1 chút
+                    "stop_loss": round(floor - (1.5 * atr_4h), 5),       # Cắt lỗ cứng: Đáy trừ đi 1.5 ATR 4H
+                    "take_profit": round(ceiling + (1.0 * atr_4h), 5),   # TP: Đỉnh cộng thêm 1.0 ATR 4H
                     "grid_quantity": int((c2['amplitude'] * 100) / 0.8) # Cấu hình mỗi lưới ăn khoảng ~0.8%
                 }
 
@@ -185,7 +232,8 @@ class MacroGridDarvas:
                     "Gate_1_Floor": c1['status'],
                     "Gate_2_Amplitude": c2['status'],
                     "Gate_3_Position": c3['status'],
-                    "Gate_4_OrderBook": c4['status']
+                    "Gate_4_OrderBook": c4['status'],
+                    "Gate_5_Macro": c5['status']
                 },
                 "grid_setup": grid_setup
             }

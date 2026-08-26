@@ -3,8 +3,8 @@ import pandas_ta as ta
 from enum import Enum
 
 class GridType(Enum):
-    DARVAS_BASE = "4H_Accumulation"
-    SNIPER_TACTICAL = "1H_Pullback"
+    DEFENSIVE_4H = "GRID 4H (Phòng Thủ)"
+    SNIPER_TACTICAL = "GRID 1H Sniper"
 
 class GridCalculator:
     def __init__(self):
@@ -98,7 +98,7 @@ class GridCalculator:
             
             return {
                 "status": status,
-                "engine": GridType.DARVAS_BASE.value,
+                "engine": GridType.DEFENSIVE_4H.value,
                 "current_price": current_price,
                 "lower_bound": round(lower_bound, 5),
                 "upper_bound": round(upper_bound, 5),

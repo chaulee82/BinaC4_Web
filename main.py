@@ -319,7 +319,7 @@ def main():
                                 buf_pct = setup1h.get('tp_buffer_pct', 0.015) * 100
                                 trigger_buffer_1h = 0.003  # Đệm +0.3% để đón lõng Pullback
                                 trig_1h = entry * (1 + trigger_buffer_1h)
-                                print(f"   ↳ ⚙️GRID 1H : [{sym}] | Trig: {fmt_price(trig_1h)} (Đón lõng Entry) | Lưới: {fmt_price(hard_sl)} - {fmt_price(entry)} ({grids}L) | SL: {fmt_price(hard_sl)} (-{buf_pct:.1f}%) | TP: {fmt_price(hard_tp)} (+{buf_pct:.1f}%)")
+                                print(f"   ↳ ⚙️ GRID 1H : [{sym}] | Trig: {fmt_price(trig_1h)} (Đón lõng Entry) | Lưới: {fmt_price(hard_sl)} - {fmt_price(entry)} ({grids}L) | SL: {fmt_price(hard_sl)} (-{buf_pct:.1f}%) | TP: {fmt_price(hard_tp)} (+{buf_pct:.1f}%)")
                             print("-" * 175)
                 
                 print("=" * 175 + "\n")
@@ -472,7 +472,7 @@ def main():
                                 buf_pct = setup1h.get('tp_buffer_pct', 0.015) * 100
                                 trigger_buffer_1h = 0.003  # Đệm +0.3% để đón lõng Pullback
                                 trig_1h = entry * (1 + trigger_buffer_1h)
-                                print(f"   ↳ ⚙️GRID 1H : [{sym}] | Trig: {fmt_price(trig_1h)} (Đón lõng Entry) | Lưới: {fmt_price(hard_sl)} - {fmt_price(entry)} ({grids}L) | SL: {fmt_price(hard_sl)} (-{buf_pct:.1f}%) | TP: {fmt_price(hard_tp)} (+{buf_pct:.1f}%)")
+                                print(f"   ↳ ⚙️ GRID 1H : [{sym}] | Trig: {fmt_price(trig_1h)} (Đón lõng Entry) | Lưới: {fmt_price(hard_sl)} - {fmt_price(entry)} ({grids}L) | SL: {fmt_price(hard_sl)} (-{buf_pct:.1f}%) | TP: {fmt_price(hard_tp)} (+{buf_pct:.1f}%)")
                             print("-" * 175)
                 
                 print("=" * 175 + "\n")
