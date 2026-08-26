@@ -304,7 +304,20 @@ def main():
                             sl_pct = (entry - sl) / entry * 100
                             tp_pct = (tp - entry) / entry * 100
                             rr_ratio = tp_pct / sl_pct if sl_pct > 0 else 0
+                            
+                            from core.grid_calculator import GridCalculator
+                            gc = GridCalculator()
+                            setup1h = gc.calculate_grid_1h(current_price=entry, entry=entry, stop_loss=sl, tp1=tp)
+                            
                             print(f"   ↳ ⚙️ SETUP: [{sym}] Limit Buy = {fmt_price(entry)} | Chốt Lời (TP) = {fmt_price(tp)} (+{tp_pct:.1f}%) | Cắt Lỗ (SL) = {fmt_price(sl)} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
+                            if setup1h.get('status') == 'SUCCESS':
+                                lower = setup1h.get('lower_bound')
+                                upper = setup1h.get('upper_bound')
+                                grids = setup1h.get('num_grids')
+                                hard_sl = setup1h.get('hard_stop_loss')
+                                hard_tp = setup1h.get('hard_take_profit')
+                                buf_pct = setup1h.get('tp_buffer_pct', 0.015) * 100
+                                print(f"   ↳ ⚙️GRID 1H : [{sym}] | Trig: {fmt_price(entry)} | Lưới: {fmt_price(lower)} - {fmt_price(upper)} ({grids}L) | SL: {fmt_price(hard_sl)} (-{buf_pct:.1f}%) | TP: {fmt_price(hard_tp)} (+{buf_pct:.1f}%)")
                             print("-" * 175)
                 
                 print("=" * 175 + "\n")
@@ -442,8 +455,21 @@ def main():
                             sl_pct = (entry - sl) / entry * 100
                             tp1_pct = (tp1 - entry) / entry * 100
                             rr_ratio = res.get('rr_ratio', (tp1_pct / sl_pct if sl_pct > 0 else 0))
+                            
+                            from core.grid_calculator import GridCalculator
+                            gc = GridCalculator()
+                            setup1h = gc.calculate_grid_1h(current_price=entry, entry=entry, stop_loss=sl, tp1=tp1)
+                            
                             print(f"   ↳ ⚙️ SETUP: [{sym}] Buy Limit = {fmt_price(entry)} | Chốt Lời (TP1) = {fmt_price(tp1)} (+{tp1_pct:.1f}%) | Cắt Lỗ (SL) = {fmt_price(sl)} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
-                    print("-" * 175)
+                            if setup1h.get('status') == 'SUCCESS':
+                                lower = setup1h.get('lower_bound')
+                                upper = setup1h.get('upper_bound')
+                                grids = setup1h.get('num_grids')
+                                hard_sl = setup1h.get('hard_stop_loss')
+                                hard_tp = setup1h.get('hard_take_profit')
+                                buf_pct = setup1h.get('tp_buffer_pct', 0.015) * 100
+                                print(f"   ↳ ⚙️GRID 1H : [{sym}] | Trig: {fmt_price(entry)} | Lưới: {fmt_price(lower)} - {fmt_price(upper)} ({grids}L) | SL: {fmt_price(hard_sl)} (-{buf_pct:.1f}%) | TP: {fmt_price(hard_tp)} (+{buf_pct:.1f}%)")
+                            print("-" * 175)
                 
                 print("=" * 175 + "\n")
                 

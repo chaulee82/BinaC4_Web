@@ -56,3 +56,36 @@ class HybridExecutor:
 
         except Exception as e:
             logger.error(f"❌ Lỗi thực thi Mock Execution: {e}")
+
+    def execute_grid(self, symbol: str, setup: dict):
+        """
+        Mock Execution for Grid setups (Engine 1 / Engine 2).
+        """
+        try:
+            status = setup.get('status')
+            if status == "ERROR":
+                logger.error(f"❌ [GRID_EXECUTOR] Lỗi setup cho {symbol}: {setup.get('message')}")
+                return
+            if status == "WARNING_VOLATILE":
+                logger.warning(f"⚠️ [GRID_EXECUTOR] Biến động lớn cho {symbol} - xem xét tạm ngưng Grid")
+                
+            engine = setup.get('engine')
+            lower = setup.get('lower_bound')
+            upper = setup.get('upper_bound')
+            grids = setup.get('num_grids')
+            step = setup.get('metrics', {}).get('step_pct')
+            
+            if not all([engine, lower, upper, grids]):
+                logger.error(f"❌ [GRID_EXECUTOR] Thiếu thông số Grid cho {symbol}")
+                return
+                
+            msg = f"🕸️ [MOCK GRID] Bật {engine} cho {symbol} | Grids: {grids} | Vùng giá: {fmt_price(lower)} - {fmt_price(upper)} | Bước: {step}%"
+            if engine == "1H_Pullback":
+                sl = setup.get('hard_stop_loss')
+                if sl:
+                    msg += f" | 🛡️ Cắt lỗ cứng: {fmt_price(sl)}"
+                    
+            logger.info(msg)
+            
+        except Exception as e:
+            logger.error(f"❌ Lỗi thực thi Mock Grid Execution: {e}")

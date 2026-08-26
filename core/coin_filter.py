@@ -5,6 +5,7 @@ import unicodedata
 import pandas as pd
 import numpy as np
 import requests
+from core.grid_calculator import GridCalculator
 
 try:
     import cloudscraper
@@ -187,7 +188,7 @@ def process_symbol(symbol):
 
     df_15m = get_klines_live(symbol, "15m", limit=100)
     df_1h = get_klines_live(symbol, "1h", limit=168)
-    df_4h = get_klines_live(symbol, "4h", limit=50)
+    df_4h = get_klines_live(symbol, "4h", limit=120)
     df_1d = get_klines_live(symbol, "1d", limit=30)
 
     if df_15m is None or df_1h is None or df_4h is None or df_1d is None: return None
@@ -612,6 +613,9 @@ def process_symbol(symbol):
     else:
         price_fmt = "{:.4f}"
 
+    gc = GridCalculator()
+    grid_4h_setup = gc.calculate_grid_4h(df_4h, close_live)
+
     return {
         "Symbol": symbol.replace("USDT", ""),
         "Chế Độ": che_do,
@@ -640,7 +644,8 @@ def process_symbol(symbol):
         "raw_limit": buy_target_price,
         "ATR_1D": atr_1d,
         "Darvas_Floor": darvas_floor,
-        "Has_Darvas": has_darvas_floor
+        "Has_Darvas": has_darvas_floor,
+        "grid_4h_setup": grid_4h_setup
     }
 
 def _cw(ch):
@@ -698,7 +703,7 @@ def analyze_early(symbol):
 
     df_15m = get_klines_live(symbol, "15m", limit=20)
     df_1h  = get_klines_live(symbol, "1h",  limit=30)
-    df_4h  = get_klines_live(symbol, "4h",  limit=25)
+    df_4h  = get_klines_live(symbol, "4h",  limit=120)
     df_1d  = get_klines_live(symbol, "1d",  limit=180)
     if any(x is None or x.empty for x in [df_15m, df_1h, df_4h, df_1d]):
         return None
@@ -812,6 +817,9 @@ def analyze_early(symbol):
 
     total_early_score = (score_wick * 0.4) + (score_rsi * 0.4) + (score_ma * 0.4) + (score_swing * 0.4) + (score_7d * 0.4) + score_consolidation + score_vol_spike + score_drawdown + score_cap + score_ma50
 
+    gc = GridCalculator()
+    grid_4h_setup = gc.calculate_grid_4h(df_4h, close_now)
+
     return {
         'Symbol':      symbol.replace('USDT', ''),
         'Giá':         close_now,
@@ -822,6 +830,7 @@ def analyze_early(symbol):
         'Nén 30D':     round(range_30d, 1) if range_30d != 999 else 0.0,
         'Đột Biến':    round(vol_spike, 1) if is_green_1d else 0.0,
         'Đỉnh 180D':   round(drop_180d, 1),
+        'grid_4h_setup': grid_4h_setup,
     }
 
 def analyze_momentum(symbol):
@@ -969,78 +978,56 @@ def get_filtered_symbols():
         if df_safe.empty:
             print("⚠️ KHÔNG CÓ MÃ NÀO ĐẠT CHUẨN 4 KHÔNG ĐỂ MỞ GRID LÚC NÀY! THỊ TRƯỜNG ĐANG DẦN BỊ NHIỄU.")
         else:
-            print(fmt_row_safe(["Mã", "Loại Grid", "Giá Live", "Trigger(P)",
-                                "Price Range (Low - High)", "Bước Lưới(%)", "Lưới", "SL", "TP", "Xác Suất"]))
             print("-" * _TW2)
+            gc = GridCalculator()
             for r in df_safe.to_dict(orient='records'):
                 is_tich_luy = "TÍCH LŨY" in r["Phân Loại Grid"]
                 is_wide     = "RỘNG"    in r["Phân Loại Grid"]
+                sym         = r["Symbol"]
                 p_trig      = r["raw_limit"]
                 atr         = r.get("ATR_1D", p_trig * 0.05)
-                
-                floor = r.get("Darvas_Floor", 0)
+                floor       = r.get("Darvas_Floor", 0)
                 has_darvas_floor = r.get("Has_Darvas", False)
-
-                if is_tich_luy:
-                    grid_step = 0.5 * atr
-                    if has_darvas_floor:
-                        loai = "TÍCH LŨY+DARVAS✅"
-                        p_low = floor
-                        p_up = p_trig + (8.0 * atr)
-                    else:
-                        loai = "TÍCH LŨY (NO MÓNG)"
-                        p_low = p_trig - (6.0 * atr)
-                        p_up = p_trig + (6.0 * atr)
-                    
-                    num_luoi_int = int((p_up - p_low) / grid_step)
-                    num_luoi = str(max(10, num_luoi_int))
-                    p_sl = p_low * 0.970
-                    p_tp = p_up * 1.030
-                    xac_suat = "75% - 85%"
-
-                elif is_wide:
-                    grid_step = 0.7 * atr
-                    if has_darvas_floor:
-                        loai = "RỘNG+DARVAS✅"
-                        p_low = floor
-                        p_up = p_trig + (8.0 * atr)
-                    else:
-                        loai = "RỘNG (NO MÓNG)"
-                        p_low = p_trig - (5.6 * atr)
-                        p_up = p_trig + (5.6 * atr)
-
-                    num_luoi_int = int((p_up - p_low) / grid_step)
-                    num_luoi = str(max(10, num_luoi_int))
-                    p_sl = p_low * 0.955
-                    p_tp = p_up * 1.020
-                    xac_suat = "80% - 88%"
-
-                else:
-                    grid_step = 0.4 * atr
-                    if has_darvas_floor:
-                        loai = "HẸP+DARVAS✅"
-                        p_low = floor
-                        p_up = p_trig + (4.0 * atr)
-                    else:
-                        loai = "HẸP (NO MÓNG)"
-                        p_low = p_trig - (2.4 * atr)
-                        p_up = p_trig + (2.4 * atr)
-                        
-                    num_luoi_int = int((p_up - p_low) / grid_step)
-                    num_luoi = str(max(8, num_luoi_int))
-                    p_sl = p_low * 0.960
-                    p_tp = p_up * 1.020
-                    xac_suat = "88% - 93%"
                 
-                step_pct = (grid_step / p_trig) * 100 if p_trig > 0 else 0
-                step_str = f"{step_pct:.2f}%"
-
-                print(fmt_row_safe([
-                    r["Symbol"], loai, r["Giá Live"],
-                    smart_price(p_trig),
-                    smart_price(p_low) + " - " + smart_price(p_up),
-                    step_str, num_luoi, smart_price(p_sl), smart_price(p_tp), xac_suat
-                ]))
+                if is_tich_luy:
+                    # BẢNG 1: ĐỘNG CƠ 1 (Darvas Grid - Áp dụng Grid 4H)
+                    grid_setup = r.get('grid_4h_setup', {})
+                    if grid_setup.get('status') in ["SUCCESS", "WARNING_VOLATILE"]:
+                        lower = grid_setup.get('lower_bound', p_trig * 0.8)
+                        upper = grid_setup.get('upper_bound', p_trig * 1.2)
+                        num_grids = grid_setup.get('num_grids', 25)
+                        sl = grid_setup.get('hard_stop_loss', lower * 0.97)
+                        tp = grid_setup.get('hard_take_profit', upper * 1.05)
+                        tp_buf = grid_setup.get('tp_buffer_pct', 0.05) * 100
+                        
+                        print(f"  ↳ ⚙️ GRID 4H: [{sym}] | Trig: {smart_price(p_trig)} | Lưới: {smart_price(lower)} - {smart_price(upper)} ({num_grids}L) | SL: {smart_price(sl)} (SL Cứng) | TP: {smart_price(tp)} (+{tp_buf:.1f}%)")
+                    else:
+                        error_msg = grid_setup.get('message', 'Không rõ lỗi')
+                        print(f"  ↳ ⚙️ GRID 4H: [{sym}] - Lỗi tính toán: {error_msg}")
+                        
+                else:
+                    # BẢNG 2/4: ĐỘNG CƠ 2 (Pullback Sniper - Áp dụng Grid 1H)
+                    if is_wide:
+                        sl_price = floor if has_darvas_floor else p_trig - (5.6 * atr)
+                        tp_price = p_trig + (8.0 * atr) if has_darvas_floor else p_trig + (5.6 * atr)
+                    else:
+                        sl_price = floor if has_darvas_floor else p_trig - (2.4 * atr)
+                        tp_price = p_trig + (4.0 * atr) if has_darvas_floor else p_trig + (2.4 * atr)
+                        
+                    setup1h = gc.calculate_grid_1h(current_price=r['raw_close'], entry=p_trig, stop_loss=sl_price, tp1=tp_price)
+                    
+                    if setup1h.get('status') == "SUCCESS":
+                        lower = setup1h.get('lower_bound', sl_price)
+                        upper = setup1h.get('upper_bound', tp_price)
+                        num_grids = setup1h.get('num_grids', 15)
+                        hard_sl = setup1h.get('hard_stop_loss', sl_price)
+                        hard_tp = setup1h.get('hard_take_profit', tp_price)
+                        buf_pct = setup1h.get('tp_buffer_pct', 0.015) * 100
+                        
+                        print(f"  ↳ ⚙️ GRID 1H: [{sym}] | Kích hoạt Limit: {smart_price(p_trig)} | Rải xuống SL: {smart_price(lower)} ({num_grids}L) | SL Cứng: {smart_price(hard_sl)} (-{buf_pct:.1f}%) | TP: {smart_price(hard_tp)} (+{buf_pct:.1f}%)")
+                    else:
+                        error_msg = setup1h.get('message', 'Không rõ lỗi')
+                        print(f"  ↳ ⚙️ GRID 1H: [{sym}] - Lỗi tính toán: {error_msg}")
 
         if len(df_safe) < 3:
             print("-" * _TW2)
@@ -1104,15 +1091,24 @@ def get_filtered_symbols():
             sym = r['Symbol']
             gia = float(r['Giá'])
             
-            # Tối ưu giá vốn: Rải lệnh từ -3% đến -20% so với giá Live
-            upper = round(gia * 0.97, 5)
-            lower = round(gia * 0.80, 5)
-            
-            # Size là TỔNG SỐ LƯỢNG coin (Total Quantity) cho 1000 USDT
-            avg_price = (upper + lower) / 2
-            size = round(1000 / avg_price, 2) if avg_price > 0 else 0
-            
-            print(f"  ↳ ⚙️ Buy Scale Order: [{sym}] cho 1000 USDT, Lower = {lower} | Upper = {upper} | Size = {size} {sym} | Order Count = 10")
+            grid_setup = r.get('grid_4h_setup', {})
+            if grid_setup.get('status') in ["SUCCESS", "WARNING_VOLATILE"]:
+                upper = grid_setup.get('upper_bound', gia * 0.97)
+                lower = grid_setup.get('lower_bound', gia * 0.80)
+                num_grids = grid_setup.get('num_grids', 10)
+                
+                warning_tag = "[⚠️ VOLATILE]" if grid_setup.get('status') == "WARNING_VOLATILE" else ""
+                
+                trig = r.get('Giá Mua Limit', gia)
+                sl = grid_setup.get('hard_stop_loss', lower * 0.97)
+                tp = grid_setup.get('hard_take_profit', upper * 1.05)
+                tp_buf = grid_setup.get('tp_buffer_pct', 0.05) * 100
+                
+                print(f"  ↳ ⚙️GRID 4H {warning_tag}: [{sym}] | Trig: {trig} | Lưới: {lower} - {upper} ({num_grids}L) | SL: {sl:.5f} (SL Cứng) | TP: {tp:.5f} (+{tp_buf:.1f}%)")
+            else:
+                # Tránh in ra Fallback, thay vào đó cảnh báo
+                error_msg = grid_setup.get('message', 'Không rõ lỗi')
+                print(f"  ↳ ⚙️GRID 4H: [{sym}] - Lỗi tính toán: {error_msg}")
 
     print("=" * _TW3 + "\n")
 
