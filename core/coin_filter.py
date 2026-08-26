@@ -1000,7 +1000,8 @@ def get_filtered_symbols():
                         tp = grid_setup.get('hard_take_profit', upper * 1.05)
                         tp_buf = grid_setup.get('tp_buffer_pct', 0.05) * 100
                         
-                        print(f"  ↳ ⚙️ GRID 4H: [{sym}] | Trig: {smart_price(p_trig)} | Lưới: {smart_price(lower)} - {smart_price(upper)} ({num_grids}L) | SL: {smart_price(sl)} (SL Cứng) | TP: {smart_price(tp)} (+{tp_buf:.1f}%)")
+                        current_price_live = r.get('raw_close', p_trig)
+                        print(f"  ↳ ⚙️ GRID 4H: [{sym}] | Trig: {smart_price(current_price_live)} | Lưới: {smart_price(lower)} - {smart_price(upper)} ({num_grids}L) | SL: {smart_price(sl)} (SL Cứng) | TP: {smart_price(tp)} (+{tp_buf:.1f}%)")
                     else:
                         error_msg = grid_setup.get('message', 'Không rõ lỗi')
                         print(f"  ↳ ⚙️ GRID 4H: [{sym}] - Lỗi tính toán: {error_msg}")
@@ -1024,7 +1025,7 @@ def get_filtered_symbols():
                         hard_tp = setup1h.get('hard_take_profit', tp_price)
                         buf_pct = setup1h.get('tp_buffer_pct', 0.015) * 100
                         
-                        print(f"  ↳ ⚙️ GRID 1H: [{sym}] | Kích hoạt Limit: {smart_price(p_trig)} | Rải xuống SL: {smart_price(lower)} ({num_grids}L) | SL Cứng: {smart_price(hard_sl)} (-{buf_pct:.1f}%) | TP: {smart_price(hard_tp)} (+{buf_pct:.1f}%)")
+                        print(f"  ↳ ⚙️ GRID 1H: [{sym}] | Trig: {smart_price(p_trig)} | Lưới: {smart_price(lower)} - {smart_price(upper)} ({num_grids}L) | SL: {smart_price(hard_sl)} (-{buf_pct:.1f}%) | TP: {smart_price(hard_tp)} (+{buf_pct:.1f}%)")
                     else:
                         error_msg = setup1h.get('message', 'Không rõ lỗi')
                         print(f"  ↳ ⚙️ GRID 1H: [{sym}] - Lỗi tính toán: {error_msg}")
