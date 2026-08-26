@@ -1001,7 +1001,9 @@ def get_filtered_symbols():
                         tp_buf = grid_setup.get('tp_buffer_pct', 0.05) * 100
                         
                         current_price_live = r.get('raw_close', p_trig)
-                        print(f"  ↳ ⚙️ GRID 4H: [{sym}] | Trig: {smart_price(upper)} (Giá lọt hộp) | Lưới: {smart_price(lower)} - {smart_price(upper)} ({num_grids}L) | SL: {smart_price(sl)} (SL Cứng) | TP: {smart_price(tp)} (+{tp_buf:.1f}%)")
+                        trigger_buffer_4h = 0.005  # Đệm +0.5% để chống front-run
+                        trig_4h = upper * (1 + trigger_buffer_4h)
+                        print(f"  ↳ ⚙️ GRID 4H: [{sym}] | Trig: {smart_price(trig_4h)} (Đón lõng hộp) | Lưới: {smart_price(lower)} - {smart_price(upper)} ({num_grids}L) | SL: {smart_price(sl)} (SL Cứng) | TP: {smart_price(tp)} (+{tp_buf:.1f}%)")
                     else:
                         error_msg = grid_setup.get('message', 'Không rõ lỗi')
                         print(f"  ↳ ⚙️ GRID 4H: [{sym}] - Lỗi tính toán: {error_msg}")
@@ -1025,7 +1027,9 @@ def get_filtered_symbols():
                         hard_tp = setup1h.get('hard_take_profit', tp_price)
                         buf_pct = setup1h.get('tp_buffer_pct', 0.015) * 100
                         
-                        print(f"  ↳ ⚙️ GRID 1H: [{sym}] | Trig: {smart_price(p_trig)} (Giá hồi về Entry) | Lưới: {smart_price(hard_sl)} - {smart_price(p_trig)} ({num_grids}L) | SL: {smart_price(hard_sl)} (-{buf_pct:.1f}%) | TP: {smart_price(hard_tp)} (+{buf_pct:.1f}%)")
+                        trigger_buffer_1h = 0.003  # Đệm +0.3% để đón lõng Pullback
+                        trig_1h = p_trig * (1 + trigger_buffer_1h)
+                        print(f"  ↳ ⚙️ GRID 1H: [{sym}] | Trig: {smart_price(trig_1h)} (Đón lõng Entry) | Lưới: {smart_price(hard_sl)} - {smart_price(p_trig)} ({num_grids}L) | SL: {smart_price(hard_sl)} (-{buf_pct:.1f}%) | TP: {smart_price(hard_tp)} (+{buf_pct:.1f}%)")
                     else:
                         error_msg = setup1h.get('message', 'Không rõ lỗi')
                         print(f"  ↳ ⚙️ GRID 1H: [{sym}] - Lỗi tính toán: {error_msg}")
@@ -1100,12 +1104,13 @@ def get_filtered_symbols():
                 
                 warning_tag = "[⚠️ VOLATILE]" if grid_setup.get('status') == "WARNING_VOLATILE" else ""
                 
-                trig = upper
+                trigger_buffer_4h = 0.005  # Đệm +0.5% để chống front-run
+                trig = upper * (1 + trigger_buffer_4h)
                 sl = grid_setup.get('hard_stop_loss', lower * 0.97)
                 tp = grid_setup.get('hard_take_profit', upper * 1.05)
                 tp_buf = grid_setup.get('tp_buffer_pct', 0.05) * 100
                 
-                print(f"  ↳ ⚙️GRID 4H {warning_tag}: [{sym}] | Trig: {trig} (Giá lọt hộp) | Lưới: {lower} - {upper} ({num_grids}L) | SL: {sl:.5f} (SL Cứng) | TP: {tp:.5f} (+{tp_buf:.1f}%)")
+                print(f"  ↳ ⚙️GRID 4H {warning_tag}: [{sym}] | Trig: {trig:.5f} (Đón lõng hộp) | Lưới: {lower} - {upper} ({num_grids}L) | SL: {sl:.5f} (SL Cứng) | TP: {tp:.5f} (+{tp_buf:.1f}%)")
             else:
                 # Tránh in ra Fallback, thay vào đó cảnh báo
                 error_msg = grid_setup.get('message', 'Không rõ lỗi')
