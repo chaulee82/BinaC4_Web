@@ -624,10 +624,16 @@ def process_symbol(symbol):
         logging.debug(f"[Hybrid Override - Bảng 1] {symbol}: Darvas Score {darvas_score} >= 60. Ghi đè thông số GRID 4H cũ: {grid_4h_setup}")
         final_grid_setup = {
             "status": "SUCCESS",
-            "engine": "GRID Darvas (Tích Lũy)",
-            "lower_bound": darvas_setup.get('lower_price'),
-            "upper_bound": darvas_setup.get('upper_price'),
-            "num_grids": darvas_setup.get('grid_quantity'),
+            "engine": "GRID Darvas (Lưới Kép)",
+            "is_dual_grid": darvas_setup.get('is_dual_grid', False),
+            "g1_lower": darvas_setup.get('g1_lower'),
+            "g1_upper": darvas_setup.get('g1_upper'),
+            "g1_grids": darvas_setup.get('g1_grids'),
+            "g1_capital_pct": darvas_setup.get('g1_capital_pct'),
+            "g2_lower": darvas_setup.get('g2_lower'),
+            "g2_upper": darvas_setup.get('g2_upper'),
+            "g2_grids": darvas_setup.get('g2_grids'),
+            "g2_capital_pct": darvas_setup.get('g2_capital_pct'),
             "hard_stop_loss": darvas_setup.get('stop_loss'),
             "hard_take_profit": darvas_setup.get('take_profit'),
             "tp_buffer_pct": 0.05
@@ -855,10 +861,16 @@ def analyze_early(symbol):
         logging.debug(f"[Hybrid Override] {symbol}: Darvas Score {darvas_score} >= 60. Ghi đè thông số GRID 4H cũ: {grid_4h_setup}")
         final_grid_setup = {
             "status": "SUCCESS",
-            "engine": "GRID Darvas (Tích Lũy)",
-            "lower_bound": darvas_setup.get('lower_price'),
-            "upper_bound": darvas_setup.get('upper_price'),
-            "num_grids": darvas_setup.get('grid_quantity'),
+            "engine": "GRID Darvas (Lưới Kép)",
+            "is_dual_grid": darvas_setup.get('is_dual_grid', False),
+            "g1_lower": darvas_setup.get('g1_lower'),
+            "g1_upper": darvas_setup.get('g1_upper'),
+            "g1_grids": darvas_setup.get('g1_grids'),
+            "g1_capital_pct": darvas_setup.get('g1_capital_pct'),
+            "g2_lower": darvas_setup.get('g2_lower'),
+            "g2_upper": darvas_setup.get('g2_upper'),
+            "g2_grids": darvas_setup.get('g2_grids'),
+            "g2_capital_pct": darvas_setup.get('g2_capital_pct'),
             "hard_stop_loss": darvas_setup.get('stop_loss'),
             "hard_take_profit": darvas_setup.get('take_profit'),
             "tp_buffer_pct": 0.05
@@ -1043,18 +1055,27 @@ def get_filtered_symbols():
                     # BẢNG 1: ĐỘNG CƠ 1 (Darvas Grid - Áp dụng Grid 4H)
                     grid_setup = r.get('grid_setup', {})
                     if grid_setup.get('status') in ["SUCCESS", "WARNING_VOLATILE"]:
-                        lower = grid_setup.get('lower_bound', p_trig * 0.8)
-                        upper = grid_setup.get('upper_bound', p_trig * 1.2)
-                        num_grids = grid_setup.get('num_grids', 25)
-                        sl = grid_setup.get('hard_stop_loss', lower * 0.97)
-                        tp = grid_setup.get('hard_take_profit', upper * 1.05)
-                        tp_buf = grid_setup.get('tp_buffer_pct', 0.05) * 100
-                        engine = grid_setup.get('engine', 'GRID 4H')
-                        
-                        current_price_live = r.get('raw_close', p_trig)
-                        trigger_buffer_4h = 0.005  # Đệm +0.5% để chống front-run
-                        trig_4h = upper * (1 + trigger_buffer_4h)
-                        print(f"  ↳ ⚙️ {engine}: [{sym}] | Trig: {smart_price(trig_4h)} (Đón lõng hộp) | Lưới: {smart_price(lower)} - {smart_price(upper)} ({num_grids}L) | SL: {smart_price(sl)} (SL Cứng) | TP: {smart_price(tp)} (+{tp_buf:.1f}%)")
+                        if grid_setup.get('is_dual_grid'):
+                            g1_l, g1_u, g1_n, g1_cap = grid_setup.get('g1_lower'), grid_setup.get('g1_upper'), grid_setup.get('g1_grids'), grid_setup.get('g1_capital_pct')
+                            g2_l, g2_u, g2_n, g2_cap = grid_setup.get('g2_lower'), grid_setup.get('g2_upper'), grid_setup.get('g2_grids'), grid_setup.get('g2_capital_pct')
+                            sl, tp = grid_setup.get('hard_stop_loss'), grid_setup.get('hard_take_profit')
+                            
+                            trig_g1 = g1_u * 1.005
+                            print(f"  ↳ ⚙️ GRID Darvas [Gom Đáy {g1_cap}%]: [{sym}] | Trig: {smart_price(trig_g1)} | Lưới: {smart_price(g1_l)} - {smart_price(g1_u)} ({g1_n}L) | SL: {smart_price(sl)} | TP: N/A")
+                            print(f"  ↳ ⚙️ GRID Darvas [Hứng Breakout {g2_cap}%]: [{sym}] | Trig: {smart_price(g2_l)} | Lưới: {smart_price(g2_l)} - {smart_price(g2_u)} ({g2_n}L) | SL: {smart_price(sl)} | TP: {smart_price(tp)}")
+                        else:
+                            lower = grid_setup.get('lower_bound', p_trig * 0.8)
+                            upper = grid_setup.get('upper_bound', p_trig * 1.2)
+                            num_grids = grid_setup.get('num_grids', 25)
+                            sl = grid_setup.get('hard_stop_loss', lower * 0.97)
+                            tp = grid_setup.get('hard_take_profit', upper * 1.05)
+                            tp_buf = grid_setup.get('tp_buffer_pct', 0.05) * 100
+                            engine = grid_setup.get('engine', 'GRID 4H')
+                            
+                            current_price_live = r.get('raw_close', p_trig)
+                            trigger_buffer_4h = 0.005  # Đệm +0.5% để chống front-run
+                            trig_4h = upper * (1 + trigger_buffer_4h)
+                            print(f"  ↳ ⚙️ {engine}: [{sym}] | Trig: {smart_price(trig_4h)} (Đón lõng hộp) | Lưới: {smart_price(lower)} - {smart_price(upper)} ({num_grids}L) | SL: {smart_price(sl)} (SL Cứng) | TP: {smart_price(tp)} (+{tp_buf:.1f}%)")
                     else:
                         error_msg = grid_setup.get('message', 'Không rõ lỗi')
                         engine = grid_setup.get('engine', 'GRID 4H')
@@ -1150,20 +1171,27 @@ def get_filtered_symbols():
             
             grid_setup = r.get('grid_setup', {})
             if grid_setup.get('status') in ["SUCCESS", "WARNING_VOLATILE"]:
-                upper = grid_setup.get('upper_bound', gia * 0.97)
-                lower = grid_setup.get('lower_bound', gia * 0.80)
-                num_grids = grid_setup.get('num_grids', 10)
-                engine = grid_setup.get('engine', 'GRID 4H')
-                
                 warning_tag = "[⚠️ VOLATILE]" if grid_setup.get('status') == "WARNING_VOLATILE" else ""
-                
-                trigger_buffer_4h = 0.005  # Đệm +0.5% để chống front-run
-                trig = upper * (1 + trigger_buffer_4h)
-                sl = grid_setup.get('hard_stop_loss', lower * 0.97)
-                tp = grid_setup.get('hard_take_profit', upper * 1.05)
-                tp_buf = grid_setup.get('tp_buffer_pct', 0.05) * 100
-                
-                print(f"  ↳ ⚙️ {engine} {warning_tag}: [{sym}] | Trig: {trig:.5f} (Đón lõng hộp) | Lưới: {lower} - {upper} ({num_grids}L) | SL: {sl:.5f} (SL Cứng) | TP: {tp:.5f} (+{tp_buf:.1f}%)")
+                if grid_setup.get('is_dual_grid'):
+                    g1_l, g1_u, g1_n, g1_cap = grid_setup.get('g1_lower'), grid_setup.get('g1_upper'), grid_setup.get('g1_grids'), grid_setup.get('g1_capital_pct')
+                    g2_l, g2_u, g2_n, g2_cap = grid_setup.get('g2_lower'), grid_setup.get('g2_upper'), grid_setup.get('g2_grids'), grid_setup.get('g2_capital_pct')
+                    sl, tp = grid_setup.get('hard_stop_loss'), grid_setup.get('hard_take_profit')
+                    trig_g1 = g1_u * 1.005
+                    print(f"  ↳ ⚙️ GRID Darvas [Gom Đáy {g1_cap}%] {warning_tag}: [{sym}] | Trig: {trig_g1:.5f} | Lưới: {g1_l} - {g1_u} ({g1_n}L) | SL: {sl:.5f} | TP: N/A")
+                    print(f"  ↳ ⚙️ GRID Darvas [Hứng Breakout {g2_cap}%] {warning_tag}: [{sym}] | Trig: {g2_l:.5f} | Lưới: {g2_l} - {g2_u} ({g2_n}L) | SL: {sl:.5f} | TP: {tp:.5f}")
+                else:
+                    upper = grid_setup.get('upper_bound', gia * 0.97)
+                    lower = grid_setup.get('lower_bound', gia * 0.80)
+                    num_grids = grid_setup.get('num_grids', 10)
+                    engine = grid_setup.get('engine', 'GRID 4H')
+                    
+                    trigger_buffer_4h = 0.005  # Đệm +0.5% để chống front-run
+                    trig = upper * (1 + trigger_buffer_4h)
+                    sl = grid_setup.get('hard_stop_loss', lower * 0.97)
+                    tp = grid_setup.get('hard_take_profit', upper * 1.05)
+                    tp_buf = grid_setup.get('tp_buffer_pct', 0.05) * 100
+                    
+                    print(f"  ↳ ⚙️ {engine} {warning_tag}: [{sym}] | Trig: {trig:.5f} (Đón lõng hộp) | Lưới: {lower} - {upper} ({num_grids}L) | SL: {sl:.5f} (SL Cứng) | TP: {tp:.5f} (+{tp_buf:.1f}%)")
             else:
                 # Tránh in ra Fallback, thay vào đó cảnh báo
                 error_msg = grid_setup.get('message', 'Không rõ lỗi')

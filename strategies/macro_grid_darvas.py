@@ -214,13 +214,28 @@ class MacroGridDarvas:
                 # Tính ATR 4H
                 df.ta.atr(length=14, append=True)
                 atr_4h = df['ATRr_14'].iloc[-1] if 'ATRr_14' in df.columns else (ceiling - floor) * 0.1
+                g1_lower = floor * 0.99
+                g1_upper = ceiling * 0.99
+                g1_amp = (g1_upper - g1_lower) / g1_lower
+                
+                g2_lower = ceiling * 1.0
+                g2_upper = ceiling + (3.0 * atr_4h)
+                g2_amp = (g2_upper - g2_lower) / g2_lower if g2_lower > 0 else 0
                 
                 grid_setup = {
-                    "lower_price": round(floor * 0.99, 5),     # Đặt sàn lưới dưới đáy thực tế 1%
-                    "upper_price": round(ceiling * 0.99, 5),   # Đặt trần lưới ngay sát dưới đỉnh cũ
-                    "stop_loss": round(floor - (1.5 * atr_4h), 5),       # Cắt lỗ cứng: Đáy trừ đi 1.5 ATR 4H
-                    "take_profit": round(ceiling + (1.0 * atr_4h), 5),   # TP: Đỉnh cộng thêm 1.0 ATR 4H
-                    "grid_quantity": int((c2['amplitude'] * 100) / 0.8) # Cấu hình mỗi lưới ăn khoảng ~0.8%
+                    "is_dual_grid": True,
+                    "g1_lower": round(g1_lower, 5),
+                    "g1_upper": round(g1_upper, 5),
+                    "g1_grids": max(5, int((g1_amp * 100) / 0.8)),
+                    "g1_capital_pct": 70,
+                    
+                    "g2_lower": round(g2_lower, 5),
+                    "g2_upper": round(g2_upper, 5),
+                    "g2_grids": max(5, int((g2_amp * 100) / 0.8)),
+                    "g2_capital_pct": 30,
+                    
+                    "stop_loss": round(floor - (1.5 * atr_4h), 5),
+                    "take_profit": round(g2_upper + (1.0 * atr_4h), 5)
                 }
 
             return {
