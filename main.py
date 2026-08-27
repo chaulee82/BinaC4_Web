@@ -131,13 +131,7 @@ def main():
                 print(f"📋 Danh mục watchlist: {len(watchlist)} mã đủ điều kiện vào động cơ phân tích.")
             print()
 
-            # ── Giới hạn watchlist xuống Top N mã trước khi chạy các bước tốn kém ──
-            # Coin_filter đã sắp xếp theo điểm từ cao → thấp, nên slice đầu = Top mã tốt nhất.
-            # Early Warning, DC1-DC4 chỉ cần phân tích sâu trên các mã có điểm cao.
             ENGINE_TOP_N = settings.get("trading", {}).get("engine_top_n", 20)
-            if watchlist and len(watchlist) > ENGINE_TOP_N:
-                logger.info(f"⚡ Giới hạn phân tích sâu: {len(watchlist)} → Top {ENGINE_TOP_N} mã (cấu hình engine_top_n).")
-                watchlist = watchlist[:ENGINE_TOP_N]
 
             if watchlist:
                 # =========================================================
@@ -155,9 +149,22 @@ def main():
                 
                 def _check_ew(sym):
                     try:
-                        candles = exchange.fetch_ohlcv(sym, '1h', limit=50)
-                        df = pd.DataFrame(candles, columns=['timestamp','open','high','low','close','volume'])
-                        res = early_warning.check_warning_level(df)
+                        from core.coin_filter import fetch_binance_api
+                        sym_api = sym.replace('/', '')
+                        
+                        def fetch_df(interval, limit=50):
+                            data = fetch_binance_api(f"/api/v3/klines?symbol={sym_api}&interval={interval}&limit={limit}")
+                            if not data:
+                                raise Exception(f"Khong the lay du lieu {interval} tu Binance API")
+                            
+                            candles = [[int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4]), float(x[5])] for x in data]
+                            return pd.DataFrame(candles, columns=['timestamp','open','high','low','close','volume'])
+                        
+                        df_1h = fetch_df('1h')
+                        df_4h = fetch_df('4h')
+                        df_1d = fetch_df('1d')
+                        
+                        res = early_warning.check_warning_level(df_1h, df_4h, df_1d)
                         res['symbol'] = sym
                         return res
                     except Exception as e:
@@ -169,12 +176,12 @@ def main():
                 safe_watchlist = [r['symbol'] for r in warning_results if r.get('level', 0) < 2]
                 
                 # In Bảng Cảnh Báo
-                print("\n" + "!" * 115)
+                print("\n" + "!" * 125)
                 print(f"🚨 HỆ THỐNG CẢNH BÁO SỚM & RỦI RO SẬP (EARLY WARNING MATRIX)")
-                print("!" * 115)
+                print("!" * 125)
                 # In bảng theo chuẩn Markdown
-                print(f"| {'Mức Độ (Level)':<40} | {'Tín Hiệu (Trigger)':<35} | {'Danh Sách Mã (Symbols)'}")
-                print(f"|{'-'*42}|{'-'*37}|{'-'*60}")
+                print(f"| {'Mức Độ (Level)':<50} | {'Tín Hiệu (Trigger)':<40} | {'Danh Sách Mã (Symbols)'}")
+                print(f"|{'-'*52}|{'-'*42}|{'-'*60}")
                 
                 filtered_warnings = [r for r in warning_results if r.get('level') in (1, 2, 3)]
                 if filtered_warnings:
@@ -185,17 +192,26 @@ def main():
                         key = (res.get('label', ''), res.get('trigger', ''))
                         grouped[key].append(res.get('symbol', '').replace('/USDT', ''))
                     
+                    total_scanned = len(watchlist)
                     for (lbl, trig), symbols in grouped.items():
                         # Nối danh sách các mã
                         sym_str = ", ".join(symbols)
+                        count = len(symbols)
+                        lbl_with_count = f"{lbl} ({count}/{total_scanned})"
                         # In thành 1 hàng markdown
-                        print(f"| {lbl:<40} | {trig:<35} | {sym_str}")
+                        print(f"| {lbl_with_count:<50} | {trig:<40} | {sym_str}")
                 else:
-                    print(f"| {'(Không có mã nào)':<40} | {'-':<35} | {'-'}")
-                print("!" * 115 + "\n")
+                    print(f"| {'(Không có mã nào)':<50} | {'-':<40} | {'-'}")
+                print("!" * 125 + "\n")
                 
                 # Cập nhật watchlist thành safe_watchlist
                 watchlist = safe_watchlist
+                
+                # ── Giới hạn watchlist xuống Top N mã trước khi chạy các bước tốn kém ──
+                # Lấy Top các mã An toàn tốt nhất sau khi đã qua màng lọc Early Warning.
+                if watchlist and len(watchlist) > ENGINE_TOP_N:
+                    logger.info(f"⚡ Giới hạn phân tích sâu: {len(watchlist)} → Top {ENGINE_TOP_N} mã (cấu hình engine_top_n).")
+                    watchlist = watchlist[:ENGINE_TOP_N]
                 
                 if not watchlist:
                     logger.warning("Toàn bộ danh mục bị BẤT HOẠT do rủi ro sập. Nghỉ ngơi chu kỳ này.")
