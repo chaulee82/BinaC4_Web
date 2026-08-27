@@ -150,7 +150,27 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
                 summaryLines.push(line);
                 continue;
             }
-            if (line.includes('ĐỘNG CƠ 1: DARVAS GRID')) {
+            if (line.includes('BẢNG CHẤM ĐIỂM REBALANCE')) {
+                captureMode = 'REBALANCE';
+                summaryLines.push('');
+                summaryLines.push('🏆 BẢNG CHẤM ĐIỂM REBALANCE / SPOT GRID');
+                summaryLines.push('Hạng | Mã | TỔNG | Phân Loại Grid | Tín Hiệu Cảnh Báo');
+                continue;
+            }
+            if (line.includes('BẢNG THAM SỐ GRID CHUẨN') || line.includes('BẢNG THAM SỐ GRID TỰ ĐỘNG')) {
+                captureMode = 'GRID_PARAMS';
+                summaryLines.push('');
+                summaryLines.push('🏆 BẢNG THAM SỐ GRID CHUẨN');
+                continue;
+            }
+            if (line.includes('BẢNG 3: BẮT SỚM NỀN TĂNG')) {
+                captureMode = 'EARLY_BIRD';
+                summaryLines.push('');
+                summaryLines.push('🌱 BẢNG 3: BẮT SỚM NỀN TĂNG');
+                summaryLines.push('Mã | Điểm | Rút Chân | Giật 4H');
+                continue;
+            }
+            if (line.includes('ĐỘNG CƠ 1: DARVAS GRID') || line.includes('BẢNG CHẤM ĐIỂM MACRO GRID DARVAS')) {
                 captureMode = 'DARVAS';
                 summaryLines.push('');
                 summaryLines.push('📦 ĐỘNG CƠ 1: DARVAS GRID');
@@ -224,6 +244,29 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
                     }
                 } else if (line.includes('↳ ⚙️ SETUP:')) {
                     summaryLines.push('  ' + line.replace('↳ ⚙️ SETUP:', '↳').replace(/\\s+/g, ' '));
+                }
+            } else if (captureMode === 'REBALANCE') {
+                if (line.includes('|') && !line.includes('Mã')) {
+                    let parts = line.split('|').map(s => s.trim());
+                    if (parts.length >= 7) {
+                        let rank = parts[0];
+                        let sym = parts[1];
+                        let phanLoai = parts[3];
+                        let tong = parts[4];
+                        let canhBao = parts[6];
+                        summaryLines.push(`${rank} | ${sym} | ${tong} | ${phanLoai} | ${canhBao}`);
+                    }
+                }
+            } else if (captureMode === 'GRID_PARAMS') {
+                if (line.includes('↳ ⚙️')) {
+                    summaryLines.push('  ' + line.trim().replace(/\\s+/g, ' '));
+                }
+            } else if (captureMode === 'EARLY_BIRD') {
+                if (line.includes('|') && !line.includes('Mã')) {
+                    let parts = line.split('|').map(s => s.trim());
+                    if (parts.length >= 5) {
+                        summaryLines.push(`${parts[0]} | ${parts[2]} | ${parts[3]} | ${parts[4]}`);
+                    }
                 }
             }
         }
