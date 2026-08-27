@@ -22,6 +22,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("CN4-Controller")
 
+# Tắt log spam từ thư viện ngoài (urllib3 pool full, ccxt verbose, v.v.)
+logging.getLogger("urllib3").setLevel(logging.ERROR)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
+logging.getLogger("requests").setLevel(logging.ERROR)
+logging.getLogger("ccxt").setLevel(logging.ERROR)
+logging.getLogger("asyncio").setLevel(logging.ERROR)
+
 def load_settings():
     config_path = os.path.join(os.path.dirname(__file__), 'config', 'settings.json')
     try:
@@ -124,37 +131,42 @@ def main():
                 print(f"📋 Danh mục watchlist: {len(watchlist)} mã đủ điều kiện vào động cơ phân tích.")
             print()
 
+            # ── Giới hạn watchlist xuống Top N mã trước khi chạy các bước tốn kém ──
+            # Coin_filter đã sắp xếp theo điểm từ cao → thấp, nên slice đầu = Top mã tốt nhất.
+            # Early Warning, DC1-DC4 chỉ cần phân tích sâu trên các mã có điểm cao.
+            ENGINE_TOP_N = settings.get("trading", {}).get("engine_top_n", 20)
+            if watchlist and len(watchlist) > ENGINE_TOP_N:
+                logger.info(f"⚡ Giới hạn phân tích sâu: {len(watchlist)} → Top {ENGINE_TOP_N} mã (cấu hình engine_top_n).")
+                watchlist = watchlist[:ENGINE_TOP_N]
+
             if watchlist:
                 # =========================================================
                 # 0. HỆ THỐNG CẢNH BÁO SỚM & RỦI RO SẬP (Early Warning Matrix)
                 # =========================================================
                 early_warning = EarlyWarningMatrix()
+                from concurrent.futures import ThreadPoolExecutor
+                from core.exchange_factory import get_working_exchange
+                import pandas as pd
+                
+                exchange = get_working_exchange()
+                logger.info("Dang kich hoat He thong Canh bao Som (Early Warning Matrix)...")
                 warning_results = []
                 safe_watchlist = []
                 
-                logger.info("Đang kích hoạt Hệ thống Cảnh báo Sớm (Early Warning Matrix)...")
-                
-                # Cần fetch dữ liệu 1H để kiểm tra warning
-                import ccxt
-                import pandas as pd
-                from core.exchange_factory import get_working_exchange
-                
-                exchange = get_working_exchange()
-                
-                for symbol in watchlist:
+                def _check_ew(sym):
                     try:
-                        candles = exchange.fetch_ohlcv(symbol, '1h', limit=50)
-                        df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                        warn_res = early_warning.check_warning_level(df)
-                        warn_res['symbol'] = symbol
-                        warning_results.append(warn_res)
-                        
-                        # Chỉ giữ lại các mã không bị dính Cấp 2 hoặc Cấp 3
-                        if warn_res['level'] < 2:
-                            safe_watchlist.append(symbol)
+                        candles = exchange.fetch_ohlcv(sym, '1h', limit=50)
+                        df = pd.DataFrame(candles, columns=['timestamp','open','high','low','close','volume'])
+                        res = early_warning.check_warning_level(df)
+                        res['symbol'] = sym
+                        return res
                     except Exception as e:
-                        logger.error(f"Lỗi kiểm tra Cảnh báo sớm cho {symbol}: {e}")
-                        safe_watchlist.append(symbol) # Tạm thời cho qua nếu API lỗi
+                        logger.error(f"Loi EW cho {sym}: {e}")
+                        return {'symbol': sym, 'level': 0, 'label': '', 'trigger': ''}
+
+                with ThreadPoolExecutor(max_workers=10) as _ew_pool:
+                    warning_results = list(_ew_pool.map(_check_ew, watchlist))
+                safe_watchlist = [r['symbol'] for r in warning_results if r.get('level', 0) < 2]
                 
                 # In Bảng Cảnh Báo
                 print("\n" + "!" * 115)
@@ -164,7 +176,7 @@ def main():
                 print(f"| {'Mức Độ (Level)':<40} | {'Tín Hiệu (Trigger)':<35} | {'Danh Sách Mã (Symbols)'}")
                 print(f"|{'-'*42}|{'-'*37}|{'-'*60}")
                 
-                filtered_warnings = [r for r in warning_results if r.get('level') in (1, 3)]
+                filtered_warnings = [r for r in warning_results if r.get('level') in (1, 2, 3)]
                 if filtered_warnings:
                     from collections import defaultdict
                     grouped = defaultdict(list)
@@ -216,12 +228,24 @@ def main():
                     if score >= 60:
                         g_setup = res.get('grid_setup', {})
                         if g_setup:
-                            lower = g_setup.get('lower_price', 0)
-                            upper = g_setup.get('upper_price', 0)
+                            is_dual = g_setup.get('is_dual_grid', False)
                             sl = g_setup.get('stop_loss', 0)
                             tp = g_setup.get('take_profit', 0)
-                            qty = g_setup.get('grid_quantity', 0)
-                            print(f"  ↳ ⚙️ SETUP GRID: [{sym}] Lower = {lower} | Uper = {upper} | Grids = {qty}| SL = {sl} | TP = {tp}")
+                            if is_dual:
+                                g1_lower = g_setup.get('g1_lower', 0)
+                                g1_upper = g_setup.get('g1_upper', 0)
+                                g1_grids = g_setup.get('g1_grids', 0)
+                                g2_lower = g_setup.get('g2_lower', 0)
+                                g2_upper = g_setup.get('g2_upper', 0)
+                                g2_grids = g_setup.get('g2_grids', 0)
+                                print(f"  ↳ ⚙️ DUAL GRID: [{sym}] SL = {sl} | TP = {tp}")
+                                print(f"     ├── G1 (Bắt đáy): {g1_lower} - {g1_upper} ({g1_grids} Lưới) [70% Vốn]")
+                                print(f"     └── G2 (Đột phá): {g2_lower} - {g2_upper} ({g2_grids} Lưới) [30% Vốn]")
+                            else:
+                                lower = g_setup.get('lower_price', 0)
+                                upper = g_setup.get('upper_price', 0)
+                                qty = g_setup.get('grid_quantity', 0)
+                                print(f"  ↳ ⚙️ SETUP GRID: [{sym}] Lower = {lower} | Uper = {upper} | Grids = {qty}| SL = {sl} | TP = {tp}")
                             
                 print("=" * 115 + "\n")
 
@@ -233,23 +257,43 @@ def main():
                         symbol = res.get('symbol')
                         g_setup = res.get('grid_setup', {})
                         
-                        lower_price = g_setup.get('lower_price')
-                        upper_price = g_setup.get('upper_price')
-                        grids = g_setup.get('grid_quantity')
+                        is_dual = g_setup.get('is_dual_grid', False)
                         
-                        if lower_price and upper_price and grids:
-                            amount_per_grid = 10.0 # Test amount
-                            logger.warning(f"🤖 [GRID TÍN HIỆU] Khởi tạo Bot Grid cho {symbol}")
-                            if api_key:
-                                grid_manager.launch_grid(
-                                    symbol=symbol,
-                                    upper_price=upper_price,
-                                    lower_price=lower_price,
-                                    grids=grids,
-                                    amount_per_grid=amount_per_grid
-                                )
-                            else:
-                                logger.info(f"[MOCK MODE] Sẽ kích hoạt Bot Grid {symbol}: Lower={lower_price}, Upper={upper_price}, Lưới={grids}")
+                        if is_dual:
+                            g1_lower = g_setup.get('g1_lower')
+                            g1_upper = g_setup.get('g1_upper')
+                            g1_grids = g_setup.get('g1_grids')
+                            g2_lower = g_setup.get('g2_lower')
+                            g2_upper = g_setup.get('g2_upper')
+                            g2_grids = g_setup.get('g2_grids')
+                            
+                            if g1_lower and g1_upper and g1_grids and g2_lower and g2_upper and g2_grids:
+                                logger.warning(f"🤖 [DUAL GRID TÍN HIỆU] Khởi tạo hệ thống Lưới Kép cho {symbol}")
+                                if api_key:
+                                    # Lưới 1 (70% vốn)
+                                    grid_manager.launch_grid(symbol=symbol, upper_price=g1_upper, lower_price=g1_lower, grids=g1_grids, amount_per_grid=14.0) # Ví dụ chia vốn
+                                    # Lưới 2 (30% vốn)
+                                    grid_manager.launch_grid(symbol=symbol, upper_price=g2_upper, lower_price=g2_lower, grids=g2_grids, amount_per_grid=6.0)
+                                else:
+                                    logger.info(f"[MOCK MODE] Sẽ kích hoạt Lưới Kép {symbol} -> G1(L:{g1_lower}, U:{g1_upper}, {g1_grids}L) | G2(L:{g2_lower}, U:{g2_upper}, {g2_grids}L)")
+                        else:
+                            lower_price = g_setup.get('lower_price')
+                            upper_price = g_setup.get('upper_price')
+                            grids = g_setup.get('grid_quantity')
+                            
+                            if lower_price and upper_price and grids:
+                                amount_per_grid = 10.0 # Test amount
+                                logger.warning(f"🤖 [GRID TÍN HIỆU] Khởi tạo Bot Grid cho {symbol}")
+                                if api_key:
+                                    grid_manager.launch_grid(
+                                        symbol=symbol,
+                                        upper_price=upper_price,
+                                        lower_price=lower_price,
+                                        grids=grids,
+                                        amount_per_grid=amount_per_grid
+                                    )
+                                else:
+                                    logger.info(f"[MOCK MODE] Sẽ kích hoạt Bot Grid {symbol}: Lower={lower_price}, Upper={upper_price}, Lưới={grids}")
 
                 # =========================================================
                 # 2. Chạy Động Cơ 2 (Pullback Sniper)

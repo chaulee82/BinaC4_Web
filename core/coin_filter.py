@@ -14,6 +14,17 @@ try:
 except ImportError:
     scraper = requests.Session()
 
+# Tăng connection pool size để match với ThreadPoolExecutor(max_workers=20)
+# Tránh "Connection pool is full" spam khi 20 threads chạy đồng thời
+from requests.adapters import HTTPAdapter
+_adapter = HTTPAdapter(pool_connections=25, pool_maxsize=25)
+scraper.mount("https://", _adapter)
+scraper.mount("http://", _adapter)
+
+# Tắt log spam urllib3 (pool warnings, retry notices)
+logging.getLogger("urllib3").setLevel(logging.ERROR)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
+
 # 1. Danh sách ưu tiên theo dõi cố định + Mở rộng TOP 50 tự động
 MANUAL_SYMBOLS = ["KAITOUSDT", "ENAUSDT", "ZAMAUSDT", "REUSDT", "UNIUSDT", "TUTUSDT", "ADAUSDT", "FILUSDT", "ONDOUSDT"]
 TOP_AUTO_COUNT = 200
@@ -247,7 +258,18 @@ def process_symbol(symbol):
     ma50_1d = float(df_1d['Close'].tail(50).mean()) if len(df_1d) >= 50 else float(ma25_1d)
     
     rsi_1d = calculate_rsi(df_1d, period=14)
-    
+
+    # Cấu trúc Higher Lows khung 1D (tích lũy dài hạn) — dùng lại hàm sẵn có
+    _is_hl_1d      = check_higher_lows_4h(df_1d, lookback=5)
+    _is_1d_upslope = check_ma25_slope_4h(df_1d)
+    if _is_hl_1d and _is_1d_upslope and close_1d >= float(ma25_1d):
+        score_structure_1d = 100.0   # Cấu trúc tăng hoàn hảo trên 1D
+    elif _is_hl_1d and _is_1d_upslope:
+        score_structure_1d = 70.0    # HL + slope tốt nhưng dưới MA25
+    elif _is_hl_1d or _is_1d_upslope:
+        score_structure_1d = 40.0    # Một trong hai điều kiện
+    else:
+        score_structure_1d = 0.0     # Không có cấu trúc
     tr1 = df_1d['High'] - df_1d['Low']
     tr2 = abs(df_1d['High'] - df_1d['Close'].shift(1))
     tr3 = abs(df_1d['Low'] - df_1d['Close'].shift(1))
@@ -330,11 +352,18 @@ def process_symbol(symbol):
                          (open_15m >= prev_15m['Close']) and \
                          (close_15m <= prev_15m['Open'])
 
-    score_nen_15m = 50.0
-    if lower_wick_pct_15m > upper_wick_pct_15m:
-        score_nen_15m = min(100.0, 50.0 + (lower_wick_pct_15m * 0.7))
-    else:
-        score_nen_15m = max(0.0, 50.0 - (upper_wick_pct_15m * 0.9))
+    # score_nen_15m: trung bình 3 nến đã đóng gần nhất — giảm noise từ 1 nến đơn lẻ
+    _nen_scores = []
+    for _ni in range(-4, -1):  # nến -4, -3, -2 (đã đóng chắc chắn)
+        try:
+            _c   = df_15m.iloc[_ni]
+            _ttl = _c['High'] - _c['Low'] if _c['High'] > _c['Low'] else 0.000001
+            _lw  = (min(_c['Open'], _c['Close']) - _c['Low'])  / _ttl * 100
+            _uw  = (_c['High'] - max(_c['Open'], _c['Close'])) / _ttl * 100
+            _nen_scores.append(min(100.0, 50.0 + _lw * 0.7) if _lw > _uw else max(0.0, 50.0 - _uw * 0.9))
+        except IndexError:
+            pass
+    score_nen_15m = sum(_nen_scores) / len(_nen_scores) if _nen_scores else 50.0
 
     warning_reasons = []
     # --- Hiển thị cảnh báo Early Warning ngay trong bảng Rebalance ---
@@ -495,11 +524,24 @@ def process_symbol(symbol):
         else:
             break
 
-    score_entry_base = 50.0
-    if consecutive_red > 0:
-        score_entry_base = 50.0 + min(consecutive_red * 10.0, 40.0)
-    elif consecutive_green > 0:
-        score_entry_base = 50.0 - min(consecutive_green * 10.0, 40.0)
+    # score_entry: Phân biệt “điều chỉnh lành mạnh trên MA25” vs “đang sập dưới MA25”
+    # Nến đỏ TRÊN MA25 = cơ hội mua thực sự (contrarian). Nến đỏ DƯỚI MA25 = đang sập → phạt
+    if not is_1h_broken:
+        if consecutive_red > 0:
+            score_entry_base = 50.0 + min(consecutive_red * 10.0, 35.0)  # Tối đa 85
+        elif consecutive_green > 0:
+            score_entry_base = 50.0 - min(consecutive_green * 8.0, 30.0)  # Tối thiểu 20
+        else:
+            score_entry_base = 50.0
+    else:
+        # Dưới MA25: nến đỏ liên tiếp = đang sập → phạt mạnh
+        if consecutive_red > 0:
+            score_entry_base = max(5.0, 50.0 - consecutive_red * 12.0)
+        elif consecutive_green > 0:
+            # Xanh dưới MA25 = cố hồi → trung bình
+            score_entry_base = 50.0
+        else:
+            score_entry_base = 30.0
 
     mod_7d = 0.0
     if -20.0 <= change_7d_pct <= -3.0:
@@ -532,14 +574,28 @@ def process_symbol(symbol):
         else:
             phan_loai_grid = "🛡️ GRID HẸP (12 Lưới)"
 
-    total_score_raw = (avg_trend_score * 0.15) + (score_nen_15m * 0.15) + (score_rau_24h * 0.15) + \
-                      (score_flow * 0.15) + (score_giat * 0.15) + (score_vol * 0.10) + \
-                      (score_entry * 0.10) + (score_rsi * 0.05)
+    # Trọng số cập nhật: trend 18%, nen 10%, râu 14%, flow 14%, giật 10%, vol 10%, entry 12%, rsi 8%, structure1d 4%
+    total_score_raw = (avg_trend_score    * 0.18) + (score_nen_15m      * 0.10) + \
+                      (score_rau_24h      * 0.14) + (score_flow          * 0.14) + \
+                      (score_giat         * 0.10) + (score_vol           * 0.10) + \
+                      (score_entry        * 0.12) + (score_rsi           * 0.08) + \
+                      (score_structure_1d * 0.04)
 
-    # Hình phạt định lượng (Dynamic Penalty): Trừng phạt nặng tay các mã gãy cấu trúc
-    if "⛔" in phan_loai_grid:
-        total_score_raw -= 40.0
-    # Trừ điểm thêm nếu mã đang trong trạng thái Downtrend để không ngoi lên top đầu
+    # Hình phạt mềm (Soft Penalty) — phân cấp theo mức độ nguy hiểm thực sự
+    if "Gãy Cấu Trúc 4H" in phan_loai_grid:
+        total_score_raw -= 40.0   # Phá cấu trúc nghiêm trọng nhất
+    elif "Bơm Xả Râu Dài" in phan_loai_grid:
+        total_score_raw -= 35.0   # Bơm xả rô rệt
+    elif "Tiền Sử Xả Dốc 7D" in phan_loai_grid:
+        # Nới lỏng nếu mã đang hồi phục từ đáy (4H chưa gãy, 7D bắt đầu dương)
+        if change_7d_pct > 0 and not is_4h_broken and avg_trend_score >= 40:
+            total_score_raw -= 20.0  # Đang hồi phục → ít phạt hơn
+        else:
+            total_score_raw -= 35.0  # Tiền sử xấu và chưa hồi
+    elif "Cạn Cầu / Trượt Giá" in phan_loai_grid:
+        total_score_raw -= 30.0
+    elif "⛔" in phan_loai_grid:
+        total_score_raw -= 30.0   # Các lý do khác
     elif "🔴 DOWNTREND" in trang_thai:
         total_score_raw -= 20.0
 
@@ -848,42 +904,14 @@ def analyze_early(symbol):
 
     gc = GridCalculator()
     grid_4h_setup = gc.calculate_grid_4h(df_4h, close_now)
-    
-    # Hybrid Override
-    from strategies.macro_grid_darvas import MacroGridDarvas
-    darvas = MacroGridDarvas()
-    darvas_res = darvas.scan_grid_candidate(symbol, '4h')
-    darvas_score = darvas_res.get('total_score', 0)
-    darvas_setup = darvas_res.get('grid_setup', {})
-    
-    if darvas_score >= 60 and darvas_setup:
-        # Lấy Darvas làm chuẩn, log lại điểm 4H cũ
-        logging.debug(f"[Hybrid Override] {symbol}: Darvas Score {darvas_score} >= 60. Ghi đè thông số GRID 4H cũ: {grid_4h_setup}")
-        final_grid_setup = {
-            "status": "SUCCESS",
-            "engine": "GRID Darvas (Lưới Kép)",
-            "is_dual_grid": darvas_setup.get('is_dual_grid', False),
-            "g1_lower": darvas_setup.get('g1_lower'),
-            "g1_upper": darvas_setup.get('g1_upper'),
-            "g1_grids": darvas_setup.get('g1_grids'),
-            "g1_capital_pct": darvas_setup.get('g1_capital_pct'),
-            "g2_lower": darvas_setup.get('g2_lower'),
-            "g2_upper": darvas_setup.get('g2_upper'),
-            "g2_grids": darvas_setup.get('g2_grids'),
-            "g2_capital_pct": darvas_setup.get('g2_capital_pct'),
-            "hard_stop_loss": darvas_setup.get('stop_loss'),
-            "hard_take_profit": darvas_setup.get('take_profit'),
-            "tp_buffer_pct": 0.05
-        }
-    else:
-        # Fallback về 4H
-        final_grid_setup = grid_4h_setup
-        if final_grid_setup.get("status") in ["SUCCESS", "WARNING_VOLATILE"]:
-             final_grid_setup["engine"] = "GRID 4H (Phòng Thủ)"
-             logging.debug(f"[Hybrid Fallback] {symbol}: Darvas Score {darvas_score} < 60. Sử dụng GRID 4H mặc định.")
+    if grid_4h_setup.get("status") in ["SUCCESS", "WARNING_VOLATILE"]:
+        grid_4h_setup["engine"] = "GRID 4H (Phòng Thủ)"
 
+    # ⚡ Darvas Hybrid Override đã được chuyển ra ngoài hàm này.
+    # Chỉ gọi Darvas cho Top 5 AFTER sorting để tránh ~(N-5)×3 API calls lãng phí.
     return {
         'Symbol':      symbol.replace('USDT', ''),
+        '_raw_symbol': symbol,
         'Giá':         close_now,
         'Điểm':        round(total_early_score, 1),
         'Rút Chân':    valid_wicks,
@@ -892,8 +920,40 @@ def analyze_early(symbol):
         'Nén 30D':     round(range_30d, 1) if range_30d != 999 else 0.0,
         'Đột Biến':    round(vol_spike, 1) if is_green_1d else 0.0,
         'Đỉnh 180D':   round(drop_180d, 1),
-        'grid_setup':  final_grid_setup,
+        'grid_setup':  grid_4h_setup,
     }
+
+def _enrich_early_with_darvas(item: dict) -> dict:
+    """Gọi Darvas Hybrid Override cho 1 mã đã lọc top — chỉ chạy trên Top 5 sau sort."""
+    symbol = item.get('_raw_symbol', item['Symbol'] + 'USDT')
+    grid_4h_setup = item.get('grid_setup', {})
+    try:
+        from strategies.macro_grid_darvas import MacroGridDarvas
+        darvas = MacroGridDarvas()
+        darvas_res = darvas.scan_grid_candidate(symbol, '4h')
+        darvas_score = darvas_res.get('total_score', 0)
+        darvas_setup = darvas_res.get('grid_setup', {})
+        if darvas_score >= 60 and darvas_setup:
+            logging.debug(f"[Hybrid Override Bảng3] {symbol}: Darvas Score {darvas_score} >= 60.")
+            item['grid_setup'] = {
+                "status": "SUCCESS",
+                "engine": "GRID Darvas (Lưới Kép)",
+                "is_dual_grid": darvas_setup.get('is_dual_grid', False),
+                "g1_lower": darvas_setup.get('g1_lower'),
+                "g1_upper": darvas_setup.get('g1_upper'),
+                "g1_grids": darvas_setup.get('g1_grids'),
+                "g1_capital_pct": darvas_setup.get('g1_capital_pct'),
+                "g2_lower": darvas_setup.get('g2_lower'),
+                "g2_upper": darvas_setup.get('g2_upper'),
+                "g2_grids": darvas_setup.get('g2_grids'),
+                "g2_capital_pct": darvas_setup.get('g2_capital_pct'),
+                "hard_stop_loss": darvas_setup.get('stop_loss'),
+                "hard_take_profit": darvas_setup.get('take_profit'),
+                "tp_buffer_pct": 0.05
+            }
+    except Exception as e:
+        logging.debug(f"[Hybrid Override Bảng3] {symbol} lỗi Darvas: {e}")
+    return item
 
 def analyze_momentum(symbol):
     info = live_data_map.get(symbol, {})
@@ -1007,7 +1067,7 @@ def get_filtered_symbols():
     update_live_data()
     summary_list = []
     if all_symbols:
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        with ThreadPoolExecutor(max_workers=20) as executor:
             results = executor.map(process_symbol, all_symbols)
             summary_list = [r for r in results if r is not None]
 
@@ -1131,11 +1191,13 @@ def get_filtered_symbols():
 
     early_list = []
     if early_symbols:
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        with ThreadPoolExecutor(max_workers=20) as executor:
             early_list = [r for r in executor.map(analyze_early, early_symbols) if r is not None]
 
     early_list.sort(key=lambda x: x['Điểm'], reverse=True)
     early_list = early_list[:5]
+    # ⚡ Darvas Hybrid Override chỉ chạy trên Top 5 sau sort (tiết kiệm ~(N-5)×3 API calls)
+    early_list = [_enrich_early_with_darvas(r) for r in early_list]
 
     _WCOLS3 = [8, 12, 7, 14, 9, 10, 9, 9, 11]
     _TW3    = sum(_WCOLS3) + len(_SEP) * (len(_WCOLS3) - 1)
@@ -1244,22 +1306,27 @@ def get_filtered_symbols():
 
     mom_list = []
     if momentum_symbols:
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        with ThreadPoolExecutor(max_workers=20) as executor:
             mom_list = [r for r in executor.map(analyze_momentum, momentum_symbols) if r is not None]
 
     mom_list.sort(key=lambda x: x['Điểm Mom'], reverse=True)
     mom_list = mom_list[:MOM_TOP_N]
 
-    final_symbols = set()
     safety_map = {}
+    # ── Xây dựng watchlist CÓ THỨ TỰ ưu tiên (an toàn → điểm cao → early → momentum)
+    # Dùng list + seen-set thay vì set thuần để tránh thứ tự random khi slice Top N
+    symbols_ordered = []
+    seen_usdt = set()
 
     if summary_list:
-        # Bỏ lọc TỔNG >= 30 để truyền toàn bộ TOP 100 mã sang cho các Động cơ.
-        # Điều này rất quan trọng để Động cơ 2 (Panic Sniper) có thể quét được các mã sập mạnh (TỔNG = 0)
+        # df_summary đã được sort: is_safe↓, Has_Darvas↓, TỔNG↓ — giữ nguyên thứ tự này
         df_candidates = df_summary
         for r in df_candidates.to_dict(orient='records'):
-            sym_ccxt = r['Symbol'] + "/USDT"
-            final_symbols.add(r['Symbol'] + "USDT")
+            sym_usdt  = r['Symbol'] + "USDT"
+            sym_ccxt  = r['Symbol'] + "/USDT"
+            if sym_usdt not in seen_usdt:
+                symbols_ordered.append(sym_ccxt)
+                seen_usdt.add(sym_usdt)
             if r['is_safe']:
                 safety_map[sym_ccxt] = "✅ AN TOÀN"
             else:
@@ -1268,18 +1335,24 @@ def get_filtered_symbols():
                     reason = r.get('Cảnh Báo', 'Rủi ro chưa xác định')
                 safety_map[sym_ccxt] = f"⚠️ {reason}"
 
+    # Bổ sung mã từ Bảng 3 (early) và Bảng 4 (momentum) — thêm vào cuối nếu chưa có
     for r in early_list:
+        sym_usdt = r['Symbol'] + "USDT"
         sym_ccxt = r['Symbol'] + "/USDT"
-        final_symbols.add(r['Symbol'] + "USDT")
+        if sym_usdt not in seen_usdt:
+            symbols_ordered.append(sym_ccxt)
+            seen_usdt.add(sym_usdt)
         safety_map.setdefault(sym_ccxt, "⚠️ CHƯA XÉT")
 
     for r in mom_list:
+        sym_usdt = r['Symbol'] + "USDT"
         sym_ccxt = r['Symbol'] + "/USDT"
-        final_symbols.add(r['Symbol'] + "USDT")
+        if sym_usdt not in seen_usdt:
+            symbols_ordered.append(sym_ccxt)
+            seen_usdt.add(sym_usdt)
         safety_map.setdefault(sym_ccxt, "⚠️ CHƯA XÉT")
 
-    symbols = [s.replace("USDT", "/USDT") for s in final_symbols]
-    return symbols, safety_map
+    return symbols_ordered, safety_map
 
 if __name__ == "__main__":
     symbols, safety_map = get_filtered_symbols()

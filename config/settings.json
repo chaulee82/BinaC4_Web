@@ -2,6 +2,7 @@
     "trading": {
         "max_risk_per_trade_pct": 2.0,
         "default_timeframe": "4h",
+        "engine_top_n": 20,
         "grid_trading": {
             "max_grids": 10,
             "min_spacing_pct": 1.5
