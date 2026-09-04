@@ -4,26 +4,9 @@ import time
 import unicodedata
 import pandas as pd
 import numpy as np
-import requests
 import logging
 from core.grid_calculator import GridCalculator
-
-try:
-    import cloudscraper
-    scraper = cloudscraper.create_scraper()
-except ImportError:
-    scraper = requests.Session()
-
-# Tăng connection pool size để match với ThreadPoolExecutor(max_workers=20)
-# Tránh "Connection pool is full" spam khi 20 threads chạy đồng thời
-from requests.adapters import HTTPAdapter
-_adapter = HTTPAdapter(pool_connections=25, pool_maxsize=25)
-scraper.mount("https://", _adapter)
-scraper.mount("http://", _adapter)
-
-# Tắt log spam urllib3 (pool warnings, retry notices)
-logging.getLogger("urllib3").setLevel(logging.ERROR)
-logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
+from core.api_client import BinanceClient
 
 from strategies.macro_grid_darvas import MacroGridDarvas
 
@@ -63,82 +46,7 @@ EARLY_MAX_UPPER_W  = 0.25        # Râu trên <= 25% (Siết chặt hơn)
 EARLY_MIN_7D_CHG   = -2.0        # Cho phép sideway / vừa đảo chiều
 EARLY_MIN_24H_CHG  = -3.0        # Tránh bắt dao rơi (không bắt mã đang xả mạnh trong ngày)
 
-BINANCE_DOMAINS = [
-    "https://api.binance.com",
-    "https://api1.binance.com",
-    "https://api2.binance.com",
-    "https://api3.binance.com",
-    "https://data-api.binance.vision"
-]
-
-headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-
-print("🔍 Đang gọi Binance LIVE API (Thuật Toán Điểm Tuyến Tính Tỉ Lệ Thuận/Nghịch)... \n")
-
-def fetch_binance_api(endpoint):
-    for domain in BINANCE_DOMAINS:
-        url = f"{domain}{endpoint}"
-        try:
-            res = scraper.get(url, headers=headers, timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                if data:
-                    return data
-        except Exception:
-            continue
-    return None
-
 EXCLUDE = ["UPUSDT", "DOWNUSDT", "BEARUSDT", "BULLUSDT", "USDCUSDT", "FDUSDUSDT", "TUSDUSDT", "DAIUSDT", "EURUSDT"]
-live_data_map = {}
-all_symbols = []
-
-def update_live_data():
-    global live_data_map, all_symbols
-    tickers = fetch_binance_api("/api/v3/ticker/24hr")
-    if not tickers or not isinstance(tickers, list):
-        print("❌ Lỗi lấy dữ liệu API!")
-        tickers = []
-
-    live_data_map.clear()
-    auto_candidates = []
-
-    for t in tickers:
-        if not isinstance(t, dict): continue
-        symbol = t.get('symbol', '')
-        price_change_pct = float(t.get('priceChangePercent', 0))
-        quote_vol = float(t.get('quoteVolume', 0))
-        last_price = float(t.get('lastPrice', 0))
-        high_24h = float(t.get('highPrice', 0))
-        low_24h = float(t.get('lowPrice', 0))
-
-        drop_from_high = ((high_24h - last_price) / high_24h) * 100 if high_24h > 0 else 0
-        daily_volatility = ((high_24h - low_24h) / low_24h) * 100 if low_24h > 0 else 0
-
-        live_data_map[symbol] = {
-            'change_24h':    price_change_pct,
-            'drop_from_high': drop_from_high,
-            'last_price':    last_price,
-            'quote_vol':     quote_vol,
-            'daily_vola':    round(daily_volatility, 2),   # % biến động (H-L)/L ngày
-        }
-
-        # Vol tối thiểu 2M USDT (hạ từ 3M để bắt thêm mã mid-cap như ALICE)
-        # Biến động tối thiểu 2.5% để có đủ không gian grid
-        if symbol.endswith("USDT") and symbol not in EXCLUDE and quote_vol >= 2_000_000:
-            if daily_volatility >= 2.5:
-                auto_candidates.append((symbol, quote_vol))
-
-    auto_candidates = sorted(auto_candidates, key=lambda x: x[1], reverse=True)[:TOP_AUTO_COUNT]
-    auto_symbols = [s[0] for s in auto_candidates]
-
-    all_symbols = list(dict.fromkeys(MANUAL_SYMBOLS + auto_symbols))
-    print(f"🎯 TỔNG CỘNG CÓ {len(all_symbols)} MÃ ĐƯỢC ĐƯA VÀO BẢNG CHẤM ĐIỂM MOMENTUM!\n")
-
-def get_avg_vola_24h():
-    if not live_data_map:
-        return 5.0
-    total_vola = sum(info.get('daily_vola', 5.0) for info in live_data_map.values())
-    return total_vola / len(live_data_map)
 
 def calculate_trend_score(close_price, ma25_price):
     if close_price < ma25_price:
@@ -187,7 +95,8 @@ def calculate_rsi(df, period=14):
 
 def get_klines_live(symbol, interval, limit=100):
     time.sleep(0.02)
-    data = fetch_binance_api(f"/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
+    client = BinanceClient()
+    data = client.get(f"/api/v3/klines", params={"symbol": symbol, "interval": interval, "limit": limit})
     if isinstance(data, list) and len(data) > 0:
         df = pd.DataFrame(data, columns=[
             'Open_Time', 'Open', 'High', 'Low', 'Close', 'Volume',
@@ -210,8 +119,7 @@ def check_ma25_slope_4h(df_4h):
     ma25_prev = float(df_4h['Close'].iloc[-26:-1].mean())
     return ma25_curr > ma25_prev
 
-def process_symbol(symbol):
-    live_info = live_data_map.get(symbol, {})
+def process_symbol(symbol, live_info):
     if not live_info: return None
 
     df_15m = get_klines_live(symbol, "15m", limit=100)
@@ -803,8 +711,8 @@ def smart_price(p):
     elif p < 1.0:   return f"{p:.8f}"
     else:           return f"{p:.4f}"
 
-def analyze_early(symbol):
-    info = live_data_map.get(symbol, {})
+def analyze_early(symbol, info):
+    info = info or {}
     if not info:
         return None
         
@@ -954,8 +862,8 @@ def _enrich_early_with_darvas(item: dict) -> dict:
         logging.debug(f"[Hybrid Override Bảng3] {symbol} lỗi Darvas: {e}")
     return item
 
-def analyze_momentum(symbol):
-    info = live_data_map.get(symbol, {})
+def analyze_momentum(symbol, info):
+    info = info or {}
     if not info:
         return None
 
@@ -1062,12 +970,24 @@ def analyze_momentum(symbol):
         'Grid High':     grid_high,
     }
 
-def get_filtered_symbols():
-    update_live_data()
+def get_filtered_symbols(live_data_map):
+    auto_candidates = []
+    for symbol, info in live_data_map.items():
+        if symbol.endswith("USDT") and symbol not in EXCLUDE and info.get('volume_usdt', 0) >= 2_000_000:
+            if info.get('daily_vola', 0) >= 2.5:
+                auto_candidates.append((symbol, info.get('volume_usdt', 0)))
+
+    auto_candidates = sorted(auto_candidates, key=lambda x: x[1], reverse=True)[:TOP_AUTO_COUNT]
+    auto_symbols = [s[0] for s in auto_candidates]
+    all_symbols = list(dict.fromkeys(MANUAL_SYMBOLS + auto_symbols))
+    
+    print(f"🎯 TỔNG CỘNG CÓ {len(all_symbols)} MÃ ĐƯỢC ĐƯA VÀO BẢNG CHẤM ĐIỂM MOMENTUM!\n")
+    
     summary_list = []
     if all_symbols:
         with ThreadPoolExecutor(max_workers=20) as executor:
-            results = executor.map(process_symbol, all_symbols)
+            # Truyền tuple (symbol, info) vào qua lambda thay vì dùng global
+            results = executor.map(lambda s: process_symbol(s, live_data_map.get(s, {})), all_symbols)
             summary_list = [r for r in results if r is not None]
 
     if summary_list:
@@ -1205,7 +1125,7 @@ def get_filtered_symbols():
     early_list = []
     if early_symbols:
         with ThreadPoolExecutor(max_workers=8) as executor:
-            early_list = [r for r in executor.map(analyze_early, early_symbols) if r is not None]
+            early_list = [r for r in executor.map(lambda s: analyze_early(s, live_data_map.get(s, {})), early_symbols) if r is not None]
 
     early_list.sort(key=lambda x: x['Điểm'], reverse=True)
     early_list = early_list[:5]
@@ -1317,7 +1237,7 @@ def get_filtered_symbols():
     mom_list = []
     if momentum_symbols:
         with ThreadPoolExecutor(max_workers=20) as executor:
-            mom_list = [r for r in executor.map(analyze_momentum, momentum_symbols) if r is not None]
+            mom_list = [r for r in executor.map(lambda s: analyze_momentum(s, live_data_map.get(s, {})), momentum_symbols) if r is not None]
 
     mom_list.sort(key=lambda x: x['Điểm Mom'], reverse=True)
     mom_list = mom_list[:MOM_TOP_N]
@@ -1366,5 +1286,7 @@ def get_filtered_symbols():
     return symbols_ordered, safety_map
 
 if __name__ == "__main__":
-    symbols, safety_map = get_filtered_symbols()
+    from core.cache_service import CacheService
+    cache = CacheService()
+    symbols, safety_map = get_filtered_symbols(cache.get_live_data_map())
     print("\n[+] Danh sách lọc (Format CCXT):", symbols)

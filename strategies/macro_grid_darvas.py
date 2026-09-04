@@ -449,7 +449,7 @@ class MacroGridDarvas:
             }
 
         except Exception as e:
-            logger.exception("Lỗi quét Darvas cho %s: %s", symbol, e)
+            logger.debug("Bỏ qua %s do lỗi CCXT (thường là BadSymbol): %s", symbol, str(e))
             return {
                 "symbol":      symbol,
                 "error":       str(e),

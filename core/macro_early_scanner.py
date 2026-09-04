@@ -29,13 +29,12 @@ class MacroEarlyScanner:
                 return df
                 
         try:
-            from core.coin_filter import fetch_binance_api
+            from core.market_data_repo import MarketDataRepository
+            repo = MarketDataRepository()
             sym_api = symbol.replace('/', '')
-            data = fetch_binance_api(f"/api/v3/klines?symbol={sym_api}&interval=1d&limit={limit}")
-            if not data:
+            df = repo.get_klines_df(sym_api, '1d', limit)
+            if df.empty:
                 return pd.DataFrame()
-            candles = [[int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4]), float(x[5])] for x in data]
-            df = pd.DataFrame(candles, columns=['timestamp','open','high','low','close','volume'])
             self._1d_cache[symbol] = (now, df)
             return df
         except Exception as e:
@@ -45,13 +44,10 @@ class MacroEarlyScanner:
     def _fetch_15m_klines(self, symbol: str, limit: int = 288) -> pd.DataFrame:
         """Fetch 15M klines (no cache, always fresh)"""
         try:
-            from core.coin_filter import fetch_binance_api
+            from core.market_data_repo import MarketDataRepository
+            repo = MarketDataRepository()
             sym_api = symbol.replace('/', '')
-            data = fetch_binance_api(f"/api/v3/klines?symbol={sym_api}&interval=15m&limit={limit}")
-            if not data:
-                return pd.DataFrame()
-            candles = [[int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4]), float(x[5])] for x in data]
-            df = pd.DataFrame(candles, columns=['timestamp','open','high','low','close','volume'])
+            df = repo.get_klines_df(sym_api, '15m', limit)
             return df
         except Exception as e:
             logger.error(f"Error fetching 15M data for {symbol}: {e}")
@@ -82,7 +78,7 @@ class MacroEarlyScanner:
         }
 
     def scan_macro_1d(self, symbols: List[str]) -> List[Dict]:
-        """Phần 1: Móng Vĩ Mô (Điều kiện cần - Khung 1D)"""
+        """Phần 1: Móng Vĩ Mô (Chấm điểm thay vì loại trừ - Khung 1D)"""
         results = []
         
         for sym in symbols:
@@ -94,37 +90,55 @@ class MacroEarlyScanner:
             max_high_180d = float(df['high'].max())
             
             # 1. Độ Sâu Chiết Khấu (Drop 180D)
-            drop_pct = (max_high_180d - current_price) / max_high_180d
-            if not (0.60 <= drop_pct <= 0.90):
-                continue
+            drop_pct = (max_high_180d - current_price) / max_high_180d if max_high_180d > 0 else 0
+            
+            # Chấm điểm Drop (Lý tưởng: 60% - 90%)
+            if 0.60 <= drop_pct <= 0.90:
+                score_drop = 100.0
+            elif drop_pct < 0.60:
+                score_drop = max(0.0, (drop_pct / 0.60) * 100.0)
+            else:
+                score_drop = max(0.0, 100.0 - (drop_pct - 0.90) * 500.0)
                 
             # 2. Nền Nén Thời Gian (Darvas 1D 60 days)
             box = self.build_darvas_box_1d(df, 60)
-            if not box or box["amplitude"] >= 0.30:
+            if not box:
                 continue
                 
-            # 3. MA99 Nằm Ngang (Độ dốc -1% đến +1% trong 15 ngày qua)
+            # Chấm điểm Darvas (Càng nén chặt < 30% càng tốt)
+            # Biên độ 0% -> 100đ, 30% -> 40đ, >= 50% -> 0đ
+            score_darvas = max(0.0, 100.0 - (box["amplitude"] / 0.50) * 100.0)
+                
+            # 3. MA99 Nằm Ngang (Độ dốc 15 ngày qua)
             if len(df) >= 100:
                 ma99_series = self.engine.get_ma(df, 99)
                 ma99_current = float(ma99_series.iloc[-1])
                 ma99_past = float(ma99_series.iloc[-15]) if len(ma99_series) >= 15 else ma99_current
                 slope_pct = (ma99_current - ma99_past) / ma99_past if ma99_past > 0 else 0
-                if not (-0.01 <= slope_pct <= 0.01):
-                    continue
             else:
-                continue
+                slope_pct = 0.5 # Điểm kém nếu không đủ dữ liệu
+                
+            # Chấm điểm MA99 (Dốc 0% -> 100đ, 5% -> 50đ, >= 10% -> 0đ)
+            score_ma99 = max(0.0, 100.0 - abs(slope_pct) * 1000.0)
+            
+            # Tổng điểm
+            total_score = (score_drop * 0.3) + (score_darvas * 0.4) + (score_ma99 * 0.3)
                 
             results.append({
                 "symbol": sym,
                 "current_price": current_price,
                 "drop_pct": drop_pct,
                 "box": box,
-                "ma99_slope": slope_pct
+                "ma99_slope": slope_pct,
+                "score_drop": score_drop,
+                "score_darvas": score_darvas,
+                "score_ma99": score_ma99,
+                "total_score": total_score
             })
             
-        # Lấy top 15 mã (ưu tiên theo độ nén chặt nhất)
-        results.sort(key=lambda x: x["box"]["amplitude"])
-        self.watchlist = results[:15]
+        # Lấy top 5 mã có điểm cao nhất
+        results.sort(key=lambda x: x["total_score"], reverse=True)
+        self.watchlist = results[:5]
         self.last_macro_update = time.time()
         return self.watchlist
 

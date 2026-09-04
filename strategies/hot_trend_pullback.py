@@ -360,18 +360,18 @@ class HotTrendPullback:
             else:
                 pullback_pct = (sh_48 - close_live) / sh_48 * 100 if (sh_48 > 0 and close_live < sh_48) else 0.0
 
-                if 3.0 <= pullback_pct <= 8.0:
+                if 1.0 <= pullback_pct <= 4.0:
                     score_c2  = 25
-                    status_c2 = f"Lý Tưởng (-{pullback_pct:.1f}% từ Swing)"
+                    status_c2 = f"Cờ Đuôi Nheo/Nền Khỏe (-{pullback_pct:.1f}%)"
+                elif 4.0 < pullback_pct <= 8.0:
+                    score_c2  = 20
+                    status_c2 = f"Pullback Tốt (-{pullback_pct:.1f}% từ Swing)"
                 elif 8.0 < pullback_pct <= 12.0:
-                    score_c2  = 15
-                    status_c2 = f"Khá Sâu (-{pullback_pct:.1f}% từ Swing)"
+                    score_c2  = 10
+                    status_c2 = f"Khá Sâu (-{pullback_pct:.1f}% — Rủi Ro Gãy)"
                 elif 12.0 < pullback_pct <= 15.0:
-                    score_c2  = 8
-                    status_c2 = f"Sâu (-{pullback_pct:.1f}% — Cẩn Thận)"
-                elif 1.0 <= pullback_pct < 3.0:
-                    score_c2  = 3
-                    status_c2 = f"Chưa Đủ (-{pullback_pct:.1f}%) — Chờ Thêm"
+                    score_c2  = 5
+                    status_c2 = f"Rất Sâu (-{pullback_pct:.1f}% — Cẩn Thận)"
                 elif pullback_pct < 1.0:
                     score_c2  = 0
                     status_c2 = f"Sát Đỉnh (-{pullback_pct:.1f}%) — Chưa Có Pullback"
@@ -379,15 +379,39 @@ class HotTrendPullback:
                     score_c2  = 0
                     status_c2 = f"Quá Sâu (-{pullback_pct:.1f}%) — Có Thể Gãy"
 
+                # Lọc Bơm Xả (Wick Rejection): Kiểm tra 2 nến 1H gần nhất
+                # Nếu râu trên > 3% và gấp 2 lần thân nến -> Từ chối Pullback
+                for idx in range(-3, -1):
+                    c_h = float(df_1h['High'].iloc[idx])
+                    c_o = float(df_1h['Open'].iloc[idx])
+                    c_c = float(df_1h['Close'].iloc[idx])
+                    c_upper = c_h - max(c_o, c_c)
+                    c_body = abs(c_o - c_c)
+                    c_wick_pct = c_upper / max(c_o, c_c) * 100
+                    if c_wick_pct > 3.0 and c_upper > c_body * 2:
+                        score_c2 = 0
+                        status_c2 = f"🔴 Bơm xả (Râu trên {c_wick_pct:.1f}%) — TỪ CHỐI"
+                        break
+
             # ── C3: Volume Cạn Kiệt (20đ) ─────────────────────────────────
-            # So sánh vol nến đã đóng gần nhất vs vol nến xanh đỉnh trong 10 nến 1H
+            # So sánh vol xả trung bình (chỉ lấy nến đỏ/doji) trong 3 nến 1H gần nhất vs vol nến xanh đỉnh
             recent_10   = df_1h.iloc[-11:-1]   # 10 nến 1H đã đóng, không tính nến đang mở
             green_c10   = recent_10[recent_10['Close'] > recent_10['Open']]
             peak_push   = float(green_c10['Quote_Volume'].max()) if len(green_c10) > 0 else 0.0
-            cur_vol_1h  = float(df_1h['Quote_Volume'].iloc[-2])   # Nến đã đóng gần nhất
+            
+            # Lấy 3 nến đã đóng gần nhất
+            recent_3 = df_1h.iloc[-4:-1]
+            # Lọc ra các nến đỏ hoặc doji
+            red_doji_3 = recent_3[recent_3['Close'] <= recent_3['Open']]
+            
+            if len(red_doji_3) > 0:
+                avg_dump_vol = float(red_doji_3['Quote_Volume'].mean())
+            else:
+                # Nếu 3 nến gần nhất đều là xanh, coi như vol xả rất thấp (chưa có nhịp xả gần)
+                avg_dump_vol = float(recent_3['Quote_Volume'].mean()) * 0.3
 
             if peak_push > 0:
-                vol_ratio = cur_vol_1h / peak_push
+                vol_ratio = avg_dump_vol / peak_push
             else:
                 vol_ratio = 1.0
 
