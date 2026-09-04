@@ -14,12 +14,14 @@ Changelog Phase 1:
 import ccxt
 import pandas as pd
 import numpy as np
+from core.indicator_engine import IndicatorEngine
 
 
 class MomentumBreakout:
     def __init__(self, exchange=None):
         from core.exchange_factory import get_working_exchange
         self.exchange = exchange or get_working_exchange()
+        self.engine   = IndicatorEngine()
 
     # =========================================================================
     # [MỚI - DC3-3] BTC 1H GATE — Kiểm Tra Sức Khỏe Thị Trường Chung
@@ -39,20 +41,16 @@ class MomentumBreakout:
             candles = self.exchange.fetch_ohlcv('BTC/USDT', '1h', limit=50)
             df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
 
-            # MA25 1H
-            ma25 = df['close'].rolling(window=25).mean().iloc[-1]
-            current_close = df['close'].iloc[-1]
+            # Dùng IndicatorEngine (có cache) — tránh tính lại nếu gọi nhiều lần trong cùng tick
+            self.engine.clear_cache()
+            ma25          = self.engine.get_ma(df, 25)
+            rsi_series    = self.engine.get_rsi(df, 14)
+            current_close = float(df['close'].iloc[-1])
+            ma25_val      = float(ma25.iloc[-1])
+            rsi           = float(rsi_series.iloc[-1])
 
-            # RSI 14 (tính thủ công, tránh thêm dependency ngoài)
-            delta = df['close'].diff()
-            gains = delta.clip(lower=0)
-            losses = -delta.clip(upper=0)
-            avg_gain = gains.ewm(com=13, min_periods=14).mean().iloc[-1]
-            avg_loss = losses.ewm(com=13, min_periods=14).mean().iloc[-1]
-            rsi = 100 - (100 / (1 + avg_gain / avg_loss)) if avg_loss > 0 else 100.0
-
-            btc_above_ma25 = current_close > ma25
-            btc_rsi_ok = rsi >= 45.0
+            btc_above_ma25 = current_close > ma25_val
+            btc_rsi_ok     = rsi >= 45.0
 
             if not btc_above_ma25:
                 return {
@@ -83,11 +81,8 @@ class MomentumBreakout:
 
     # =========================================================================
     # CỬA 1: ĐIỂM NỔ CẤU TRÚC GIÁ (PRICE ACTION BREAKOUT) — TỐI ĐA 30 ĐIỂM
-    # [DC3-1] Kháng cự từ 100 nến 4H (~17 ngày) thay vì 50 nến (~8 ngày)
     # =========================================================================
     def evaluate_price_action(self, df: pd.DataFrame) -> dict:
-        # [DC3-1] Tìm kháng cự macro từ 100 nến trước đó (loại nến hiện tại)
-        # 100 nến 4H ≈ 17 ngày — bắt được kháng cự đủ mạnh để xác nhận breakout thật
         past_highs = df['high'].iloc[-100:-1]
         resistance = past_highs.max()
 
@@ -96,20 +91,19 @@ class MomentumBreakout:
         high_price = latest_candle['high']
         open_price = latest_candle['open']
 
-        # Thân nến và Râu nến
         body = abs(close_price - open_price)
         upper_wick = high_price - max(close_price, open_price)
 
         if close_price > resistance:
             if upper_wick >= body:
-                # Râu trên dài bằng hoặc hơn thân nến -> Phe bán đạp xuống cực mạnh (Shooting Star/Pinbar)
-                return {"score": 10, "status": "Breakout bị dội ngược (Râu dài)", "resistance": resistance}
+                return {"score": 0, "status": "Fakeout (Râu bị dội ngược)", "resistance": resistance}
             elif upper_wick > body * 0.4:
-                # Râu trên dài từ 40% đến dưới 100% thân nến -> Vẫn là Breakout nhưng có lực chốt lời
-                return {"score": 25, "status": "Breakout (Có râu nến xả nhẹ)", "resistance": resistance}
+                return {"score": 15, "status": "Breakout (Có râu nến xả nhẹ)", "resistance": resistance}
             else:
-                # Breakout đẹp, nến đặc hoặc râu rất ngắn
                 return {"score": 30, "status": "Breakout Sạch (Đóng nến qua kháng cự)", "resistance": resistance}
+        elif high_price > resistance:
+            # Giá chọc râu qua nhưng đóng nến dưới kháng cự -> Fakeout
+            return {"score": -100, "status": "Fakeout (Chọc râu rút chân)", "resistance": resistance}
         elif close_price >= resistance * 0.99:
             return {"score": 15, "status": "Tiệm cận Kháng cự (Chờ Breakout)", "resistance": resistance}
         else:
@@ -119,7 +113,6 @@ class MomentumBreakout:
     # CỬA 2: ĐỘT BIẾN KHỐI LƯỢNG (VOLUME ANOMALY) — TỐI ĐA 25 ĐIỂM
     # =========================================================================
     def evaluate_volume(self, df: pd.DataFrame) -> dict:
-        # Tính MA20 của Volume (trừ nến hiện tại)
         ma20_vol = df['volume'].iloc[-21:-1].mean()
         current_vol = df['volume'].iloc[-1]
 
@@ -130,74 +123,20 @@ class MomentumBreakout:
 
         if vol_ratio >= 3.0:
             return {"score": 25, "status": f"Dòng tiền Bạo Phát ({vol_ratio:.1f}x MA20)"}
-        elif vol_ratio >= 2.0:
-            return {"score": 15, "status": f"Volume Khá ({vol_ratio:.1f}x MA20)"}
+        elif vol_ratio >= 2.5:
+            return {"score": 15, "status": f"Volume Đột Biến ({vol_ratio:.1f}x MA20)"}
         else:
-            return {"score": 0, "status": f"Volume Yếu ({vol_ratio:.1f}x MA20) - Fakeout?"}
+            return {"score": -100, "status": f"Volume Yếu ({vol_ratio:.1f}x MA20) - Bull Trap"}
 
     # =========================================================================
-    # CỬA 3: DẤU CHÂN SỔ LỆNH (ORDER BOOK TAPE READING) — TỐI ĐA 20 ĐIỂM
+    # CỬA 3: ĐỘNG NĂNG DUY TRÌ (TAKER BUY RATIO) — TỐI ĐA 20 ĐIỂM
     # =========================================================================
-    def evaluate_orderbook(self, order_book: dict, current_price: float) -> dict:
-        # Quét Bids/Asks trong biên độ 1% quanh giá hiện tại
-        upper_bound = current_price * 1.01
-        lower_bound = current_price * 0.99
-
-        bid_vol = sum([bid[1] for bid in order_book['bids'] if bid[0] >= lower_bound])
-        ask_vol = sum([ask[1] for ask in order_book['asks'] if ask[0] <= upper_bound])
-
-        if ask_vol == 0:
-            return {"score": 20, "status": "Phe Bán trống rỗng (Pump Dễ)"}
-
-        imbalance = bid_vol / ask_vol
-
-        if imbalance >= 2.0:
-            return {"score": 20, "status": "Phe Mua Áp Đảo (Tường Bid Dày)"}
-        elif imbalance >= 1.2:
-            return {"score": 10, "status": "Phe Mua chiếm ưu thế nhẹ"}
-        else:
-            return {"score": 0, "status": "Tường Sell cản đường"}
-
-    # =========================================================================
-    # CỬA 4: TỶ LỆ R/R & CẮt LỔ (RISK MANAGEMENT) — TỐI ĐA 25 ĐIỂM
-    # SL đặt ngay dưới resistance cũ (buffer 1%) — vùng kháng cự cũ sau breakout
-    # trở thành vùng hỗ trợ mới (quy tắc kiểm tra lại của phân tích kỹ thuật).
-    # Sắt buffer 1% (không 3%) để bảo toàn R/R và đảm bảo score c1 >= 25 điểm.
-    # =========================================================================
-    def evaluate_risk(self, df: pd.DataFrame, entry: float) -> dict:
-        # Lấy kháng cự macro nhất quán với evaluate_price_action (100 nến)
-        past_highs = df['high'].iloc[-100:-1]
-        resistance = past_highs.max()
-
-        if entry < resistance:
-            # Chưa vượt kháng cự: SL đặt dưới đáy nến hiện tại
-            sl = df['low'].iloc[-1] * 0.99
-        else:
-            # Đã vượt kháng cự: SL đặt ngay dưới đỉnh hộp cũ 1% (buffer chống quét râu).
-            # Kháng cự cũ = Hỗ trợ mới. Giao dịch breakout động lượng cần bứt phá nhanh,
-            # nếu giá đâm ngược lại qua resistance quá 1% thì coi như setup thất bại (cắt nhanh).
-            sl = resistance * 0.99
-
-        sl_percent = (entry - sl) / entry
-
-        if sl_percent <= 0.035:
-            return {"score": 25, "status": f"SL Cực Đẹp ({-sl_percent*100:.1f}%) — R/R Tối Ưu", "sl": sl}
-        elif sl_percent <= 0.05:
-            return {"score": 10, "status": f"SL Chấp Nhận Được ({-sl_percent*100:.1f}%)", "sl": sl}
-        else:
-            # Phạt nặng -100 điểm để tạch ngay lập tức (Không rượt giá, lỡ tàu thì bỏ)
-            return {"score": -100, "status": f"🚫 LỠ TÀU (SL {-sl_percent*100:.1f}% quá rủi ro) → HỦY SETUP", "sl": sl}
-
-    # =========================================================================
-    # ĐIỂM THƯỞNG: TAKER BUY RATIO (Lực mua chủ động) — MAX +10 ĐIỂM (OVERCAP)
-    # =========================================================================
-    def evaluate_taker_buy(self, symbol: str, timeframe: str) -> dict:
+    def evaluate_taker_buy(self, symbol: str) -> dict:
         try:
-            # Gọi API gốc Binance để lấy klines có chứa Taker Buy Quote
             binance_symbol = symbol.replace("/", "").replace("-", "")
             raw_klines = self.exchange.publicGetKlines({
                 "symbol": binance_symbol,
-                "interval": timeframe,
+                "interval": "15m",
                 "limit": 1
             })
             if not raw_klines:
@@ -212,15 +151,43 @@ class MomentumBreakout:
 
             taker_ratio = (taker_buy_quote / quote_vol) * 100
 
-            if taker_ratio >= 65.0:
-                return {"score": 10, "status": f"🔥 FOMO Lực Mua ({taker_ratio:.1f}%) -> +10 Bonus"}
-            elif taker_ratio >= 55.0:
-                return {"score": 5, "status": f"Lực Mua Tốt ({taker_ratio:.1f}%) -> +5 Bonus"}
+            if taker_ratio >= 60.0:
+                return {"score": 20, "status": f"Phe Mua Áp Đảo (Taker Buy {taker_ratio:.1f}%)"}
             else:
-                return {"score": 0, "status": f"Taker Buy Bình Thường ({taker_ratio:.1f}%)"}
+                return {"score": -100, "status": f"Lực Mua Yếu (Taker Buy {taker_ratio:.1f}%)"}
 
         except Exception as e:
             return {"score": 0, "status": f"Lỗi Taker Buy: {str(e)[:30]}"}
+
+    # =========================================================================
+    # CỬA 4: TỶ LỆ R/R & CẮT LỖ (RISK MANAGEMENT) — TỐI ĐA 25 ĐIỂM
+    # SL đặt ngay dưới nắp hộp Darvas. R/R tối thiểu 1:2.
+    # =========================================================================
+    def evaluate_risk(self, df: pd.DataFrame, entry: float) -> dict:
+        past_highs = df['high'].iloc[-100:-1]
+        past_lows = df['low'].iloc[-100:-1]
+        resistance = past_highs.max()
+        support = past_lows.min()
+        box_size = resistance - support
+
+        if entry < resistance:
+            sl = df['low'].iloc[-1] * 0.99
+        else:
+            sl = resistance * 0.995 # Đặt sát dưới nắp hộp
+
+        sl_dist = entry - sl
+        tp1_price = entry + box_size
+        tp1_dist = tp1_price - entry
+
+        if sl_dist <= 0:
+            return {"score": -100, "status": "Lỗi SL", "sl": sl, "rr": 0}
+
+        rr_ratio = tp1_dist / sl_dist
+
+        if rr_ratio >= 2.0:
+            return {"score": 25, "status": f"R/R Tối Ưu ({rr_ratio:.1f}) — SL Sát Hộp", "sl": sl, "rr": rr_ratio}
+        else:
+            return {"score": -100, "status": f"🚫 HỦY SETUP (R/R {rr_ratio:.1f} < 2.0 quá rủi ro)", "sl": sl, "rr": rr_ratio}
 
     # =========================================================================
     # HÀM CHÍNH: CHẤM ĐIỂM TOÀN DIỆN
@@ -260,45 +227,30 @@ class MomentumBreakout:
             df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             current_price = df['close'].iloc[-1]
 
-            # Kéo Orderbook
-            order_book = self.exchange.fetch_order_book(symbol, limit=100)
+            # Kéo Orderbook (Dự phòng nếu cần, không chấm điểm trực tiếp nữa)
+            # order_book = self.exchange.fetch_order_book(symbol, limit=100)
 
-            # Chấm điểm 4 Gates + 1 Bonus
+            # Chấm điểm 4 Gates
             c1 = self.evaluate_price_action(df)
             c2 = self.evaluate_volume(df)
-            c3 = self.evaluate_orderbook(order_book, current_price)
+            c3 = self.evaluate_taker_buy(symbol)
             c4 = self.evaluate_risk(df, current_price)
-            bonus = self.evaluate_taker_buy(symbol, timeframe)
 
-            total_score = c1['score'] + c2['score'] + c3['score'] + c4['score'] + bonus['score']
+            total_score = c1['score'] + c2['score'] + c3['score'] + c4['score']
 
             # Tính R/R ratio thực tế và Dynamic TP
             sl_price = c4.get('sl')
             rr_ratio = 0.0
             
             if sl_price and sl_price < current_price:
-                # Căn cứ số liệu kỹ thuật: Biên độ hộp tích lũy (Measured Move)
-                past_highs = df['high'].iloc[-100:-1]
-                past_lows = df['low'].iloc[-100:-1]
-                box_size = past_highs.max() - past_lows.min()
+                rr_ratio = c4.get('rr', 0)
+                # Tính TP1 theo R/R
+                tp1_dist = (current_price - sl_price) * max(rr_ratio, 2.0)
+                tp1_price = current_price + tp1_dist
                 
-                # Kỹ thuật Measured Move: 
-                # Mức 1: Bứt phá 100% chiều cao hộp (Standard Measured Move)
-                # Mức 2: Bứt phá 200% chiều cao hộp (Extended Momentum)
-                tp1_tech_pct = box_size / current_price
-                tp2_tech_pct = (box_size * 2.0) / current_price
-                
-                # Cân đối: Đảm bảo tối thiểu 4% và 8%, nhưng nới lỏng trần trên để số liệu chạy động theo thực tế
-                tp1_pct = max(0.04, min(0.15, tp1_tech_pct))
-                tp2_pct = max(0.08, min(0.25, tp2_tech_pct))
-                
-                tp1_price = current_price * (1 + tp1_pct)
-                tp2_price = current_price * (1 + tp2_pct)
-                tp_trail  = current_price * (1 + tp2_pct + 0.05) # Trail sau TP2 5%
-                
-                sl_dist = current_price - sl_price
-                tp1_dist = tp1_price - current_price
-                rr_ratio = round(tp1_dist / sl_dist, 2)
+                # Cân đối TP1/TP2 theo cấu trúc mới
+                tp2_price = current_price + (tp1_dist * 1.5)
+                tp_trail  = current_price + (tp1_dist * 1.7)
             else:
                 tp1_price = current_price * 1.05
                 tp2_price = current_price * 1.10

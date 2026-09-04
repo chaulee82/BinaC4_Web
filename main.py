@@ -6,13 +6,19 @@ import json
 import logging
 from dotenv import load_dotenv
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from strategies.macro_pullback.pullback_sniper import PullbackSniper
+from strategies.macro_pullback.entry_calculator_service import (
+    EntryCalculatorService, EntryCalculatorServiceError
+)
 from strategies.macro_grid_darvas import MacroGridDarvas
 from strategies.momentum_breakout import MomentumBreakout
 from strategies.hot_trend_pullback import HotTrendPullback
 from execution.hybrid_executor import HybridExecutor
 from execution.grid_manager import GridManager
-from core.coin_filter import get_filtered_symbols
+from core.coin_filter import get_filtered_symbols, live_data_map, get_avg_vola_24h
 from core.early_warning import EarlyWarningMatrix
 
 # Thiết lập logging
@@ -28,6 +34,7 @@ logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 logging.getLogger("requests").setLevel(logging.ERROR)
 logging.getLogger("ccxt").setLevel(logging.ERROR)
 logging.getLogger("asyncio").setLevel(logging.ERROR)
+logging.getLogger("CN4.Engine2.EntryCalc").setLevel(logging.ERROR)  # Tắt INFO/WARNING với EntryCalc — chỉ hiện kết quả trên console
 
 def load_settings():
     config_path = os.path.join(os.path.dirname(__file__), 'config', 'settings.json')
@@ -85,12 +92,13 @@ def main():
     logger.info(f"Timeframe: {timeframe}")
 
     # Khởi tạo các module cốt lõi
-    sniper = PullbackSniper()
-    darvas = MacroGridDarvas()
-    breakout = MomentumBreakout()
-    hot_trend = HotTrendPullback()
-    executor = HybridExecutor(api_key=api_key, secret_key=secret_key)
-    grid_manager = GridManager(api_key=api_key, secret_key=secret_key)
+    sniper         = PullbackSniper()
+    entry_calc     = EntryCalculatorService()   # DC2 Lõi Tính Toán (chạy sau PullbackSniper)
+    darvas         = MacroGridDarvas()
+    breakout       = MomentumBreakout()
+    # DC4 (HotTrendPullback) dùng class methods, không cần khởi tạo instance ở đây
+    executor       = HybridExecutor(api_key=api_key, secret_key=secret_key)
+    grid_manager   = GridManager(api_key=api_key, secret_key=secret_key)
     
     # Chạy 1 lần (Manual Scan Mode)
     if True:
@@ -134,6 +142,11 @@ def main():
             ENGINE_TOP_N = settings.get("trading", {}).get("engine_top_n", 20)
 
             if watchlist:
+                pre_ew_limit = ENGINE_TOP_N * 2
+                if len(watchlist) > pre_ew_limit:
+                    logger.info(f"⚡ Tối ưu hiệu suất: Giảm danh sách quét EW từ {len(watchlist)} xuống Top {pre_ew_limit} mã.")
+                    watchlist = watchlist[:pre_ew_limit]
+                    
                 # =========================================================
                 # 0. HỆ THỐNG CẢNH BÁO SỚM & RỦI RO SẬP (Early Warning Matrix)
                 # =========================================================
@@ -315,98 +328,194 @@ def main():
                 # 2. Chạy Động Cơ 2 (Pullback Sniper)
                 # =========================================================
                 sniper_results = []
-                logger.info("🔍 [DC2] Kiểm tra Macro Trend 1D trước khi chấm điểm Pullback...")
+                logger.info("[DC2] Kiem tra Macro Trend 1D truoc khi cham diem Pullback...")
+
+                # Tính avg_vola_24h MỘT LẦN từ live_data_map đã có sẵn
+                avg_vola_24h = get_avg_vola_24h()
+
                 for symbol in watchlist:
-                    # [Đã gỡ bỏ màng lọc Bảng 1 An Toàn để Động cơ 2 có thể quét các mã đang Panic Sell]
-                    # [DC2-4] Gate 0: Kiểm tra Macro Trend 1D trước mỗi mã
                     macro_gate = sniper.check_macro_trend_1d(symbol)
                     if not macro_gate.get("ok", True):
-                        logger.debug(f"[DC2] {symbol} bị Macro Gate loại: {macro_gate['reason']}")
+                        logger.debug(f"[DC2] {symbol} bi Macro Gate loai: {macro_gate['reason']}")
 
-                    # Gọi bộ não chấm điểm Pullback Sniper (truyền macro_gate để không gọi API lại)
                     result = sniper.evaluate_candidate(symbol, timeframe, macro_gate=macro_gate)
                     sniper_results.append(result)
-                    
+
                 # Sắp xếp theo điểm tổng giảm dần và chỉ lấy Top 5
                 sniper_results.sort(key=lambda x: x.get('total_score', 0), reverse=True)
                 sniper_results = sniper_results[:5]
                 
-                # In bảng dữ liệu cho PullbackSniper
                 # In bảng dữ liệu cho PullbackSniper
                 print("\n" + "=" * 175)
                 print(f"🎯 BẢNG CHẤM ĐIỂM PULLBACK SNIPER (ĐỘNG CƠ 2 - TÌM LỆNH THỰC THI CHÍNH XÁC)")
                 print("=" * 175)
                 print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'Trạng Thái Bảng 1':<35} | {'C1 (Hội Tụ)':<12} | {'C2 (Vol)':<10} | {'C3 (Sổ Lệnh)':<12} | {'C4 (R/R)':<10} | {'Hành Động'}")
                 print("| --- | --- | --- | --- | --- | --- | --- | --- |")
-                
+
                 for res in sniper_results:
                     sym = res.get('symbol', '')
                     score = res.get('total_score', 0)
                     act = res.get('action', '')
                     dt = res.get('details', {})
-                    
+
                     c1 = dt.get('Gate_1_Confluence', {}).get('score', 0)
                     c2 = dt.get('Gate_2_Volume', {}).get('score', 0)
                     c3 = dt.get('Gate_3_OrderBook', {}).get('score', 0)
                     c4 = dt.get('Gate_4_RR', {}).get('score', 0)
                     safe_tag = safety_map.get(sym, "⚠️ CHƯA XÉT")
-                    
+
                     print(f"{sym:<15} | {score:<10} | {safe_tag:<35} | {c1:<12} | {c2:<10} | {c3:<12} | {c4:<10} | {act}")
 
-                    
-                    # In thông số Setup nếu là LOẠI A hoặc LOẠI B
+                    # Chạy EntryCalculatorService (Lõi Thực Thi) nếu đạt điểm >= 70
                     if score >= 70:
-                        setup = res.get('trade_setup', {})
-                        entry = setup.get('entry')
-                        sl = setup.get('stop_loss')
-                        tp = setup.get('take_profit')
-                        if entry and sl and tp:
-                            sl_pct = (entry - sl) / entry * 100
-                            tp_pct = (tp - entry) / entry * 100
-                            rr_ratio = tp_pct / sl_pct if sl_pct > 0 else 0
-                            
-                            from core.grid_calculator import GridCalculator
-                            gc = GridCalculator()
-                            setup1h = gc.calculate_grid_1h(current_price=entry, entry=entry, stop_loss=sl, tp1=tp)
-                            
-                            print(f"   ↳ ⚙️ SETUP: [{sym}] Limit Buy = {fmt_price(entry)} | Chốt Lời (TP) = {fmt_price(tp)} (+{tp_pct:.1f}%) | Cắt Lỗ (SL) = {fmt_price(sl)} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
-                            if setup1h.get('status') == 'SUCCESS':
-                                lower = setup1h.get('lower_bound')
-                                upper = setup1h.get('upper_bound')
-                                grids = setup1h.get('num_grids')
-                                hard_sl = setup1h.get('hard_stop_loss')
-                                hard_tp = setup1h.get('hard_take_profit')
-                                buf_pct = setup1h.get('tp_buffer_pct', 0.015) * 100
-                                trigger_buffer_1h = 0.003  # Đệm +0.3% để đón lõng Pullback
-                                trig_1h = entry * (1 + trigger_buffer_1h)
-                                print(f"   ↳ ⚙️ GRID 1H : [{sym}] | Trig: {fmt_price(trig_1h)} (Đón lõng Entry) | Lưới: {fmt_price(hard_sl)} - {fmt_price(entry)} ({grids}L) | SL: {fmt_price(hard_sl)} (-{buf_pct:.1f}%) | TP: {fmt_price(hard_tp)} (+{buf_pct:.1f}%)")
-                            print("-" * 175)
-                
+                        coin_vola = live_data_map.get(
+                            sym.replace('/', ''), {}
+                        ).get('daily_vola', avg_vola_24h)
+
+                        # ── Bộ Giáp Sniper: Chạy scan_sniper_safety() để lấy EW + Pullback Score ──
+                        try:
+                            from core.coin_filter import fetch_binance_api
+                            sym_api = sym.replace('/', '')
+                            def _fetch_df_dc2(interval, limit):
+                                data = fetch_binance_api(
+                                    f"/api/v3/klines?symbol={sym_api}&interval={interval}&limit={limit}"
+                                )
+                                if not data:
+                                    return pd.DataFrame()
+                                rows = [[int(x[0]), float(x[1]), float(x[2]),
+                                         float(x[3]), float(x[4]), float(x[5])] for x in data]
+                                return pd.DataFrame(rows, columns=['timestamp','open','high','low','close','volume'])
+
+                            _df_15m = _fetch_df_dc2('15m', 60)
+                            _df_4h  = _fetch_df_dc2('4h',  120)
+                            _df_1h  = _fetch_df_dc2('1h',  50)
+                            _price  = float(_df_15m['close'].iloc[-1]) if not _df_15m.empty else 0.0
+
+                            ew_res = early_warning.scan_sniper_safety(
+                                df_15m        = _df_15m,
+                                df_4h         = _df_4h,
+                                df_1h         = _df_1h,
+                                current_price = _price,
+                                coin_vola_24h = coin_vola,
+                                avg_vola_24h  = avg_vola_24h,
+                                symbol        = sym_api,
+                            )
+                            ew_lv  = ew_res.get('ew_level', 3)
+                            ew_lbl = ew_res.get('ew_label', '')
+                            pb_sc  = ew_res.get('pullback_score', 0)
+                            pb_dt  = ew_res.get('pullback_detail', {})
+                            force_con = ew_res.get('force_conservative', False)
+
+                            # Tóm tắt C1-C4 cho dòng hiển thị
+                            c1_pb = pb_dt.get('C1_Wick_Purity',    {}).get('score', '-')
+                            c2_pb = pb_dt.get('C2_Micro_Dryup',    {}).get('score', '-')
+                            c3_pb = pb_dt.get('C3_Macro_Momentum', {}).get('score', '-')
+                            c4_pb = pb_dt.get('C4_Taker_Buy',      {}).get('score', '-')
+                            force_tag = " [⚠️ FORCE-CON]" if force_con else ""
+
+                            print(f"   ↳ 🛡️ EW Sniper [{sym}]: {ew_lbl}{force_tag}")
+                            print(f"      PB Score={pb_sc}/100 "
+                                  f"| C1-Wick={c1_pb}đ C2-DryUp={c2_pb}đ "
+                                  f"C3-Momentum={c3_pb}đ C4-TakerBuy={c4_pb}đ")
+
+                            # Nếu EW Cấp 1 bắn cờ → hiện trigger và bỏ qua EntryCalc
+                            if ew_lv == 1:
+                                triggers = " | ".join(ew_res.get('ew_triggers', []))
+                                print(f"   ↳ ⛔ [EW CẤP 1 REJECT] {triggers}")
+                                print("-" * 175)
+                                continue
+
+                        except Exception as _ew_err:
+                            logger.debug(f"[DC2-EW] {sym}: Không thể chạy scan_sniper_safety: {_ew_err}")
+                            ew_lv = 3
+
+                        try:
+                            oco_payload = entry_calc.calculate({
+                                "symbol":             sym.replace('/', ''),
+                                "timeframe_entry":    "15m",
+                                "timeframe_macro":    "4h",
+                                "engine_type":        "SNIPER_SPOT",
+                                "capital_allocation": 0.30,
+                                "avg_vola_24h":       avg_vola_24h,
+                                "coin_vola_24h":      coin_vola,
+                            })
+
+                            v   = oco_payload['validation']
+                            p1  = oco_payload['payload'][0]['parameters']
+                            p2  = oco_payload['payload'][1]['parameters']
+                            rr1 = v['rr_payload1']
+                            rr2 = v['rr_payload2']
+                            mode = v['risk_mode']
+
+                            entry   = p1['price']
+                            sl1_pct = (entry - p1['oco_sl']) / entry * 100
+                            tp1_pct = (p1['oco_tp'] - entry) / entry * 100
+                            sl2_pct = (entry - p2['oco_sl']) / entry * 100
+                            tp2_pct = (p2['oco_tp'] - entry) / entry * 100
+                            cb_tag  = 'CB:ON' if v.get('cb_triggered') else 'CB:OFF'
+
+                            print(f"   ↳ OCO-1 [{sym}] Buy={fmt_price(entry)} "
+                                  f"| SL={fmt_price(p1['oco_sl'])}(-{sl1_pct:.1f}%) "
+                                  f"| TP={fmt_price(p1['oco_tp'])}(+{tp1_pct:.1f}%) "
+                                  f"| R/R=1:{rr1:.1f} "
+                                  f"| EMA25={fmt_price(v.get('ema25',0))} "
+                                  f"| {cb_tag} Pierced={v.get('pierced_count',0)}/20")
+                            print(f"   ↳ OCO-2 [{sym}] Buy={fmt_price(entry)} "
+                                  f"| SL={fmt_price(p2['oco_sl'])}(-{sl2_pct:.1f}%) "
+                                  f"| TP={fmt_price(p2['oco_tp'])}(+{tp2_pct:.1f}%) "
+                                  f"| R/R=1:{rr2:.1f} "
+                                  f"| [{mode}] Trailing=ON->BE khi OCO-1 TP")
+
+                        except EntryCalculatorServiceError as e:
+                            err_str = str(e)
+                            # Phân biệt: EW Cấp 1 bên trong EntryCalc hay R/R Gate
+                            if 'EW CẤP 1' in err_str or 'FATAL RISK' in err_str:
+                                print(f"   ↳ ⛔ [REJECT - EW CẤP 1] {err_str}")
+                            elif 'R/R Gate' in err_str or 'R/R' in err_str:
+                                print(f"   ↳ 📊 [REJECT - R/R Gate] {err_str}")
+                            else:
+                                print(f"   ↳ 🔴 [EntryCalc REJECTED] {err_str}")
+                        except Exception as e:
+                            print(f"   ↳ [EntryCalc ERROR] {e}")
+
+                    print("-" * 175)
+
                 print("=" * 175 + "\n")
-                
+
+
                 # Kích hoạt thực thi cho các mã đạt điểm
                 for res in sniper_results:
                     score = res.get('total_score', 0)
                     if score >= 85:
                         symbol = res.get('symbol')
-                        setup = res.get('trade_setup', {})
-                        entry = setup.get('entry')
-                        sl = setup.get('stop_loss')
-                        tp = setup.get('take_profit')
-                        
-                        if entry is not None and sl is not None and tp is not None:
-                            test_amount = 0.01
-                            logger.warning(f"🚀 [TÍN HIỆU] Kích hoạt Executor cho {symbol} tại giá {entry}")
-                            if api_key:
-                                executor.execute_trade(
-                                    symbol=symbol,
-                                    entry=entry,
-                                    sl=sl,
-                                    tp=tp,
-                                    amount=test_amount
-                                )
-                            else:
-                                logger.info(f"[MOCK MODE] Sẽ đặt lệnh Buy Limit {symbol} tại {entry}, SL: {sl}, TP: {tp}")
+                        coin_vola = live_data_map.get(
+                            symbol.replace('/', ''), {}
+                        ).get('daily_vola', avg_vola_24h)
+
+                        try:
+                            oco_payload = entry_calc.calculate({
+                                "symbol":             symbol.replace('/', ''),
+                                "timeframe_entry":    "15m",
+                                "timeframe_macro":    "4h",
+                                "engine_type":        "SNIPER_SPOT",
+                                "capital_allocation": 0.30,
+                                "avg_vola_24h":       avg_vola_24h,
+                                "coin_vola_24h":      coin_vola,
+                            })
+                            p1 = oco_payload['payload'][0]['parameters']
+                            p2 = oco_payload['payload'][1]['parameters']
+
+                            logger.warning(f"[TIN HIEU DC2] {symbol} APPROVED | "
+                                           f"Entry={fmt_price(p1['price'])} "
+                                           f"| OCO-1 SL={fmt_price(p1['oco_sl'])} TP={fmt_price(p1['oco_tp'])} "
+                                           f"| OCO-2 SL={fmt_price(p2['oco_sl'])} TP={fmt_price(p2['oco_tp'])}")
+                            if not api_key:
+                                logger.info(f"[MOCK MODE] {symbol}: OCO-1 Buy Limit @ {fmt_price(p1['price'])} "
+                                            f"SL={fmt_price(p1['oco_sl'])} TP={fmt_price(p1['oco_tp'])} | "
+                                            f"OCO-2 Buy Limit @ {fmt_price(p2['price'])} "
+                                            f"SL={fmt_price(p2['oco_sl'])} TP={fmt_price(p2['oco_tp'])}")
+                        except (EntryCalculatorServiceError, Exception) as e:
+                            logger.warning(f"[DC2] {symbol} score={score} nhung EntryCalc tu choi: {e}")
 
                 # =========================================================
                 # 3. Chạy Động Cơ 3 (Momentum Breakout)
@@ -477,64 +586,126 @@ def main():
                 print("=" * 175 + "\n")
                 
                 # =========================================================
-                # 4. Chạy Động Cơ 4 (Hot Trend Pullback)
+                # 4. Chạy Động Cơ 4 (Hot Trend Pullback) — Độc lập với watchlist
+                # Tự quét Top 60 mã tăng mạnh nhất từ live_data_map
+                # Không phụ thuộc vào màng lọc tích lũy của coin_filter
                 # =========================================================
+                from strategies.hot_trend_pullback import HotTrendPullback as _HTB
+
+                # Đếm số mã Hot Trend đủ điều kiện trước khi quét
+                _htb_symbols = _HTB.get_hot_trend_symbols(live_data_map)
+                _htb_count   = len(_htb_symbols)
+                _htb_change_threshold = 5.0  # HTB_MIN_CHANGE_24H
+
                 print("\n" + "=" * 175)
-                print(f"🚀 BẢNG CHẤM ĐIỂM HOT TREND PULLBACK (ĐỘNG CƠ 4 - SĂN ĐIỂM VÀO LỆNH PULLBACK)")
+                print(f"🔥 BẢNG CHẤM ĐIỂM HOT TREND PULLBACK (ĐỘNG CƠ 4 - SĂN ĐIỂM VÀO LỆNH PULLBACK)")
+                print(f"   📡 Nguồn: {_htb_count} mã Hot Trend (change_24h ≥ {_htb_change_threshold}%, vol ≥ 3M USDT) — Độc lập với watchlist tích lũy")
                 print("=" * 175)
-                
-                hot_trend_results = []
-                for symbol in watchlist:
-                    res = hot_trend.evaluate_pullback(symbol, timeframe)
-                    hot_trend_results.append(res)
-                    
-                hot_trend_results.sort(key=lambda x: x.get('sort_score', x.get('total_score', 0)), reverse=True)
-                hot_trend_results = hot_trend_results[:5]
-                
-                print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'C1 (Trend)':<25} | {'C2 (Vol)':<25} | {'C3 (Taker)':<25} | {'C4 (Entry)':<25} | {'C5 (Risk)':<25} | {'Hành Động'}")
-                print("| --- | --- | --- | --- | --- | --- | --- | --- |")
-                
-                for res in hot_trend_results:
-                    sym = res.get('symbol', '')
-                    score = res.get('total_score', 0)
-                    act = res.get('action', '')
-                    dt = res.get('details', {})
-                    
-                    c1 = dt.get('Gate_1_Trend', '')[:25]
-                    c2 = dt.get('Gate_2_Volume', '')[:25]
-                    c3 = dt.get('Gate_3_Taker', '')[:25]
-                    c4 = dt.get('Gate_4_Entry', '')[:25]
-                    c5 = dt.get('Gate_5_Risk', '')[:25]
-                    
-                    print(f"{sym:<15} | {score:<10} | {c1:<25} | {c2:<25} | {c3:<25} | {c4:<25} | {c5:<25} | {act}")
-                    
-                    setup = res.get('trade_setup', {})
-                    if setup:
-                        entry = setup.get('entry')
-                        sl = setup.get('stop_loss')
-                        tp1 = setup.get('tp1')
-                        if entry and sl and tp1:
-                            sl_pct = (entry - sl) / entry * 100
-                            tp1_pct = (tp1 - entry) / entry * 100
-                            rr_ratio = res.get('rr_ratio', (tp1_pct / sl_pct if sl_pct > 0 else 0))
+
+                hot_trend_results = _HTB.run_scan(live_data_map)
+
+                if not hot_trend_results:
+                    print("⚠️  KHÔNG TÌM THẤY MÃ NÀO ĐỦ ĐIỀU KIỆN HOT TREND PULLBACK HIỆN TẠI.")
+                    print("    → Thị trường chưa có nhịp pullback rõ ràng, hoặc các mã tăng đang vẫn ở đỉnh.")
+                else:
+                    print("-" * 175)
+
+                    from core.grid_calculator import GridCalculator as _GC
+                    _gc = _GC()
+
+                    for res in hot_trend_results[:5]:
+                        sym      = res.get('symbol', '')
+                        score    = res.get('Điểm', 0)
+                        score_c5 = res.get('Điểm C1-C5', score)
+                        c0_sc    = res.get('C0 Score', 0)
+                        rsi      = res.get('RSI 1H', 0)
+                        pull     = res.get('Pullback%', 0)
+                        act      = res.get('Hành Động', '')
+
+                        c1 = res.get('C1 Trend',    '')
+                        c2 = res.get('C2 Pullback', '')
+                        c3 = res.get('C3 Volume',   '')
+                        c4 = res.get('C4 Bệ Đỡ',   '')
+                        c5 = res.get('C5 Taker',    '')
+
+                        # Cột điểm: hiển thị "tổng (C1-C5 ± C0)"
+                        score_fmt = f"{score}({score_c5}{c0_sc:+d})"
+
+                        print(f"[{sym:<6}] Điểm: {score_fmt:<12} | RSI1H: {rsi:<5.1f} | Pull%: {pull:<6.1f} | 🎯 Hành Động: {act}")
+                        print(f"   ↳ 📈 C1 Trend  : {c1}")
+                        print(f"   ↳ 📉 C2 Pullbck: {c2}")
+                        print(f"   ↳ 📊 C3 Volume : {c3}")
+                        print(f"   ↳ 🧱 C4 Bệ Đỡ  : {c4}")
+                        print(f"   ↳ 💸 C5 Taker  : {c5}")
+
+                        # In dòng C0 Macro Cycle Detector
+                        c0_label  = res.get('C0 Chu Kỳ', '')
+                        c0_detail = res.get('C0 Detail', {})
+                        if c0_label:
+                            d180 = c0_detail.get('C0.1 Drawdown180D', '')
+                            d60  = c0_detail.get('C0.2 NgâmMóng60D',  '')
+                            d_ns = c0_detail.get('C0.3 NoSupply VSA', '')
+                            d_ma = c0_detail.get('C0.4 MA99 Slope',   '')
+                            print(f"   ↳ 🌀 C0 Macro  : {c0_label} | {d180} | {d60} | {d_ns} | {d_ma}")
+
+                        setup = res.get('trade_setup', {})
+                        if setup and setup.get('entry'):
+                            entry  = setup['entry']
+                            sl     = setup['stop_loss']
+                            tp1    = setup['take_profit']
+                            sl_pct = setup.get('sl_pct',  (entry - sl)  / entry * 100)
+                            tp_pct = setup.get('tp1_pct', (tp1 - entry) / entry * 100)
+                            rr     = setup.get('rr_ratio', 0)
+                            ema20  = setup.get('ema20', 0)
+                            ema50  = setup.get('ema50', 0)
+
+                            print(f"   ↳ ⚙️ SETUP [{sym}]"
+                                  f" | Buy Limit = {fmt_price(entry)}"
+                                  f" | TP = {fmt_price(tp1)} (+{tp_pct:.1f}%)"
+                                  f" | SL = {fmt_price(sl)} (-{sl_pct:.1f}%)"
+                                  f" | R/R = 1:{rr:.1f}"
+                                  f" | EMA20 = {fmt_price(ema20)}"
+                                  f" | EMA50 = {fmt_price(ema50)}")
+
+                            # Grid 1H bổ sung nếu setup hợp lệ
+                            try:
+                                setup1h = _gc.calculate_grid_1h(
+                                    current_price=entry, entry=entry,
+                                    stop_loss=sl, tp1=tp1
+                                )
+                                if setup1h.get('status') == 'SUCCESS':
+                                    hard_sl  = setup1h.get('hard_stop_loss')
+                                    hard_tp  = setup1h.get('hard_take_profit')
+                                    grids    = setup1h.get('num_grids')
+                                    buf_pct  = setup1h.get('tp_buffer_pct', 0.015) * 100
+                                    trig_1h  = entry * 1.003  # +0.3% đón lõng pullback
+                                    print(f"   ↳ ⚙️ GRID 1H [{sym}]"
+                                          f" | Trig: {fmt_price(trig_1h)}"
+                                          f" | Lưới: {fmt_price(hard_sl)} - {fmt_price(entry)} ({grids}L)"
+                                          f" | SL: {fmt_price(hard_sl)} (-{buf_pct:.1f}%)"
+                                          f" | TP: {fmt_price(hard_tp)} (+{buf_pct:.1f}%)")
+                            except Exception:
+                                pass
+
+                        print("-" * 175)
+
+                    if len(hot_trend_results) > 5:
+                        tracking_list = []
+                        for res in hot_trend_results[5:]:
+                            sym = res.get('symbol', '')
+                            score = res.get('Điểm', 0)
+                            act = res.get('Hành Động', '')
                             
-                            from core.grid_calculator import GridCalculator
-                            gc = GridCalculator()
-                            setup1h = gc.calculate_grid_1h(current_price=entry, entry=entry, stop_loss=sl, tp1=tp1)
+                            if "VÀO LỆNH" in act: act_short = "🚀"
+                            elif "CHỜ XÁC NHẬN" in act: act_short = "⏳"
+                            elif "TỪ CHỐI" in act: act_short = "🔥"
+                            else: act_short = "🔴"
                             
-                            print(f"   ↳ ⚙️ SETUP: [{sym}] Buy Limit = {fmt_price(entry)} | Chốt Lời (TP1) = {fmt_price(tp1)} (+{tp1_pct:.1f}%) | Cắt Lỗ (SL) = {fmt_price(sl)} (-{sl_pct:.1f}%) | R/R = 1:{rr_ratio:.1f}")
-                            if setup1h.get('status') == 'SUCCESS':
-                                lower = setup1h.get('lower_bound')
-                                upper = setup1h.get('upper_bound')
-                                grids = setup1h.get('num_grids')
-                                hard_sl = setup1h.get('hard_stop_loss')
-                                hard_tp = setup1h.get('hard_take_profit')
-                                buf_pct = setup1h.get('tp_buffer_pct', 0.015) * 100
-                                trigger_buffer_1h = 0.003  # Đệm +0.3% để đón lõng Pullback
-                                trig_1h = entry * (1 + trigger_buffer_1h)
-                                print(f"   ↳ ⚙️ GRID 1H : [{sym}] | Trig: {fmt_price(trig_1h)} (Đón lõng Entry) | Lưới: {fmt_price(hard_sl)} - {fmt_price(entry)} ({grids}L) | SL: {fmt_price(hard_sl)} (-{buf_pct:.1f}%) | TP: {fmt_price(hard_tp)} (+{buf_pct:.1f}%)")
-                            print("-" * 175)
-                
+                            tracking_list.append(f"{sym} ({score}đ {act_short})")
+                            
+                        print("👀 THEO DÕI THÊM: " + ", ".join(tracking_list))
+                        print("-" * 175)
+
                 print("=" * 175 + "\n")
                 
                 # ── 6-8. In các bảng từ coin_filter sau cùng ────────────────

@@ -124,6 +124,12 @@ def update_live_data():
     all_symbols = list(dict.fromkeys(MANUAL_SYMBOLS + auto_symbols))
     print(f"🎯 TỔNG CỘNG CÓ {len(all_symbols)} MÃ ĐƯỢC ĐƯA VÀO BẢNG CHẤM ĐIỂM MOMENTUM!\n")
 
+def get_avg_vola_24h():
+    if not live_data_map:
+        return 5.0
+    total_vola = sum(info.get('daily_vola', 5.0) for info in live_data_map.values())
+    return total_vola / len(live_data_map)
+
 def calculate_trend_score(close_price, ma25_price):
     if close_price < ma25_price:
         return 0.0
@@ -623,7 +629,7 @@ def process_symbol(symbol):
     _no_wick_heavy = ("Chuyên Úp Bô" not in warning_str)
 
     _macro_trend_ok = close_live >= ma50_1d
-    _macro_rsi_ok   = rsi_1d < 75.0
+    _macro_rsi_ok   = rsi_1d < 80.0
     
     _base_safe = _nen_ok and \
                  ("DOWNTREND" not in trang_thai) and \
@@ -654,7 +660,14 @@ def process_symbol(symbol):
         warning_reasons.append("🛡️ Đáy Darvas Bảo Lãnh (Dưới MA50)")
 
     if not _macro_rsi_ok:
-        warning_reasons.append(f"⛔ RSI 1D Đu Đỉnh ({rsi_1d:.1f})")
+        warning_reasons.append(f"⛔ RSI 1D Quá Khẩu Độ ({rsi_1d:.1f})")
+
+    # Bẫy chặn động: Nếu RSI 1D >= 75.0, bắt buộc ATR Squeeze (C4) phải đạt tuyệt đối (20đ)
+    if rsi_1d >= 75.0:
+        c4_score = darvas_setup.get('c4_score', 0) if has_darvas_floor else (darvas_res.get('details', {}).get('C4_score', 0) if 'darvas_res' in locals() else 0)
+        if c4_score < 20:
+            warning_reasons.append(f"⛔ RSI 1D Cao ({rsi_1d:.1f}) nhưng ATR Squeeze chưa kịch trần")
+            _base_safe = False
 
     is_safe = _base_safe and _trend_or_darvas_ok
 
@@ -775,6 +788,8 @@ def smart_price(p):
     else:           return f"{p:.4f}"
 
 def analyze_early(symbol):
+    return None
+
     info = live_data_map.get(symbol, {})
     if not info:
         return None
@@ -1081,6 +1096,13 @@ def get_filtered_symbols():
             .reset_index(drop=True)
         )
 
+        # ⚡ Gọi Darvas Hybrid Override cho Top 5 is_safe
+        safe_indices = df_summary.index[df_summary['is_safe'] == True].tolist()[:5]
+        for idx in safe_indices:
+            row_dict = df_summary.loc[idx].to_dict()
+            enriched = _enrich_early_with_darvas(row_dict)
+            df_summary.at[idx, 'grid_setup'] = enriched.get('grid_setup', {})
+
         vietnam_tz = timezone(timedelta(hours=7))
         current_time_str = datetime.now(vietnam_tz).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1182,88 +1204,47 @@ def get_filtered_symbols():
         print("\n" + "=" * _TW + "\n")
 
     # ── 7. 🌱 BẢNG 3 - BẮ SỜM NỀN TĂNG (in sau GRID) ───────────────────
+    print(f"\\n🌱 Đang quét Bảng 3 - Móng Vĩ Mô 1D...\\n")
+    
+    from core.macro_early_scanner import MacroEarlyScanner
+    scanner = MacroEarlyScanner()
     early_symbols = [
         s for s in live_data_map
         if s.endswith('USDT') and s not in EXCLUDE
-        and live_data_map[s].get('quote_vol', 0) >= EARLY_MIN_VOL_USDT
     ]
-    print(f"\n🌱 Đang quét Bảng 3 - Bửa Sớm Nền Tăng ({len(early_symbols)} mã vol > ${EARLY_MIN_VOL_USDT // 1_000_000}M)...\n")
-
-    early_list = []
-    if early_symbols:
-        with ThreadPoolExecutor(max_workers=20) as executor:
-            early_list = [r for r in executor.map(analyze_early, early_symbols) if r is not None]
-
-    early_list.sort(key=lambda x: x['Điểm'], reverse=True)
-    early_list = early_list[:5]
-    # ⚡ Darvas Hybrid Override chỉ chạy trên Top 5 sau sort (tiết kiệm ~(N-5)×3 API calls)
-    early_list = [_enrich_early_with_darvas(r) for r in early_list]
-
-    _WCOLS3 = [8, 12, 7, 14, 9, 10, 9, 9, 11]
+    early_list = scanner.scan_macro_1d(early_symbols)
+    
+    _WCOLS3 = [12, 12, 12, 12, 12]
     _TW3    = sum(_WCOLS3) + len(_SEP) * (len(_WCOLS3) - 1)
     def fmt_row3(cells):
         return _SEP.join(ljust_w(trunc_w(c, w), w) for c, w in zip(cells, _WCOLS3))
 
     print("=" * _TW3)
-    print("🌱 BẢNG 3: BẮT SỚM NỀN TĂNG SPOT GRID (KỲ VỌNG X2, X3 - TOP 5 MÃ TIỀM NĂNG)")
+    print("🌱 BẢNG 3: BẮT SỚM NỀN TĂNG SPOT GRID (WATCHLIST VĨ MÔ 1D)")
     print("=" * _TW3)
 
     if not early_list:
-        print("⚠️ KHÔNG TÌM THẤY MÃ NÀO ĐỦ THANH KHOẢN ĐỂ PHÂN TÍCH.")
+        print("⚠️ KHÔNG TÌM THẤY MÃ NÀO ĐẠT ĐIỀU KIỆN MÓNG VĨ MÔ.")
     else:
-        print(fmt_row3(["Mã", "Giá Live", "Điểm", "Rút Chân 15M", "Giật 4H",
-                        "Vol 24H", "Nén(30D)", "ĐộtBiến", "Đỉnh(180D)"]))
+        print(fmt_row3(["Mã", "Giá", "Chiết Khấu", "Darvas BB", "MA99 Slope"]))
         print("-" * _TW3)
         for r in early_list:
             print(fmt_row3([
-                r['Symbol'],
-                smart_price(r['Giá']),
-                str(r['Điểm']),
-                f"{r['Rút Chân']}/20",
-                f"{r['Giật 4H']}%",
-                f"${r['Vol 24H (M)']}M",
-                f"{r['Nén 30D']}%" if r['Nén 30D'] > 0 else "N/A",
-                f"{r['Đột Biến']}x" if r['Đột Biến'] > 0 else "-",
-                f"-{r['Đỉnh 180D']}%",
+                r['symbol'].replace('USDT', ''),
+                smart_price(r['current_price']),
+                f"{r['drop_pct']:.1%}",
+                f"{r['box']['amplitude']:.1%}",
+                f"{r['ma99_slope']:.2%}"
             ]))
-            
-            # Tính toán gợi ý Scale Order cho 1000 USDT (10 lệnh -> 100 USDT/lệnh)
-            sym = r['Symbol']
-            gia = float(r['Giá'])
-            
-            grid_setup = r.get('grid_setup', {})
-            if grid_setup.get('status') in ["SUCCESS", "WARNING_VOLATILE"]:
-                warning_tag = "[⚠️ VOLATILE]" if grid_setup.get('status') == "WARNING_VOLATILE" else ""
-                if grid_setup.get('is_dual_grid'):
-                    g1_l, g1_u, g1_n, g1_cap = grid_setup.get('g1_lower'), grid_setup.get('g1_upper'), grid_setup.get('g1_grids'), grid_setup.get('g1_capital_pct')
-                    g2_l, g2_u, g2_n, g2_cap = grid_setup.get('g2_lower'), grid_setup.get('g2_upper'), grid_setup.get('g2_grids'), grid_setup.get('g2_capital_pct')
-                    sl, tp = grid_setup.get('hard_stop_loss'), grid_setup.get('hard_take_profit')
-                    trig_g1 = g1_u * 1.005
-                    print(f"  ↳ ⚙️ GRID Darvas [Gom Đáy {g1_cap}%] {warning_tag}: [{sym}] | Trig: {trig_g1:.5f} | Lưới: {g1_l} - {g1_u} ({g1_n}L) | SL: {sl:.5f} | TP: N/A")
-                    print(f"  ↳ ⚙️ GRID Darvas [Hứng Breakout {g2_cap}%] {warning_tag}: [{sym}] | Trig: {g2_l:.5f} | Lưới: {g2_l} - {g2_u} ({g2_n}L) | SL: {sl:.5f} | TP: {tp:.5f}")
-                else:
-                    upper = grid_setup.get('upper_bound', gia * 0.97)
-                    lower = grid_setup.get('lower_bound', gia * 0.80)
-                    num_grids = grid_setup.get('num_grids', 10)
-                    engine = grid_setup.get('engine', 'GRID 4H')
-                    
-                    trigger_buffer_4h = 0.005  # Đệm +0.5% để chống front-run
-                    trig = upper * (1 + trigger_buffer_4h)
-                    sl = grid_setup.get('hard_stop_loss', lower * 0.97)
-                    tp = grid_setup.get('hard_take_profit', upper * 1.05)
-                    tp_buf = grid_setup.get('tp_buffer_pct', 0.05) * 100
-                    
-                    print(f"  ↳ ⚙️ {engine} {warning_tag}: [{sym}] | Trig: {trig:.5f} (Đón lõng hộp) | Lưới: {lower} - {upper} ({num_grids}L) | SL: {sl:.5f} (SL Cứng) | TP: {tp:.5f} (+{tp_buf:.1f}%)")
-            else:
-                # Tránh in ra Fallback, thay vào đó cảnh báo
-                error_msg = grid_setup.get('message', 'Không rõ lỗi')
-                engine = grid_setup.get('engine', 'GRID 4H')
-                print(f"  ↳ ⚙️ {engine}: [{sym}] - Lỗi tính toán: {error_msg}")
-
-    print("=" * _TW3 + "\n")
-
+    
+    print("-" * _TW3)
+    print("🔔 LƯU Ý: Quá trình quét ngòi nổ vi mô (15M) đang chạy ngầm trong background_loop.py")
+    print("   (Mỗi 3 phút cập nhật một lần để bắt Pocket Pivots và Micro Squeeze)")
+    print("=" * _TW3 + "\\n")
+    
     # ── 8. 🏆 BẢNG CHẤM ĐIỂM REBALANCE (in sau cùng) ──────────────────
     if summary_list:
+        print("=" * _TW)
         print("=" * _TW)
         print(f"🏆 BẢNG CHẤM ĐIỂM REBALANCE / SPOT GRID (THANG ĐIỂM 100 - TUYẾN TÍNH & 4 KHÔNG)")
         print(f"⏰ Thời điểm cập nhật (UTC+7): {current_time_str}")
@@ -1337,8 +1318,9 @@ def get_filtered_symbols():
 
     # Bổ sung mã từ Bảng 3 (early) và Bảng 4 (momentum) — thêm vào cuối nếu chưa có
     for r in early_list:
-        sym_usdt = r['Symbol'] + "USDT"
-        sym_ccxt = r['Symbol'] + "/USDT"
+        base_sym = r['symbol'].replace('USDT', '')
+        sym_usdt = base_sym + "USDT"
+        sym_ccxt = base_sym + "/USDT"
         if sym_usdt not in seen_usdt:
             symbols_ordered.append(sym_ccxt)
             seen_usdt.add(sym_usdt)
