@@ -25,6 +25,16 @@ scraper.mount("http://", _adapter)
 logging.getLogger("urllib3").setLevel(logging.ERROR)
 logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
+from strategies.macro_grid_darvas import MacroGridDarvas
+
+_shared_darvas = None
+
+def _get_shared_darvas():
+    global _shared_darvas
+    if _shared_darvas is None:
+        _shared_darvas = MacroGridDarvas()
+    return _shared_darvas
+
 # 1. Danh sách ưu tiên theo dõi cố định + Mở rộng TOP 50 tự động
 MANUAL_SYMBOLS = ["KAITOUSDT", "ENAUSDT", "ZAMAUSDT", "REUSDT", "UNIUSDT", "TUTUSDT", "ADAUSDT", "FILUSDT", "ONDOUSDT"]
 TOP_AUTO_COUNT = 200
