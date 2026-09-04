@@ -743,6 +743,7 @@ def process_symbol(symbol):
         "ATR_1D": atr_1d,
         "Darvas_Floor": darvas_floor,
         "Has_Darvas": has_darvas_floor,
+        "EW_Level": _ew_level,
         "grid_setup": final_grid_setup
     }
 
@@ -783,13 +784,16 @@ def fmt_row(cells):
     return _SEP.join(ljust_w(trunc_w(c, w), w) for c, w in zip(cells, _WCOLS))
 
 def smart_price(p):
+    if p is None: return "N/A"
+    try:
+        p = float(p)
+    except (ValueError, TypeError):
+        return str(p)
     if p < 0.0001:  return f"{p:.10f}"
     elif p < 1.0:   return f"{p:.8f}"
     else:           return f"{p:.4f}"
 
 def analyze_early(symbol):
-    return None
-
     info = live_data_map.get(symbol, {})
     if not info:
         return None
@@ -801,141 +805,85 @@ def analyze_early(symbol):
     if info.get('change_24h', 0) < EARLY_MIN_24H_CHG:
         return None
 
-    df_15m = get_klines_live(symbol, "15m", limit=20)
-    df_1h  = get_klines_live(symbol, "1h",  limit=30)
-    df_4h  = get_klines_live(symbol, "4h",  limit=120)
-    df_1d  = get_klines_live(symbol, "1d",  limit=180)
-    if any(x is None or x.empty for x in [df_15m, df_1h, df_4h, df_1d]):
+    # Lấy klines 1D (180 ngày)
+    df_1d = get_klines_live(symbol, "1d", limit=180)
+    if df_1d is None or df_1d.empty or len(df_1d) < 60:
         return None
 
-    valid_wicks = 0
-    for _, k in df_15m.iterrows():
-        total = k['High'] - k['Low']
-        if total == 0:
-            continue
-        body_bottom = min(k['Open'], k['Close'])
-        body_top    = max(k['Open'], k['Close'])
-        lower_wick  = body_bottom - k['Low']
-        upper_wick  = k['High'] - body_top
-        if (lower_wick / total) >= 0.35 and (upper_wick / total) <= EARLY_MAX_UPPER_W:
-            valid_wicks += 1
-            
-    score_wick = min(valid_wicks / EARLY_MIN_WICK_CNT, 1.0) * 25.0
-
-    rsi_1h   = calculate_rsi(df_1h, period=14)
-    if 48.0 <= rsi_1h <= 68.0:
-        score_rsi = 30.0
-    elif 40.0 <= rsi_1h < 48.0:
-        score_rsi = ((rsi_1h - 40.0) / 8.0) * 30.0
-    elif 68.0 < rsi_1h <= 75.0:
-        score_rsi = ((75.0 - rsi_1h) / 7.0) * 30.0
-    else:
-        score_rsi = 0.0
-
-    close_1h = float(df_1h['Close'].iloc[-1])
-    ma25_1h  = float(df_1h['Close'].tail(25).mean())
-    if close_1h >= ma25_1h:
-        score_ma = 20.0
-    else:
-        diff_pct = ((ma25_1h - close_1h) / ma25_1h) * 100
-        score_ma = max(0.0, 20.0 - (diff_pct * 5.0))
-
-    last_4h  = df_4h.iloc[-1]
-    swing_4h = ((float(last_4h['High']) - float(last_4h['Low'])) / float(last_4h['Low'])) * 100
-    if EARLY_MIN_SWING_4H <= swing_4h <= EARLY_MAX_SWING_4H:
-        score_swing = 15.0
-    elif 3.0 <= swing_4h < EARLY_MIN_SWING_4H:
-        score_swing = ((swing_4h - 3.0) / (EARLY_MIN_SWING_4H - 3.0)) * 15.0
-    elif EARLY_MAX_SWING_4H < swing_4h <= 12.0:
-        score_swing = ((12.0 - swing_4h) / (12.0 - EARLY_MAX_SWING_4H)) * 15.0
-    else:
-        score_swing = 0.0
-
-    close_now    = float(df_1d['Close'].iloc[-1])
-    price_7d_ago = float(df_1d['Close'].iloc[0]) if len(df_1d) >= 7 else float(df_1d['Close'].iloc[0])
-    change_7d    = ((close_now - price_7d_ago) / price_7d_ago) * 100
-    if change_7d >= EARLY_MIN_7D_CHG:
-        score_7d = 10.0
-    elif -6.0 <= change_7d < EARLY_MIN_7D_CHG:
-        score_7d = ((change_7d + 6.0) / (EARLY_MIN_7D_CHG + 6.0)) * 10.0
-    else:
-        score_7d = 0.0
-
-    # 1. Nén giá 30 ngày (Consolidation)
-    df_1d_30 = df_1d.tail(30)
-    if len(df_1d_30) >= 15:
-        max_high_30d = float(df_1d_30['High'].max())
-        min_low_30d = float(df_1d_30['Low'].min())
-        range_30d = ((max_high_30d - min_low_30d) / min_low_30d) * 100 if min_low_30d > 0 else 999
-    else:
-        range_30d = 999
-        
-    score_consolidation = 0.0
-    if range_30d <= 30.0:
-        score_consolidation = 20.0
-    elif 30.0 < range_30d <= 60.0:
-        score_consolidation = ((60.0 - range_30d) / 30.0) * 20.0
-
-    # 2. Đột biến Volume 1D (Volume Spike) - Điều kiện Nến Xanh
-    last_1d = df_1d.iloc[-1]
-    is_green_1d = float(last_1d['Close']) > float(last_1d['Open'])
+    close_now = float(df_1d['Close'].iloc[-1])
     
-    avg_vol_30d = float(df_1d_30['Quote_Volume'].mean())
-    current_vol_1d = float(last_1d['Quote_Volume'])
-    vol_spike = (current_vol_1d / avg_vol_30d) if avg_vol_30d > 0 else 1.0
-    
-    score_vol_spike = 0.0
-    if is_green_1d and vol_spike >= 3.0:
-        score_vol_spike = 20.0
-    elif is_green_1d and 1.5 < vol_spike < 3.0:
-        score_vol_spike = ((vol_spike - 1.5) / 1.5) * 20.0
-
-    # 3. Chiết khấu từ đỉnh 180D (Drawdown)
+    # 1. CHIẾT KHẤU TỪ ĐỈNH 180D (Màng lọc cứng: 60% - 90%)
     max_high_180d = float(df_1d['High'].max())
     drop_180d = ((max_high_180d - close_now) / max_high_180d) * 100 if max_high_180d > 0 else 0
-    score_drawdown = 0.0
-    if drop_180d >= 70.0:
-        score_drawdown = 15.0
-    elif 40.0 < drop_180d < 70.0:
-        score_drawdown = ((drop_180d - 40.0) / 30.0) * 15.0
+    if drop_180d < 60.0 or drop_180d > 90.0:
+        return None
 
-    # 4. Quy mô dòng tiền (Cap Proxy / Volume Floor đã lọc >= 2M USDT ở đầu hàm)
-    vol_24h_m = info.get('quote_vol', 0) / 1_000_000
-    score_cap = 0.0
-    if 2.0 <= vol_24h_m <= 15.0:
-        score_cap = 15.0  # Ưu tiên cực mạnh low-mid cap để dễ bay
-    elif 15.0 < vol_24h_m <= 30.0:
-        score_cap = 10.0
-    elif 30.0 < vol_24h_m <= 50.0:
-        score_cap = ((50.0 - vol_24h_m) / 20.0) * 10.0
+    # 2. HỘP DARVAS 60 NGÀY (Màng lọc cứng: Biên độ < 30%)
+    df_1d_60 = df_1d.tail(60)
+    max_high_60d = float(df_1d_60['High'].max())
+    min_low_60d = float(df_1d_60['Low'].min())
+    if min_low_60d <= 0:
+        return None
+        
+    box_amplitude = ((max_high_60d - min_low_60d) / min_low_60d) * 100
+    if box_amplitude > 130.0:
+        return None
+        
+    if not (min_low_60d <= close_now <= max_high_60d):
+        return None
 
-    # 5. Màng lọc Cản (MA50 1D)
-    ma50_1d = float(df_1d['Close'].tail(50).mean()) if len(df_1d) >= 50 else float(df_1d['Close'].mean())
-    score_ma50 = 0.0
-    if close_now >= ma50_1d:
-        score_ma50 = 10.0 # Thưởng thêm nếu giá đã vượt qua cản tâm lý MA50 (Bắt đầu uptrend rõ)
+    # 3. KIỆT QUỆ THANH KHOẢN (Màng lọc cứng: ADV 60d < 65% ADV drop phase)
+    # Giai đoạn rơi giá: nến từ -180 đến -60 (tối đa 120 ngày)
+    df_drop_phase = df_1d.iloc[:-60]
+    if df_drop_phase.empty:
+        return None
+        
+    adv_box = float(df_1d_60['Quote_Volume'].mean())
+    adv_drop = float(df_drop_phase['Quote_Volume'].mean())
+    
+    if adv_drop == 0:
+        return None
+        
+    vol_dry_up_ratio = adv_box / adv_drop
+    if vol_dry_up_ratio > 0.75:
+        return None
+        
+    vol_drop_pct = (1.0 - vol_dry_up_ratio) * 100
 
-    total_early_score = (score_wick * 0.4) + (score_rsi * 0.4) + (score_ma * 0.4) + (score_swing * 0.4) + (score_7d * 0.4) + score_consolidation + score_vol_spike + score_drawdown + score_cap + score_ma50
+    # 4. DẤU CHÂN GOM HÀNG (Tiêu chí mềm)
+    accumulation_spikes = 0
+    for _, k in df_1d_60.iterrows():
+        is_green = float(k['Close']) > float(k['Open'])
+        is_spike = float(k['Quote_Volume']) > (2.0 * adv_box)
+        # Nến đóng cửa không vượt quá biên trên hộp
+        closes_in_box = float(k['Close']) <= max_high_60d
+        
+        if is_green and is_spike and closes_in_box:
+            accumulation_spikes += 1
+            
+    # Tính điểm xếp hạng (Thang 100 điểm)
+    # Chiết khấu: 60% -> 90% (Max 30đ, càng sát 90% càng cao)
+    score_drop = min(30.0, max(0.0, ((drop_180d - 60.0) / 30.0) * 30.0))
+    # Nén hộp: 130% -> 0% (Max 25đ, biên độ càng hẹp càng cao)
+    score_box = min(25.0, max(0.0, ((130.0 - box_amplitude) / 130.0) * 25.0))
+    # Kiệt cung: 75% -> 0% (Max 25đ, cạn cung càng sâu càng cao)
+    score_vol = min(25.0, max(0.0, ((0.75 - vol_dry_up_ratio) / 0.75) * 25.0))
+    # Nến gom hàng: Mỗi nến 10đ (Max 20đ)
+    score_spikes = min(20.0, accumulation_spikes * 10.0)
+    
+    total_early_score = score_drop + score_box + score_vol + score_spikes
 
-    gc = GridCalculator()
-    grid_4h_setup = gc.calculate_grid_4h(df_4h, close_now)
-    if grid_4h_setup.get("status") in ["SUCCESS", "WARNING_VOLATILE"]:
-        grid_4h_setup["engine"] = "GRID 4H (Phòng Thủ)"
-
-    # ⚡ Darvas Hybrid Override đã được chuyển ra ngoài hàm này.
-    # Chỉ gọi Darvas cho Top 5 AFTER sorting để tránh ~(N-5)×3 API calls lãng phí.
     return {
         'Symbol':      symbol.replace('USDT', ''),
         '_raw_symbol': symbol,
         'Giá':         close_now,
         'Điểm':        round(total_early_score, 1),
-        'Rút Chân':    valid_wicks,
-        'Giật 4H':     round(swing_4h, 1),
-        'Vol 24H (M)': round(vol_24h_m, 1),
-        'Nén 30D':     round(range_30d, 1) if range_30d != 999 else 0.0,
-        'Đột Biến':    round(vol_spike, 1) if is_green_1d else 0.0,
-        'Đỉnh 180D':   round(drop_180d, 1),
-        'grid_setup':  grid_4h_setup,
+        'Chiết Khấu':  round(drop_180d, 1),
+        'Nén Hộp':     round(box_amplitude, 1),
+        'Cạn Cung':    round(vol_drop_pct, 1),
+        'Nến Gom':     accumulation_spikes,
+        'Box_Floor':   min_low_60d,
+        'Box_Ceiling': max_high_60d
     }
 
 def _enrich_early_with_darvas(item: dict) -> dict:
@@ -948,11 +896,11 @@ def _enrich_early_with_darvas(item: dict) -> dict:
         darvas_res = darvas.scan_grid_candidate(symbol, '4h')
         darvas_score = darvas_res.get('total_score', 0)
         darvas_setup = darvas_res.get('grid_setup', {})
-        if darvas_score >= 60 and darvas_setup:
-            logging.debug(f"[Hybrid Override Bảng3] {symbol}: Darvas Score {darvas_score} >= 60.")
+        if darvas_setup:
+            logging.debug(f"[Hybrid Override Bảng3] {symbol}: Có Darvas setup.")
             item['grid_setup'] = {
                 "status": "SUCCESS",
-                "engine": "GRID Darvas (Lưới Kép)",
+                "engine": "GRID Darvas 4H (Lưới Kép)",
                 "is_dual_grid": darvas_setup.get('is_dual_grid', False),
                 "g1_lower": darvas_setup.get('g1_lower'),
                 "g1_upper": darvas_setup.get('g1_upper'),
@@ -966,6 +914,32 @@ def _enrich_early_with_darvas(item: dict) -> dict:
                 "hard_take_profit": darvas_setup.get('take_profit'),
                 "tp_buffer_pct": 0.05
             }
+        else:
+            # Fallback về 1D Box nếu 4H không ra lưới
+            floor = item.get('Box_Floor')
+            ceil = item.get('Box_Ceiling')
+            if floor and ceil:
+                gia = item.get('Giá')
+                g1_l = round(floor, 5)
+                g1_u = round(ceil * 0.8, 5)  # 80% box dưới
+                g2_l = g1_u
+                g2_u = round(ceil, 5)        # 20% box trên
+                item['grid_setup'] = {
+                    "status": "SUCCESS",
+                    "engine": "GRID Vĩ Mô 1D (Lưới Kép)",
+                    "is_dual_grid": True,
+                    "g1_lower": g1_l,
+                    "g1_upper": g1_u,
+                    "g1_grids": 25,
+                    "g1_capital_pct": 70,
+                    "g2_lower": g2_l,
+                    "g2_upper": g2_u,
+                    "g2_grids": 10,
+                    "g2_capital_pct": 30,
+                    "hard_stop_loss": round(floor * 0.95, 5),
+                    "hard_take_profit": round(ceil * 1.05, 5),
+                    "tp_buffer_pct": 0.05
+                }
     except Exception as e:
         logging.debug(f"[Hybrid Override Bảng3] {symbol} lỗi Darvas: {e}")
     return item
@@ -1106,7 +1080,14 @@ def get_filtered_symbols():
         vietnam_tz = timezone(timedelta(hours=7))
         current_time_str = datetime.now(vietnam_tz).strftime("%Y-%m-%d %H:%M:%S")
 
-        df_safe = df_summary[df_summary["is_safe"] == True]
+        df_safe = df_summary[
+            (df_summary["is_safe"] == True) & 
+            (df_summary["Has_Darvas"] == True) &
+            (df_summary["TỔNG"] >= 60.0) &
+            (df_summary["Cần Giảm"] < 3.0) &
+            (df_summary["Đ.Nến15M"] >= 50.0) &
+            (df_summary["EW_Level"] == 0)
+        ]
 
         _WCOLS2 = [7, 21, 10, 11, 28, 14, 5, 11, 11, 10]
         _TW2    = sum(_WCOLS2) + len(_SEP) * (len(_WCOLS2) - 1)
@@ -1203,44 +1184,82 @@ def get_filtered_symbols():
 
         print("\n" + "=" * _TW + "\n")
 
-    # ── 7. 🌱 BẢNG 3 - BẮ SỜM NỀN TĂNG (in sau GRID) ───────────────────
-    print(f"\\n🌱 Đang quét Bảng 3 - Móng Vĩ Mô 1D...\\n")
-    
-    from core.macro_early_scanner import MacroEarlyScanner
-    scanner = MacroEarlyScanner()
+    # ── 7. 🌱 BẢNG 3 - BẮT SỚM NỀN TĂNG (in sau GRID) ───────────────────
     early_symbols = [
         s for s in live_data_map
         if s.endswith('USDT') and s not in EXCLUDE
+        and live_data_map[s].get('quote_vol', 0) >= EARLY_MIN_VOL_USDT
     ]
-    early_list = scanner.scan_macro_1d(early_symbols)
-    
-    _WCOLS3 = [12, 12, 12, 12, 12]
+    print(f"\n🌱 Đang quét Bảng 3 - Mỏ Vàng Ngủ Say ({len(early_symbols)} mã vol > ${EARLY_MIN_VOL_USDT // 1_000_000}M)...\n")
+
+    early_list = []
+    if early_symbols:
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            early_list = [r for r in executor.map(analyze_early, early_symbols) if r is not None]
+
+    early_list.sort(key=lambda x: x['Điểm'], reverse=True)
+    early_list = early_list[:5]
+    early_list = [_enrich_early_with_darvas(r) for r in early_list]
+
+    _WCOLS3 = [8, 12, 8, 12, 12, 12, 10]
     _TW3    = sum(_WCOLS3) + len(_SEP) * (len(_WCOLS3) - 1)
     def fmt_row3(cells):
         return _SEP.join(ljust_w(trunc_w(c, w), w) for c, w in zip(cells, _WCOLS3))
 
     print("=" * _TW3)
-    print("🌱 BẢNG 3: BẮT SỚM NỀN TĂNG SPOT GRID (WATCHLIST VĨ MÔ 1D)")
+    print("🌱 BẢNG 3: MỎ VÀNG NGỦ SAY (WATCHLIST VĨ MÔ 1D - THANG ĐIỂM 100 - TOP 5)")
     print("=" * _TW3)
 
     if not early_list:
-        print("⚠️ KHÔNG TÌM THẤY MÃ NÀO ĐẠT ĐIỀU KIỆN MÓNG VĨ MÔ.")
+        print("⚠️ KHÔNG TÌM THẤY MÃ NÀO ĐẠT CHUẨN VĨ MÔ.")
     else:
-        print(fmt_row3(["Mã", "Giá", "Chiết Khấu", "Darvas BB", "MA99 Slope"]))
+        print(fmt_row3(["Mã", "Giá Live", "Điểm", "Chiết Khấu", "Nén Hộp", "Cạn Cung", "Nến Gom"]))
         print("-" * _TW3)
         for r in early_list:
             print(fmt_row3([
-                r['symbol'].replace('USDT', ''),
-                smart_price(r['current_price']),
-                f"{r['drop_pct']:.1%}",
-                f"{r['box']['amplitude']:.1%}",
-                f"{r['ma99_slope']:.2%}"
+                r['Symbol'],
+                smart_price(r['Giá']),
+                str(r['Điểm']),
+                f"-{r['Chiết Khấu']}%",
+                f"{r['Nén Hộp']}%",
+                f"Giảm {r['Cạn Cung']}%",
+                f"{r['Nến Gom']} nến",
             ]))
-    
-    print("-" * _TW3)
-    print("🔔 LƯU Ý: Quá trình quét ngòi nổ vi mô (15M) đang chạy ngầm trong background_loop.py")
-    print("   (Mỗi 3 phút cập nhật một lần để bắt Pocket Pivots và Micro Squeeze)")
-    print("=" * _TW3 + "\\n")
+            
+            # Tính toán gợi ý Scale Order cho 1000 USDT (10 lệnh -> 100 USDT/lệnh)
+            sym = r['Symbol']
+            gia = float(r['Giá'])
+            
+            grid_setup = r.get('grid_setup', {})
+            if grid_setup.get('status') in ["SUCCESS", "WARNING_VOLATILE"]:
+                warning_tag = "[⚠️ VOLATILE]" if grid_setup.get('status') == "WARNING_VOLATILE" else ""
+                if grid_setup.get('is_dual_grid'):
+                    g1_l, g1_u, g1_n, g1_cap = grid_setup.get('g1_lower'), grid_setup.get('g1_upper'), grid_setup.get('g1_grids'), grid_setup.get('g1_capital_pct')
+                    g2_l, g2_u, g2_n, g2_cap = grid_setup.get('g2_lower'), grid_setup.get('g2_upper'), grid_setup.get('g2_grids'), grid_setup.get('g2_capital_pct')
+                    sl, tp = grid_setup.get('hard_stop_loss'), grid_setup.get('hard_take_profit')
+                    trig_g1 = g1_u * 1.005 if g1_u is not None else None
+                    print(f"  ↳ ⚙️ GRID Darvas [Gom Đáy {g1_cap}%] {warning_tag}: [{sym}] | Trig: {smart_price(trig_g1)} | Lưới: {smart_price(g1_l)} - {smart_price(g1_u)} ({g1_n}L) | SL: {smart_price(sl)} | TP: N/A")
+                    print(f"  ↳ ⚙️ GRID Darvas [Hứng Breakout {g2_cap}%] {warning_tag}: [{sym}] | Trig: {smart_price(g2_l)} | Lưới: {smart_price(g2_l)} - {smart_price(g2_u)} ({g2_n}L) | SL: {smart_price(sl)} | TP: {smart_price(tp)}")
+                else:
+                    upper = grid_setup.get('upper_bound', gia * 0.97)
+                    lower = grid_setup.get('lower_bound', gia * 0.80)
+                    num_grids = grid_setup.get('num_grids', 10)
+                    engine = grid_setup.get('engine', 'GRID 4H')
+                    
+                    trigger_buffer_4h = 0.005
+                    trig = upper * (1 + trigger_buffer_4h) if upper is not None else None
+                    sl = grid_setup.get('hard_stop_loss', lower * 0.97 if lower is not None else None)
+                    tp = grid_setup.get('hard_take_profit', upper * 1.05 if upper is not None else None)
+                    tp_buf = grid_setup.get('tp_buffer_pct', 0.05)
+                    tp_buf_str = f"+{tp_buf*100:.1f}%" if tp_buf is not None else "N/A"
+                    
+                    print(f"  ↳ ⚙️ {engine} {warning_tag}: [{sym}] | Trig: {smart_price(trig)} (Đón lõng hộp) | Lưới: {smart_price(lower)} - {smart_price(upper)} ({num_grids}L) | SL: {smart_price(sl)} (SL Cứng) | TP: {smart_price(tp)} ({tp_buf_str})")
+            else:
+                error_msg = grid_setup.get('message', 'Không rõ lỗi')
+                engine = grid_setup.get('engine', 'GRID 4H')
+                print(f"  ↳ ⚙️ {engine}: [{sym}] - Lỗi tính toán: {error_msg}")
+
+    print("=" * _TW3 + "\n")
     
     # ── 8. 🏆 BẢNG CHẤM ĐIỂM REBALANCE (in sau cùng) ──────────────────
     if summary_list:
@@ -1318,7 +1337,7 @@ def get_filtered_symbols():
 
     # Bổ sung mã từ Bảng 3 (early) và Bảng 4 (momentum) — thêm vào cuối nếu chưa có
     for r in early_list:
-        base_sym = r['symbol'].replace('USDT', '')
+        base_sym = r.get('Symbol', r.get('symbol', '')).replace('USDT', '')
         sym_usdt = base_sym + "USDT"
         sym_ccxt = base_sym + "/USDT"
         if sym_usdt not in seen_usdt:
