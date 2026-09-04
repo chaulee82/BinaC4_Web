@@ -46,21 +46,41 @@ def run_binac4():
     output_str = "Đang khởi động BinaC4...\n" + "="*50 + "\n"
     yield output_str, None
     
-    # Read output line by line as it is generated
-    for line in iter(process.stdout.readline, ''):
-        if "✅ AN TOÀN" in line:
-            continue
-            
-        output_str += line
+    import queue
+    import threading
+    
+    q = queue.Queue()
+    def enqueue_output(out, q):
+        for line in iter(out.readline, ''):
+            q.put(line)
+        out.close()
         
-        # Append line to HTML file (escape < and > just in case)
-        safe_line = line.replace('<', '&lt;').replace('>', '&gt;')
-        with open(html_log_file_path, 'a', encoding='utf-8') as f:
-            f.write(safe_line)
+    t = threading.Thread(target=enqueue_output, args=(process.stdout, q))
+    t.daemon = True
+    t.start()
+    
+    while True:
+        try:
+            line = q.get(timeout=1.0)
+            if "✅ AN TOÀN" in line:
+                continue
+                
+            output_str += line
             
-        yield output_str, None
-        
-    process.stdout.close()
+            # Append line to HTML file (escape < and > just in case)
+            safe_line = line.replace('<', '&lt;').replace('>', '&gt;')
+            with open(html_log_file_path, 'a', encoding='utf-8') as f:
+                f.write(safe_line)
+                
+            yield output_str, None
+            
+        except queue.Empty:
+            # Process is still running but no output for 1 second.
+            # Yield to send a heartbeat and prevent reverse proxy timeout.
+            if process.poll() is not None:
+                break
+            yield output_str, None
+            
     return_code = process.wait()
     
     if return_code != 0:
