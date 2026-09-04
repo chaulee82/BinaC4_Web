@@ -645,7 +645,7 @@ def process_symbol(symbol):
     # Phương pháp 2: Gọi Darvas bảo lãnh nếu vượt qua được màng lọc cơ sở (Giảm tải API)
     if _base_safe:
         from strategies.macro_grid_darvas import MacroGridDarvas
-        darvas = MacroGridDarvas()
+        darvas = _get_shared_darvas()
         darvas_res = darvas.scan_grid_candidate(symbol, '4h')
         darvas_setup = darvas_res.get('grid_setup', {})
         darvas_floor = darvas_setup.get('lower_price', 0)
@@ -892,7 +892,7 @@ def _enrich_early_with_darvas(item: dict) -> dict:
     grid_4h_setup = item.get('grid_setup', {})
     try:
         from strategies.macro_grid_darvas import MacroGridDarvas
-        darvas = MacroGridDarvas()
+        darvas = _get_shared_darvas()
         darvas_res = darvas.scan_grid_candidate(symbol, '4h')
         darvas_score = darvas_res.get('total_score', 0)
         darvas_setup = darvas_res.get('grid_setup', {})
