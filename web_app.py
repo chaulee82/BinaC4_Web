@@ -33,7 +33,7 @@ def run_binac4():
         f.write(html_header)
         
     process = subprocess.Popen(
-        [sys.executable, script_path],
+        [sys.executable, "-u", script_path],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -43,8 +43,8 @@ def run_binac4():
         encoding='utf-8'
     )
     
-    output_str = ""
-    yield "Đang khởi động BinaC4...\n" + "="*50 + "\n", None
+    output_str = "Đang khởi động BinaC4...\n" + "="*50 + "\n"
+    yield output_str, None
     
     # Read output line by line as it is generated
     for line in iter(process.stdout.readline, ''):
