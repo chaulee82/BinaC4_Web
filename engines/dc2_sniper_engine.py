@@ -111,7 +111,27 @@ class DC2SniperEngine(BaseEngine):
                             trailing_trigger="ON->BE khi OCO-1 TP"
                         )
                     except Exception as e:
-                        pass
+                        logger.warning(f"[DC2] Lỗi tính OCO cho {sym}: {e}")
+                
+                # Fallback về giá trị của PullbackSniper nếu chưa có setup
+                if setup1 is None:
+                    trade_setup = res.get('trade_setup', {})
+                    if trade_setup:
+                        f_entry = trade_setup.get('entry', 0)
+                        f_sl = trade_setup.get('stop_loss', 0)
+                        f_tp = trade_setup.get('take_profit', 0)
+                        rr = 0
+                        if f_entry and f_sl and (f_entry - f_sl) > 0:
+                            rr = (f_tp - f_entry) / (f_entry - f_sl)
+                        
+                        setup1 = EntrySetupContext(
+                            setup_type="FALLBACK",
+                            entry_price=f_entry,
+                            sl_price=f_sl,
+                            tp1_price=f_tp,
+                            rr_ratio=rr,
+                            is_oco=False
+                        )
             
             score_ctx = ScoreContext(
                 engine_name="DC2",

@@ -61,7 +61,7 @@ class TradeExecutionService:
         Mock hàm gửi thông báo qua Zalo ZNS.
         Sau này có thể tích hợp API Zalo OA thực sự vào đây.
         """
-        logger.info(f"📱 [ZALO ZNS] Đã gửi thông báo: {message}")
+        logger.debug(f"📱 [ZALO ZNS] Đã gửi thông báo: {message}")
 
     def execute_entry_setup(self, symbol: str, amount: float, setup: EntrySetupContext):
         """
@@ -76,7 +76,7 @@ class TradeExecutionService:
         msg = f"🚀 [EXECUTE] BUY {order_type} {symbol} @ {fmt_price(setup.entry_price)} | SL: {fmt_price(setup.sl_price)} | TP1: {fmt_price(setup.tp1_price)}"
         
         if self.dry_run:
-            logger.info(f"[DRY-RUN] {msg}")
+            logger.debug(f"[DRY-RUN] {msg}")
             self._send_zalo_notification(f"[MOCK] Đã lên đạn {symbol} @ {fmt_price(setup.entry_price)}")
             return
 
@@ -132,7 +132,7 @@ class TradeExecutionService:
         msg = f"🕸️ [EXECUTE GRID] {symbol} | Grids: {grids} | Range: {fmt_price(lower_p)} - {fmt_price(upper_p)}"
         
         if self.dry_run:
-            logger.info(f"[DRY-RUN] {msg}")
+            logger.debug(f"[DRY-RUN] {msg}")
             self._send_zalo_notification(f"[MOCK GRID] Rải lưới {symbol} thành công!")
             return
 

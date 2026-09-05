@@ -93,10 +93,31 @@ def calculate_rsi(df, period=14):
     val = rsi.iloc[-1]
     return float(val) if not np.isnan(val) else 50.0
 
+_klines_cache = {}
+_CACHE_TTL = 60  # 60 giây (đủ cho 1 vòng quét toàn diện mà không lấy dữ liệu cũ)
+
 def get_klines_live(symbol, interval, limit=100):
+    global _klines_cache
+    now = time.time()
+    cache_key = (symbol, interval)
+    
+    # Trả về data từ cache nếu còn hạn và đủ số lượng nến
+    if cache_key in _klines_cache:
+        cached_time, df = _klines_cache[cache_key]
+        if now - cached_time < _CACHE_TTL and len(df) >= limit:
+            return df.tail(limit).copy()
+
     time.sleep(0.02)
     client = BinanceClient()
-    data = client.get(f"/api/v3/klines", params={"symbol": symbol, "interval": interval, "limit": limit})
+    
+    # Tối ưu: Lấy dư một chút ở lần đầu để phục vụ cho các module sau yêu cầu limit lớn hơn
+    fetch_limit = limit
+    if interval == '15m': fetch_limit = max(limit, 100)
+    elif interval == '1h': fetch_limit = max(limit, 168)
+    elif interval == '4h': fetch_limit = max(limit, 120)
+    elif interval == '1d': fetch_limit = max(limit, 180)
+
+    data = client.get(f"/api/v3/klines", params={"symbol": symbol, "interval": interval, "limit": fetch_limit})
     if isinstance(data, list) and len(data) > 0:
         df = pd.DataFrame(data, columns=[
             'Open_Time', 'Open', 'High', 'Low', 'Close', 'Volume',
@@ -104,7 +125,17 @@ def get_klines_live(symbol, interval, limit=100):
         ])
         for c in ['Open', 'High', 'Low', 'Close', 'Quote_Volume', 'Taker_Buy_Quote']:
             df[c] = pd.to_numeric(df[c], errors='coerce')
-        return df
+            
+        # Lưu vào cache
+        _klines_cache[cache_key] = (now, df)
+        
+        # Dọn dẹp cache rác nếu phình to (vd > 1000 items)
+        if len(_klines_cache) > 1000:
+            keys_to_delete = [k for k, (t, _) in _klines_cache.items() if now - t > _CACHE_TTL]
+            for k in keys_to_delete:
+                del _klines_cache[k]
+                
+        return df.tail(limit).copy()
     return None
 
 def check_higher_lows_4h(df_4h, lookback=6):

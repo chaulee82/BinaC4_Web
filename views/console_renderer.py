@@ -122,8 +122,6 @@ class ConsoleRenderer:
                     if ew.ew_level == 1:
                         triggers = " | ".join(ew.triggers)
                         print(f"   ↳ ⛔ [EW CẤP 1 REJECT] {triggers}")
-                        print("-" * 175)
-                        continue
 
                 # In Entry Setup (OCO)
                 if score_ctx.entry_setup1:

@@ -128,38 +128,21 @@ def main():
         try:
             logger.info("Đang chạy module coin_filter để quét các mã tiềm năng...")
             
-            # ── Bắt đầu chụp stdout của coin_filter để in sau ──────────────
-            _coin_filter_buf = io.StringIO()
-            _real_stdout = sys.stdout
-            sys.stdout = _coin_filter_buf
-            try:
-                # Cập nhật Cache trước khi chạy các bộ lọc
-                live_data_map = cache.get_live_data_map()
-                watchlist, safety_map = get_filtered_symbols(live_data_map)
-            finally:
-                sys.stdout = _real_stdout
-            _coin_filter_output = _coin_filter_buf.getvalue()
-            # ────────────────────────────────────────────────────────────────
+            # Cập nhật Cache trước khi chạy các bộ lọc
+            live_data_map = cache.get_live_data_map()
+            
+            # Chạy lọc mã trực tiếp ra màn hình (không ẩn log) để thấy tiến độ
+            watchlist, safety_map = get_filtered_symbols(live_data_map)
+            
+            # Gán rỗng vì output đã được in trực tiếp
+            _coin_filter_output = ""
             
             if not watchlist:
                 logger.warning("Không tìm thấy mã nào đạt điều kiện từ coin_filter.")
             else:
                 logger.info(f"Đã lọc được {len(watchlist)} mã tiềm năng.")
             
-            # ── 1. In ⏰ Thời điểm + số lượng mã trước tiên ─────────────────
-            _timestamp_line = ""
-            _count_line = ""
-            for _line in _coin_filter_output.splitlines():
-                if "⏰ Thời điểm cập nhật" in _line and not _timestamp_line:
-                    _timestamp_line = _line.strip()
-                if "MÃ ĐƯỢC ĐƯA VÀO BẢNG CHẤM ĐIỂM" in _line and not _count_line:
-                    _count_line = _line.strip()
-            
             print()
-            if _timestamp_line:
-                print(_timestamp_line)
-            if _count_line:
-                print(_count_line)
             if watchlist:
                 print(f"📋 Danh mục watchlist: {len(watchlist)} mã đủ điều kiện vào động cơ phân tích.")
             print()
