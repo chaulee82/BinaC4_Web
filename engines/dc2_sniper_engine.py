@@ -54,10 +54,11 @@ class DC2SniperEngine(BaseEngine):
                     _df_15m = self.repo.get_klines_df(sym_api, '15m', 60)
                     _df_4h  = self.repo.get_klines_df(sym_api, '4h', 120)
                     _df_1h  = self.repo.get_klines_df(sym_api, '1h', 50)
+                    _df_1d  = self.repo.get_klines_df(sym_api, '1d', 50)
                     _price  = float(_df_15m['close'].iloc[-1]) if not _df_15m.empty else 0.0
 
-                    ew_res = self.early_warning.scan_sniper_safety(
-                        df_15m=_df_15m, df_4h=_df_4h, df_1h=_df_1h,
+                    ew_res = self.early_warning.scan_pullback_ew(
+                        df_15m=_df_15m, df_1h=_df_1h, df_4h=_df_4h, df_1d=_df_1d,
                         current_price=_price, coin_vola_24h=coin_vola,
                         avg_vola_24h=avg_vola_24h, symbol=sym_api,
                     )

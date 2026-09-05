@@ -118,13 +118,15 @@ class EarlyWarningMatrix:
             return {"level": 0, "status": f"Lỗi tính toán EW: {str(e)}"}
 
     # =========================================================================
-    # HÀM 2: SCAN_SNIPER_SAFETY — EW Chuyên Biệt Cho Động Cơ 2 Pullback Sniper
     # =========================================================================
-    def scan_sniper_safety(
+    # HÀM 2: SCAN_PULLBACK_EW — EW Chuyên Biệt Cho Động Cơ 2 Pullback Sniper
+    # =========================================================================
+    def scan_pullback_ew(
         self,
         df_15m:        pd.DataFrame,
-        df_4h:         pd.DataFrame,
         df_1h:         pd.DataFrame,
+        df_4h:         pd.DataFrame,
+        df_1d:         pd.DataFrame,
         current_price: float,
         coin_vola_24h: float = 0.0,
         avg_vola_24h:  float = 0.0,
@@ -137,9 +139,11 @@ class EarlyWarningMatrix:
         Bất kỳ EW Cấp 1 nào → caller phải raise EntryCalculatorServiceError.
 
         Args:
-            df_15m:        DataFrame OHLCV khung 15M (≥ 40 nến)
-            df_4h:         DataFrame OHLCV khung 4H (≥ 120 nến để có MA99 + Supertrend)
-            df_1h:         DataFrame OHLCV khung 1H (≥ 30 nến)
+        Args:
+            df_15m:        DataFrame OHLCV khung 15M
+            df_1h:         DataFrame OHLCV khung 1H
+            df_4h:         DataFrame OHLCV khung 4H
+            df_1d:         DataFrame OHLCV khung 1D
             current_price: Giá live hiện tại
             coin_vola_24h: Biến động 24h của coin (%)
             avg_vola_24h:  Biến động 24h trung bình toàn thị trường (%)
@@ -170,40 +174,45 @@ class EarlyWarningMatrix:
             # MA TRẬN RỦI RO — EW CẤP 1 (Fatal Risk / REJECT)
             # ══════════════════════════════════════════════════════════════════
 
-            # ── KS-1A: Supertrend 4H — Close rớt dưới Supertrend 4H ─────────
-            if len(df_4h) >= 12:
-                st_4h = self.engine.get_supertrend(df_4h, period=10, multiplier=3.0)
-                if st_4h['direction'] == -1:
+            # ── KS-1A: Thủng MA99 4H hoặc Supertrend 1D ─────────
+            if len(df_4h) >= 100:
+                ma99_4h = df_4h.ta.sma(length=99)
+                if ma99_4h is not None and not ma99_4h.empty:
+                    if float(df_4h['close'].iloc[-1]) < float(ma99_4h.iloc[-1]):
+                        ew_triggers.append(
+                            "⛔ EW1-A: Close 4H thủng MA99 — Gãy cấu trúc vĩ mô 4H"
+                        )
+                        ew_level = min(ew_level, 1)
+
+            if df_1d is not None and len(df_1d) >= 12:
+                st_1d = self.engine.get_supertrend(df_1d, period=10, multiplier=3.0)
+                if st_1d['direction'] == -1:
                     ew_triggers.append(
-                        "⛔ EW1-A: Supertrend 4H DOWNTREND — Pullback bị gãy thành Reversal"
+                        "⛔ EW1-A: Supertrend 1D DOWNTREND — Gãy xu hướng dài hạn"
                     )
                     ew_level = min(ew_level, 1)
 
-            # ── KS-1B: Vol xả bất thường 1H/4H > 3× MA20 ────────────────────
-            # Kiểm tra nến đỏ gần nhất có Vol > 3× trung bình không
-            for _label, _df in [("1H", df_1h), ("4H", df_4h)]:
-                if _df is not None and len(_df) >= 21:
-                    last = _df.iloc[-1]
-                    ma20_vol = float(_df['volume'].tail(21).iloc[:-1].mean())
-                    is_red   = last['close'] < last['open']
-                    if is_red and ma20_vol > 0 and last['volume'] > ma20_vol * 3.0:
-                        vol_x = last['volume'] / ma20_vol
-                        ew_triggers.append(
-                            f"⛔ EW1-B: Vol xả đỏ {_label} = {vol_x:.1f}× MA20 — Tay to tháo hàng"
-                        )
-                        ew_level = min(ew_level, 1)
-                        break  # Chỉ cần 1 khung vi phạm là đủ REJECT
+            # ── KS-1B: Vol xả đỏ 1H > 3× MA20 ────────────────────
+            if df_1h is not None and len(df_1h) >= 21:
+                last_1h = df_1h.iloc[-1]
+                ma20_vol_1h = float(df_1h['volume'].tail(21).iloc[:-1].mean())
+                is_red = last_1h['close'] < last_1h['open']
+                if is_red and ma20_vol_1h > 0 and last_1h['volume'] > ma20_vol_1h * 3.0:
+                    vol_x = last_1h['volume'] / ma20_vol_1h
+                    ew_triggers.append(
+                        f"⛔ EW1-B: Vol xả đỏ 1H = {vol_x:.1f}× MA20 — Cá mập xả hàng"
+                    )
+                    ew_level = min(ew_level, 1)
 
-            # ── KS-1C: Close xuyên thủng BOLL_DN 4H ─────────────────────────
+            # ── TÍN HIỆU TỐT: Close 4H xuyên dưới BOLL_DN 4H ────────────────
             if len(df_4h) >= 22:
                 bb_4h   = self.engine.get_bollinger_bands(df_4h, period=20, std_dev=2.0)
                 boll_dn = float(bb_4h['lower'].iloc[-1])
                 last_close_4h = float(df_4h['close'].iloc[-1])
                 if last_close_4h < boll_dn:
                     ew_triggers.append(
-                        f"⛔ EW1-C: Close 4H ({last_close_4h:.4f}) xuyên dưới BOLL_DN ({boll_dn:.4f}) — Không còn là Pullback"
+                        f"🟢 TÍN HIỆU TỐT: Giá 4H ({last_close_4h:.4f}) đâm thủng BB(20) đáy ({boll_dn:.4f}) -> Quá bán (Oversold)"
                     )
-                    ew_level = min(ew_level, 1)
 
             # ══════════════════════════════════════════════════════════════════
             # MA TRẬN RỦI RO — EW CẤP 2 (High Vola / Chuyển Chế Độ)

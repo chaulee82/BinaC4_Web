@@ -185,6 +185,7 @@ def main():
 
                 with ThreadPoolExecutor(max_workers=10) as _ew_pool:
                     warning_results = list(_ew_pool.map(_check_ew, watchlist))
+                original_watchlist = list(watchlist)
                 safe_watchlist = [r['symbol'] for r in warning_results if r.get('level', 0) < 2]
                 
                 
@@ -201,7 +202,11 @@ def main():
                     logger.info(f"⚡ Giới hạn phân tích sâu: {len(watchlist)} → Top {ENGINE_TOP_N} mã (cấu hình engine_top_n).")
                     watchlist = watchlist[:ENGINE_TOP_N]
                 
-                if not watchlist:
+                dc2_watchlist = original_watchlist
+                if dc2_watchlist and len(dc2_watchlist) > ENGINE_TOP_N:
+                    dc2_watchlist = dc2_watchlist[:ENGINE_TOP_N]
+
+                if not watchlist and not dc2_watchlist:
                     logger.warning("Toàn bộ danh mục bị BẤT HOẠT do rủi ro sập. Nghỉ ngơi chu kỳ này.")
                     
             if watchlist:
@@ -261,7 +266,7 @@ def main():
                 logger.info("[DC2] Kiem tra Macro Trend 1D truoc khi cham diem Pullback...")
                 avg_vola_24h = cache.get_avg_vola_24h()
                 
-                dc2_states = dc2_engine.run(watchlist, live_data_map, avg_vola_24h, timeframe=timeframe, safety_map=safety_map)
+                dc2_states = dc2_engine.run(dc2_watchlist, live_data_map, avg_vola_24h, timeframe=timeframe, safety_map=safety_map)
                 renderer.render_pullback_sniper(dc2_states)
 
                 # Kích hoạt thực thi cho các mã đạt điểm
