@@ -140,7 +140,7 @@ def main():
             if not watchlist:
                 logger.warning("Không tìm thấy mã nào đạt điều kiện từ coin_filter.")
             else:
-                logger.info(f"Đã lọc được {len(watchlist)} mã tiềm năng.")
+                pass # logger.info(f"Đã lọc được {len(watchlist)} mã tiềm năng.")
             
             print()
             if watchlist:

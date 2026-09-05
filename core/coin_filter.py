@@ -1167,9 +1167,8 @@ def get_filtered_symbols(live_data_map):
     early_symbols = [
         s for s in live_data_map
         if s.endswith('USDT') and s not in EXCLUDE
-        and live_data_map[s].get('quote_vol', 0) >= EARLY_MIN_VOL_USDT
     ]
-    print(f"\n🌱 Đang quét Bảng 3 - Mỏ Vàng Ngủ Say ({len(early_symbols)} mã vol > ${EARLY_MIN_VOL_USDT // 1_000_000}M)...\n")
+    # print(f"\n🌱 Đang quét Bảng 3 - Mỏ Vàng Ngủ Say ({len(early_symbols)} mã vol > ${EARLY_MIN_VOL_USDT // 1_000_000}M)...\n")
 
     early_list = []
     if early_symbols:
@@ -1191,7 +1190,7 @@ def get_filtered_symbols(live_data_map):
         and live_data_map[s].get('quote_vol', 0) >= MOM_MIN_VOL_USDT
         and live_data_map[s].get('change_24h', 0) >= 1.5
     ]
-    print(f"\n🚀 Đang quét Bảng 4 - Momentum Breakout ({len(momentum_symbols)} mã đang tăng vol >${MOM_MIN_VOL_USDT // 1_000_000}M)...\n")
+    # print(f"\n🚀 Đang quét Bảng 4 - Momentum Breakout ({len(momentum_symbols)} mã đang tăng vol >${MOM_MIN_VOL_USDT // 1_000_000}M)...\n")
 
     mom_list = []
     if momentum_symbols:
