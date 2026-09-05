@@ -43,11 +43,11 @@ class BinanceClient:
         self.headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         
         self.domains = [
+            "https://data-api.binance.vision",
             "https://api.binance.com",
             "https://api1.binance.com",
             "https://api2.binance.com",
-            "https://api3.binance.com",
-            "https://data-api.binance.vision"
+            "https://api3.binance.com"
         ]
 
     def get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Any:
@@ -57,7 +57,7 @@ class BinanceClient:
         for domain in self.domains:
             url = f"{domain}{endpoint}"
             try:
-                res = self.session.get(url, headers=self.headers, params=params, timeout=5)
+                res = self.session.get(url, headers=self.headers, params=params, timeout=3.0)
                 res.raise_for_status()
                 return res.json()
             except Exception as e:

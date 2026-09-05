@@ -1025,7 +1025,7 @@ def get_filtered_symbols(live_data_map):
     summary_list = []
     if all_symbols:
         from concurrent.futures import as_completed
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor(max_workers=8) as executor:
             futures = {executor.submit(process_symbol, s, live_data_map.get(s, {})): s for s in all_symbols}
             
             processed = 0
@@ -1194,7 +1194,7 @@ def get_filtered_symbols(live_data_map):
 
     mom_list = []
     if momentum_symbols:
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor(max_workers=8) as executor:
             mom_list = [r for r in executor.map(lambda s: analyze_momentum(s, live_data_map.get(s, {})), momentum_symbols) if r is not None]
 
     mom_list.sort(key=lambda x: x['Điểm Mom'], reverse=True)
