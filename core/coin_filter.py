@@ -628,12 +628,6 @@ def process_symbol(symbol, live_info):
         warning_reasons.append(f"⚠️ Giảm -{drop_from_1h_high:.1f}% Từ Đỉnh 1H")
     warning_str = "  •  ".join(warning_reasons) if warning_reasons else "An Toàn"
 
-    if close_live < 0.0001:
-        price_fmt = "{:.10f}"
-    elif close_live < 1.0:
-        price_fmt = "{:.8f}"
-    else:
-        price_fmt = "{:.4f}"
 
     gc = GridCalculator()
     grid_4h_setup = gc.calculate_grid_4h(df_4h, close_live)
@@ -675,8 +669,8 @@ def process_symbol(symbol, live_info):
         "Đ.Entry": round(score_entry, 1),
         "Đ.RSI": round(score_rsi, 1),
         "RSI1H": round(rsi_1h, 1),
-        "Giá Live": price_fmt.format(close_live),
-        "Giá Mua Limit": price_fmt.format(buy_target_price),
+        "Giá Live": smart_price(close_live),
+        "Giá Mua Limit": smart_price(buy_target_price),
         "Cần Giảm": round(discount_pct, 2),
         # ── Thông tin thanh khoản & biến động ──
         "Vol24H(M)": round(live_info['quote_vol'] / 1_000_000, 1),   # Vol 24h tính bằng triệu USDT
@@ -738,9 +732,22 @@ def smart_price(p):
         p = float(p)
     except (ValueError, TypeError):
         return str(p)
-    if p < 0.0001:  return f"{p:.10f}"
-    elif p < 1.0:   return f"{p:.8f}"
-    else:           return f"{p:.4f}"
+        
+    if p == 0: return "0.0"
+    
+    import math
+    if abs(p) >= 1:
+        decimals = 4
+    else:
+        first_sig = -math.floor(math.log10(abs(p)))
+        decimals = min(first_sig + 3, 12)
+        
+    formatted = f"{p:.{decimals}f}"
+    if '.' in formatted:
+        formatted = formatted.rstrip('0').rstrip('.')
+        if '.' not in formatted:
+            formatted += '.0'
+    return formatted
 
 def analyze_early(symbol, info):
     info = info or {}
@@ -1162,99 +1169,9 @@ def get_filtered_symbols(live_data_map):
     early_list = early_list[:5]
     early_list = [_enrich_early_with_darvas(r) for r in early_list]
 
-    _WCOLS3 = [8, 12, 8, 12, 12, 12, 10]
-    _TW3    = sum(_WCOLS3) + len(_SEP) * (len(_WCOLS3) - 1)
-    def fmt_row3(cells):
-        return _SEP.join(ljust_w(trunc_w(c, w), w) for c, w in zip(cells, _WCOLS3))
 
-    print("=" * _TW3)
-    print("🌱 BẢNG 3: MỎ VÀNG NGỦ SAY (WATCHLIST VĨ MÔ 1D - THANG ĐIỂM 100 - TOP 5)")
-    print("=" * _TW3)
-
-    if not early_list:
-        print("⚠️ KHÔNG TÌM THẤY MÃ NÀO ĐẠT CHUẨN VĨ MÔ.")
-    else:
-        print(fmt_row3(["Mã", "Giá Live", "Điểm", "Chiết Khấu", "Nén Hộp", "Cạn Cung", "Nến Gom"]))
-        print("-" * _TW3)
-        for r in early_list:
-            print(fmt_row3([
-                r['Symbol'],
-                smart_price(r['Giá']),
-                str(r['Điểm']),
-                f"-{r['Chiết Khấu']}%",
-                f"{r['Nén Hộp']}%",
-                f"Giảm {r['Cạn Cung']}%",
-                f"{r['Nến Gom']} nến",
-            ]))
-            
-            # Tính toán gợi ý Scale Order cho 1000 USDT (10 lệnh -> 100 USDT/lệnh)
-            sym = r['Symbol']
-            gia = float(r['Giá'])
-            
-            grid_setup = r.get('grid_setup', {})
-            if grid_setup.get('status') in ["SUCCESS", "WARNING_VOLATILE"]:
-                warning_tag = "[⚠️ VOLATILE]" if grid_setup.get('status') == "WARNING_VOLATILE" else ""
-                if grid_setup.get('is_dual_grid'):
-                    g1_l, g1_u, g1_n, g1_cap = grid_setup.get('g1_lower'), grid_setup.get('g1_upper'), grid_setup.get('g1_grids'), grid_setup.get('g1_capital_pct')
-                    g2_l, g2_u, g2_n, g2_cap = grid_setup.get('g2_lower'), grid_setup.get('g2_upper'), grid_setup.get('g2_grids'), grid_setup.get('g2_capital_pct')
-                    sl, tp = grid_setup.get('hard_stop_loss'), grid_setup.get('hard_take_profit')
-                    trig_g1 = g1_u * 1.005 if g1_u is not None else None
-                    print(f"  ↳ ⚙️ GRID Darvas [Gom Đáy {g1_cap}%] {warning_tag}: [{sym}] | Trig: {smart_price(trig_g1)} | Lưới: {smart_price(g1_l)} - {smart_price(g1_u)} ({g1_n}L) | SL: {smart_price(sl)} | TP: N/A")
-                    print(f"  ↳ ⚙️ GRID Darvas [Hứng Breakout {g2_cap}%] {warning_tag}: [{sym}] | Trig: {smart_price(g2_l)} | Lưới: {smart_price(g2_l)} - {smart_price(g2_u)} ({g2_n}L) | SL: {smart_price(sl)} | TP: {smart_price(tp)}")
-                else:
-                    upper = grid_setup.get('upper_bound', gia * 0.97)
-                    lower = grid_setup.get('lower_bound', gia * 0.80)
-                    num_grids = grid_setup.get('num_grids', 10)
-                    engine = grid_setup.get('engine', 'GRID 4H')
-                    
-                    trigger_buffer_4h = 0.005
-                    trig = upper * (1 + trigger_buffer_4h) if upper is not None else None
-                    sl = grid_setup.get('hard_stop_loss', lower * 0.97 if lower is not None else None)
-                    tp = grid_setup.get('hard_take_profit', upper * 1.05 if upper is not None else None)
-                    tp_buf = grid_setup.get('tp_buffer_pct', 0.05)
-                    tp_buf_str = f"+{tp_buf*100:.1f}%" if tp_buf is not None else "N/A"
-                    
-                    print(f"  ↳ ⚙️ {engine} {warning_tag}: [{sym}] | Trig: {smart_price(trig)} (Đón lõng hộp) | Lưới: {smart_price(lower)} - {smart_price(upper)} ({num_grids}L) | SL: {smart_price(sl)} (SL Cứng) | TP: {smart_price(tp)} ({tp_buf_str})")
-            else:
-                error_msg = grid_setup.get('message', 'Không rõ lỗi')
-                engine = grid_setup.get('engine', 'GRID 4H')
-                print(f"  ↳ ⚙️ {engine}: [{sym}] - Lỗi tính toán: {error_msg}")
-
-    print("=" * _TW3 + "\n")
     
-    # ── 8. 🏆 BẢNG CHẤM ĐIỂM REBALANCE (in sau cùng) ──────────────────
-    if summary_list:
-        print("=" * _TW)
-        print("=" * _TW)
-        print(f"🏆 BẢNG CHẤM ĐIỂM REBALANCE / SPOT GRID (THANG ĐIỂM 100 - TUYẾN TÍNH & 4 KHÔNG)")
-        print(f"⏰ Thời điểm cập nhật (UTC+7): {current_time_str}")
-        print("=" * _TW)
-        print(fmt_row(["Hạng", "Mã", "Trạng Thái", "Phân Loại Grid", "TỔNG",
-                       "Chế Độ", "Tín Hiệu Cảnh Báo", "Đ.Nến15M", "Đ.Râu24H", "Đ.Entry",
-                       "Đ.RSI", "RSI1H", "Giá Live", "Giá Limit", "Cần Giảm",
-                       "Vol24H(M)", "Vola24H%"]))
-        print("-" * _TW)
-        for rank, row in enumerate(df_summary.head(30).to_dict(orient='records'), 1):
-            print(fmt_row([
-                "#" + str(rank),
-                row["Symbol"],
-                row["Trạng Thái"],
-                row["Phân Loại Grid"],
-                row["TỔNG"],
-                row["Chế Độ"],
-                row["Cảnh Báo"],
-                row["Đ.Nến15M"],
-                row["Đ.Râu24H"],
-                row["Đ.Entry"],
-                row["Đ.RSI"],
-                row["RSI1H"],
-                row["Giá Live"],
-                row["Giá Mua Limit"],
-                f"{row['Cần Giảm']:.2f}%",
-                f"${row['Vol24H(M)']}M",
-                f"{row['Vola24H%']}%",
-            ]))
-        print("\n" + "=" * _TW + "\n")
+
 
 
     momentum_symbols = [
@@ -1314,10 +1231,108 @@ def get_filtered_symbols(live_data_map):
             seen_usdt.add(sym_usdt)
         safety_map.setdefault(sym_ccxt, "⚠️ CHƯA XÉT")
 
-    return symbols_ordered, safety_map
+    return symbols_ordered, safety_map, early_list, df_summary if summary_list else None, current_time_str if summary_list else ""
 
 if __name__ == "__main__":
     from core.cache_service import CacheService
     cache = CacheService()
     symbols, safety_map = get_filtered_symbols(cache.get_live_data_map())
     print("\n[+] Danh sách lọc (Format CCXT):", symbols)
+
+def print_final_tables(early_list, df_summary, current_time_str):
+    if df_summary is None or df_summary.empty:
+        summary_list = []
+    else:
+        summary_list = [1]
+    _WCOLS3 = [8, 12, 8, 12, 12, 12, 10]
+    _TW3    = sum(_WCOLS3) + len(_SEP) * (len(_WCOLS3) - 1)
+    def fmt_row3(cells):
+        return _SEP.join(ljust_w(trunc_w(c, w), w) for c, w in zip(cells, _WCOLS3))
+
+    print("=" * _TW3)
+    print("🌱 BẢNG 3: MỎ VÀNG NGỦ SAY (WATCHLIST VĨ MÔ 1D - THANG ĐIỂM 100 - TOP 5)")
+    print("=" * _TW3)
+
+    if not early_list:
+        print("⚠️ KHÔNG TÌM THẤY MÃ NÀO ĐẠT CHUẨN VĨ MÔ.")
+    else:
+        print(fmt_row3(["Mã", "Giá Live", "Điểm", "Chiết Khấu", "Nén Hộp", "Cạn Cung", "Nến Gom"]))
+        print("-" * _TW3)
+        for r in early_list:
+            print(fmt_row3([
+                r['Symbol'],
+                smart_price(r['Giá']),
+                str(r['Điểm']),
+                f"-{r['Chiết Khấu']}%",
+                f"{r['Nén Hộp']}%",
+                f"Giảm {r['Cạn Cung']}%",
+                f"{r['Nến Gom']} nến",
+            ]))
+            
+            # Tính toán gợi ý Scale Order cho 1000 USDT (10 lệnh -> 100 USDT/lệnh)
+            sym = r['Symbol']
+            gia = float(r['Giá'])
+            
+            grid_setup = r.get('grid_setup', {})
+            if grid_setup.get('status') in ["SUCCESS", "WARNING_VOLATILE"]:
+                warning_tag = "[⚠️ VOLATILE]" if grid_setup.get('status') == "WARNING_VOLATILE" else ""
+                if grid_setup.get('is_dual_grid'):
+                    g1_l, g1_u, g1_n, g1_cap = grid_setup.get('g1_lower'), grid_setup.get('g1_upper'), grid_setup.get('g1_grids'), grid_setup.get('g1_capital_pct')
+                    g2_l, g2_u, g2_n, g2_cap = grid_setup.get('g2_lower'), grid_setup.get('g2_upper'), grid_setup.get('g2_grids'), grid_setup.get('g2_capital_pct')
+                    sl, tp = grid_setup.get('hard_stop_loss'), grid_setup.get('hard_take_profit')
+                    trig_g1 = g1_u * 1.005 if g1_u is not None else None
+                    print(f"  ↳ ⚙️ GRID Darvas [Gom Đáy {g1_cap}%] {warning_tag}: [{sym}] | Trig: {smart_price(trig_g1)} | Lưới: {smart_price(g1_l)} - {smart_price(g1_u)} ({g1_n}L) | SL: {smart_price(sl)} | TP: N/A")
+                    print(f"  ↳ ⚙️ GRID Darvas [Hứng Breakout {g2_cap}%] {warning_tag}: [{sym}] | Trig: {smart_price(g2_l)} | Lưới: {smart_price(g2_l)} - {smart_price(g2_u)} ({g2_n}L) | SL: {smart_price(sl)} | TP: {smart_price(tp)}")
+                else:
+                    upper = grid_setup.get('upper_bound', gia * 0.97)
+                    lower = grid_setup.get('lower_bound', gia * 0.80)
+                    num_grids = grid_setup.get('num_grids', 10)
+                    engine = grid_setup.get('engine', 'GRID 4H')
+                    
+                    trigger_buffer_4h = 0.005
+                    trig = upper * (1 + trigger_buffer_4h) if upper is not None else None
+                    sl = grid_setup.get('hard_stop_loss', lower * 0.97 if lower is not None else None)
+                    tp = grid_setup.get('hard_take_profit', upper * 1.05 if upper is not None else None)
+                    tp_buf = grid_setup.get('tp_buffer_pct', 0.05)
+                    tp_buf_str = f"+{tp_buf*100:.1f}%" if tp_buf is not None else "N/A"
+                    
+                    print(f"  ↳ ⚙️ {engine} {warning_tag}: [{sym}] | Trig: {smart_price(trig)} (Đón lõng hộp) | Lưới: {smart_price(lower)} - {smart_price(upper)} ({num_grids}L) | SL: {smart_price(sl)} (SL Cứng) | TP: {smart_price(tp)} ({tp_buf_str})")
+            else:
+                error_msg = grid_setup.get('message', 'Không rõ lỗi')
+                engine = grid_setup.get('engine', 'GRID 4H')
+                print(f"  ↳ ⚙️ {engine}: [{sym}] - Lỗi tính toán: {error_msg}")
+
+    print("=" * _TW3 + "\n")
+    # ── 8. 🏆 BẢNG CHẤM ĐIỂM REBALANCE (in sau cùng) ──────────────────
+    if summary_list:
+        print("=" * _TW)
+        print("=" * _TW)
+        print(f"🏆 BẢNG CHẤM ĐIỂM REBALANCE / SPOT GRID (THANG ĐIỂM 100 - TUYẾN TÍNH & 4 KHÔNG)")
+        print(f"⏰ Thời điểm cập nhật (UTC+7): {current_time_str}")
+        print("=" * _TW)
+        print(fmt_row(["Hạng", "Mã", "Trạng Thái", "Phân Loại Grid", "TỔNG",
+                       "Chế Độ", "Tín Hiệu Cảnh Báo", "Đ.Nến15M", "Đ.Râu24H", "Đ.Entry",
+                       "Đ.RSI", "RSI1H", "Giá Live", "Giá Limit", "Cần Giảm",
+                       "Vol24H(M)", "Vola24H%"]))
+        print("-" * _TW)
+        for rank, row in enumerate(df_summary.head(30).to_dict(orient='records'), 1):
+            print(fmt_row([
+                "#" + str(rank),
+                row["Symbol"],
+                row["Trạng Thái"],
+                row["Phân Loại Grid"],
+                row["TỔNG"],
+                row["Chế Độ"],
+                row["Cảnh Báo"],
+                row["Đ.Nến15M"],
+                row["Đ.Râu24H"],
+                row["Đ.Entry"],
+                row["Đ.RSI"],
+                row["RSI1H"],
+                row["Giá Live"],
+                row["Giá Mua Limit"],
+                f"{row['Cần Giảm']:.2f}%",
+                f"${row['Vol24H(M)']}M",
+                f"{row['Vola24H%']}%",
+            ]))
+        print("\n" + "=" * _TW + "\n")

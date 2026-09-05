@@ -132,7 +132,7 @@ def main():
             live_data_map = cache.get_live_data_map()
             
             # Chạy lọc mã trực tiếp ra màn hình (không ẩn log) để thấy tiến độ
-            watchlist, safety_map = get_filtered_symbols(live_data_map)
+            watchlist, safety_map, early_list, df_summary, current_time_str = get_filtered_symbols(live_data_map)
             
             # Gán rỗng vì output đã được in trực tiếp
             _coin_filter_output = ""
@@ -331,6 +331,9 @@ def main():
                         setup = state.scores["DC1"].grid_setup
                         if setup:
                             executor.execute_grid_setup(symbol=state.symbol, amount_per_grid=0.01, setup=setup)
+            from core.coin_filter import print_final_tables
+            print_final_tables(early_list, df_summary, current_time_str)
+            
             logger.info("Hoàn tất quét thị trường. Chương trình kết thúc.")
             
         except Exception as e:
