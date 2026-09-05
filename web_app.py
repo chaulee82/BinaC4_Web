@@ -127,7 +127,8 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
             lines=30, 
             max_lines=50, 
             interactive=False,
-            elem_id="terminal-output"
+            elem_id="terminal-output",
+            autoscroll=True
         )
         
     with gr.Row():
