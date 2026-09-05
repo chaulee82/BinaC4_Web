@@ -496,9 +496,9 @@ class EntryCalculatorService:
         st_support   = st_macro.get('support')
 
         con_anchors = []
-        if not math.isnan(ma99_macro) and ma99_macro > 0:
+        if not math.isnan(ma99_macro) and 0 < ma99_macro < entry:
             con_anchors.append(ma99_macro)
-        if st_support is not None and st_support > 0:
+        if st_support is not None and 0 < st_support < entry:
             con_anchors.append(float(st_support))
 
         if con_anchors:
