@@ -1035,7 +1035,9 @@ def get_filtered_symbols(live_data_map):
                     summary_list.append(res)
                 processed += 1
                 if processed % 5 == 0 or processed == len(all_symbols):
-                    print(f"  ▶ Đã quét xong: {processed}/{len(all_symbols)} mã...", flush=True)
+                    from datetime import datetime
+                    current_time = datetime.now().strftime('%H:%M:%S')
+                    print(f"  [{current_time}] ▶ Đã quét xong: {processed}/{len(all_symbols)} mã...", flush=True)
                     
     if summary_list:
         df_summary = (
