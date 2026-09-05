@@ -1020,14 +1020,23 @@ def get_filtered_symbols(live_data_map):
     all_symbols = list(dict.fromkeys(MANUAL_SYMBOLS + auto_symbols))
     
     print(f"🎯 TỔNG CỘNG CÓ {len(all_symbols)} MÃ ĐƯỢC ĐƯA VÀO BẢNG CHẤM ĐIỂM MOMENTUM!\n")
+    print("⏳ Hệ thống đang bắt đầu tính toán GRID và chấm điểm (Vui lòng đợi 1-2 phút)...\n")
     
     summary_list = []
     if all_symbols:
+        from concurrent.futures import as_completed
         with ThreadPoolExecutor(max_workers=20) as executor:
-            # Truyền tuple (symbol, info) vào qua lambda thay vì dùng global
-            results = executor.map(lambda s: process_symbol(s, live_data_map.get(s, {})), all_symbols)
-            summary_list = [r for r in results if r is not None]
-
+            futures = {executor.submit(process_symbol, s, live_data_map.get(s, {})): s for s in all_symbols}
+            
+            processed = 0
+            for future in as_completed(futures):
+                res = future.result()
+                if res is not None:
+                    summary_list.append(res)
+                processed += 1
+                if processed % 20 == 0 or processed == len(all_symbols):
+                    print(f"  ▶ Đã quét xong: {processed}/{len(all_symbols)} mã...")
+                    
     if summary_list:
         df_summary = (
             pd.DataFrame(summary_list)
