@@ -175,14 +175,15 @@ class EarlyWarningMatrix:
             # ══════════════════════════════════════════════════════════════════
 
             # ── KS-1A: Thủng MA99 4H hoặc Supertrend 1D ─────────
+            penalty_score = 0
             if len(df_4h) >= 100:
                 ma99_4h = df_4h.ta.sma(length=99)
                 if ma99_4h is not None and not ma99_4h.empty:
                     if float(df_4h['close'].iloc[-1]) < float(ma99_4h.iloc[-1]):
                         ew_triggers.append(
-                            "⛔ EW1-A: Close 4H thủng MA99 — Gãy cấu trúc vĩ mô 4H"
+                            "⚠️ RỦI RO VĨ MÔ: Close 4H thủng MA99 (-20đ Pullback)"
                         )
-                        ew_level = min(ew_level, 1)
+                        penalty_score += 20
 
             if df_1d is not None and len(df_1d) >= 12:
                 st_1d = self.engine.get_supertrend(df_1d, period=10, multiplier=3.0)
@@ -257,7 +258,7 @@ class EarlyWarningMatrix:
             c3 = self._score_c3_macro_momentum(df_4h)
             c4 = self._score_c4_taker_buy(df_15m)
 
-            pullback_score  = c1['score'] + c2['score'] + c3['score'] + c4['score']
+            pullback_score  = c1['score'] + c2['score'] + c3['score'] + c4['score'] - penalty_score
             pullback_detail = {
                 "C1_Wick_Purity":    c1,
                 "C2_Micro_Dryup":    c2,
