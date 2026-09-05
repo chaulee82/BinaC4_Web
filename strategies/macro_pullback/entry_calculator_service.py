@@ -158,15 +158,17 @@ class EntryCalculatorService:
         df_entry = self._fetch_ohlcv(fmt_sym, timeframe_entry, limit=max(WICK_SCAN_N + 40, 80))
         df_macro = self._fetch_ohlcv(fmt_sym, timeframe_macro, limit=150)
         df_mid   = self._fetch_ohlcv(fmt_sym, "1h",            limit=60)
+        df_1d    = self._fetch_ohlcv(fmt_sym, "1d",            limit=60)
 
         current_price = float(df_entry['close'].iloc[-1])
 
-        # ── Bộ Giáp Sniper: scan_sniper_safety() ──────────────────────────────
+        # ── Bộ Giáp Sniper: scan_pullback_ew() ──────────────────────────────
         # Chạy TRƯỚC Bước 1. EW Cấp 1 → REJECT ngay. EW Cấp 2 → SL Conservative bắt buộc.
-        ew_result = self.ew.scan_sniper_safety(
+        ew_result = self.ew.scan_pullback_ew(
             df_15m        = df_entry,
             df_4h         = df_macro,
             df_1h         = df_mid,
+            df_1d         = df_1d,
             current_price = current_price,
             coin_vola_24h = coin_vola_24h,
             avg_vola_24h  = avg_vola_24h,
