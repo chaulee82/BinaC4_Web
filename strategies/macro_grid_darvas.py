@@ -323,6 +323,17 @@ class MacroGridDarvas:
 
         return {"triggered": False, "reason": "✅ Kill-Switch an toàn"}
 
+    def _round_price(self, price: float) -> float:
+        import math
+        if price is None or price <= 0:
+            return price or 0.0
+        if price >= 1000:
+            return round(price, 2)
+        if price >= 1:
+            return round(price, 4)
+        first_sig = -math.floor(math.log10(abs(price)))
+        return round(price, first_sig + 4)
+
     # =========================================================================
     # ĐIỀU PHỐI TỔNG HỢP — scan_grid_candidate()
     # =========================================================================
@@ -409,19 +420,19 @@ class MacroGridDarvas:
 
                 grid_setup = {
                     "is_dual_grid":   True,
-                    "g1_lower":       round(g1_lower,  6),
-                    "g1_upper":       round(g1_upper,  6),
+                    "g1_lower":       self._round_price(g1_lower),
+                    "g1_upper":       self._round_price(g1_upper),
                     "g1_grids":       max(8, int((g1_amp * 100) / 0.8)),
                     "g1_capital_pct": 70,
-                    "g2_lower":       round(g2_lower,  6),
-                    "g2_upper":       round(g2_upper,  6),
+                    "g2_lower":       self._round_price(g2_lower),
+                    "g2_upper":       self._round_price(g2_upper),
                     "g2_grids":       max(5, int((g2_amp * 100) / 0.8)),
                     "g2_capital_pct": 30,
-                    "stop_loss":      round(floor_p  - (1.5 * atr_4h), 6),
-                    "take_profit":    round(g2_upper + (1.0 * atr_4h), 6),
+                    "stop_loss":      self._round_price(floor_p  - (1.5 * atr_4h)),
+                    "take_profit":    self._round_price(g2_upper + (1.0 * atr_4h)),
                     # Thông tin hộp để hiển thị ở coin_filter.py
-                    "lower_price":    round(floor_p,   6),
-                    "upper_price":    round(ceiling_p, 6),
+                    "lower_price":    self._round_price(floor_p),
+                    "upper_price":    self._round_price(ceiling_p),
                     "amplitude_pct":  round(box['amplitude'] * 100, 2),
                     "c4_score":       c4['score'],
                 }

@@ -214,9 +214,27 @@ class EntryCalculatorService:
         sl_aggressive   = sl_result['sl_aggressive']
         sl_conservative = sl_result['sl_conservative']
         risk_mode       = sl_result['risk_mode']
-        # Nếu EW Cấp 2, override risk_mode để log rõ hơn
         if force_conservative_mode and risk_mode != 'CONSERVATIVE':
             risk_mode = 'CONSERVATIVE (EW CẤP 2)'
+
+        # ── Tự động nới rộng TP (Fib Extension) nếu R/R < 1.5R ───────────────
+        risk_p1 = final_entry - sl_aggressive
+        min_mid_tp = final_entry + (risk_p1 * MIN_RR_RATIO)
+        if mid_tp < min_mid_tp:
+            logger.info(
+                f"[{symbol}] MidTP {self._fmt(mid_tp)} quá gần. Nới rộng lên {self._fmt(min_mid_tp)} để đạt R/R {MIN_RR_RATIO}"
+            )
+            mid_tp = min_mid_tp
+            
+        risk_p2 = final_entry - sl_conservative
+        min_macro_tp = final_entry + (risk_p2 * MIN_RR_RATIO)
+        # Bắt buộc macro_tp phải cao hơn mid_tp
+        min_macro_tp = max(min_macro_tp, mid_tp * 1.005)
+        if macro_tp < min_macro_tp:
+            logger.info(
+                f"[{symbol}] MacroTP {self._fmt(macro_tp)} quá gần. Nới rộng lên {self._fmt(min_macro_tp)} để đạt R/R {MIN_RR_RATIO}"
+            )
+            macro_tp = min_macro_tp
 
         # ── Bước 4: R/R Gate Validation ───────────────────────────────────────
         # Raises EntryCalculatorServiceError nếu bất kỳ payload nào có R/R < 1.5
