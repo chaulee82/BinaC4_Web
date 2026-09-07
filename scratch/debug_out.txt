@@ -1,0 +1,9 @@
+﻿­ƒöì ─Éang gß╗ìi Binance LIVE API (Thuß║¡t To├ín ─Éiß╗âm Tuyß║┐n T├¡nh Tß╗ë Lß╗ç Thuß║¡n/Nghß╗ïch)... 
+
+Testing SOLUSDT...
+Data: 1H=100 15M=10 1D=180
+close=104.3000  EMA20=101.6062  EMA50=101.1274  RSI=68.5
+ema_ok=True
+sh_48=105.6600  pullback=1.29%
+C0 score=-5  label=­ƒƒí TRUNG T├ìNH | C0=-5─æ
+RESULT OK - Diem=None  Action=­ƒö┤ Bß╗Ä QUA

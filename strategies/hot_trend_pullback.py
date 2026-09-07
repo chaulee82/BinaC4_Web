@@ -360,18 +360,18 @@ class HotTrendPullback:
             else:
                 pullback_pct = (sh_48 - close_live) / sh_48 * 100 if (sh_48 > 0 and close_live < sh_48) else 0.0
 
-                if 1.0 <= pullback_pct <= 4.0:
+                if 3.0 <= pullback_pct <= 8.0:
                     score_c2  = 25
-                    status_c2 = f"Cờ Đuôi Nheo/Nền Khỏe (-{pullback_pct:.1f}%)"
-                elif 4.0 < pullback_pct <= 8.0:
-                    score_c2  = 20
-                    status_c2 = f"Pullback Tốt (-{pullback_pct:.1f}% từ Swing)"
+                    status_c2 = f"Lý Tưởng (-{pullback_pct:.1f}% từ Swing)"
                 elif 8.0 < pullback_pct <= 12.0:
-                    score_c2  = 10
-                    status_c2 = f"Khá Sâu (-{pullback_pct:.1f}% — Rủi Ro Gãy)"
+                    score_c2  = 15
+                    status_c2 = f"Khá Sâu (-{pullback_pct:.1f}% từ Swing)"
                 elif 12.0 < pullback_pct <= 15.0:
-                    score_c2  = 5
-                    status_c2 = f"Rất Sâu (-{pullback_pct:.1f}% — Cẩn Thận)"
+                    score_c2  = 8
+                    status_c2 = f"Sâu (-{pullback_pct:.1f}% — Cẩn Thận)"
+                elif 1.0 <= pullback_pct < 3.0:
+                    score_c2  = 3
+                    status_c2 = f"Chưa Đủ (-{pullback_pct:.1f}%) — Chờ Thêm"
                 elif pullback_pct < 1.0:
                     score_c2  = 0
                     status_c2 = f"Sát Đỉnh (-{pullback_pct:.1f}%) — Chưa Có Pullback"
@@ -481,16 +481,25 @@ class HotTrendPullback:
             # Gọi sau khi đã qua các hard-gate 1H để giảm số lần gọi df_1d
             c0 = _check_c0_cycle(df_1d)
 
-            # ── Tổng Điểm & Tính Setup ────────────────────────────────────
+            # Tổng Điểm & Tính Setup ────────────────────────────────────
             # C0 cộng/trừ điều chỉnh vào tổng (có thể âm nếu rủi ro phân phối)
             score_c1c5  = score_c1 + score_c2 + score_c3 + score_c4 + score_c5
             total_score = score_c1c5 + c0['score']
 
-            # SL: ngay dưới EMA50 với cushion 0.5% (bảo vệ khỏi râu sweep)
-            sl_price   = ema50_1h * 0.995
+            # Tính ATR 14 (đại diện cho biến động của mã) để làm tỷ lệ đệm thay cho 0.5% cố định
+            atr_14      = float((df_1h['High'] - df_1h['Low']).tail(14).mean())
+            atr_pct     = atr_14 / close_live
+
+            # SL: ngay dưới EMA50 với mức đệm động tính bằng ATR% (thay cho 0.5% cố định)
+            sl_price   = ema50_1h * (1.0 - atr_pct)
+            
+            # Giới hạn SL tối đa không quá 7% để tránh bị âm nặng khi giá bơm quá nhanh khiến EMA50 ở xa
+            max_sl_pct = 0.07
+            if (close_live - sl_price) / close_live > max_sl_pct:
+                sl_price = close_live * (1.0 - max_sl_pct)
+            
             # TP: dùng Swing High 24H gần nhất làm mục tiêu thực tế
             sh_24       = _swing_high(df_1h, lookback=24)
-            atr_14      = float((df_1h['High'] - df_1h['Low']).tail(14).mean())
             tp1_price   = sh_24 if sh_24 > close_live * 1.01 else close_live + atr_14 * 2.5
             sl_dist     = max(close_live - sl_price, 1e-9)
             tp_dist     = max(tp1_price - close_live, 0.0)

@@ -11,7 +11,7 @@ import pandas_ta as ta
 class DynamicPricingOracle:
     def __init__(self):
         self.min_rr_ratio = 3.0
-        self.atr_multiplier = 1.5 # Mức đệm chống quét râu nến (Stop-Loss Hunt)
+        self.atr_multiplier = 2.0 # Mức đệm chống quét râu nến (Stop-Loss Hunt) - Tăng lên 2.0 để an toàn hơn
 
     def calculate_optimal_setup(self, df: pd.DataFrame) -> dict:
         """

@@ -2,8 +2,10 @@ import ccxt
 import logging
 import math
 import os
-from typing import Optional
-from models.market_state import EntrySetupContext, GridContext
+import time
+from typing import Optional, List
+from models.market_state import EntrySetupContext, GridContext, TradeLeg
+from core.price_formatter import price_formatter
 
 logger = logging.getLogger("TradeExecutionService")
 
@@ -34,6 +36,10 @@ class TradeExecutionService:
         else:
             self.dry_run = False
             logger.warning("🚨 [Execution] CHẾ ĐỘ LIVE TRADING ĐƯỢC KÍCH HOẠT. LỆNH SẼ ĐƯỢC ĐẶT BẰNG TIỀN THẬT!")
+            
+        # Cache markets for tickSize formatting
+        if self.exchange:
+            price_formatter.load_markets(self.exchange)
 
     def _check_balance(self, required_amount: float = 10.0) -> bool:
         """
@@ -67,13 +73,16 @@ class TradeExecutionService:
         """
         Định tuyến & Thực thi lệnh cho Động cơ Darvas, Sniper, Breakout, Hot Trend...
         """
-        if not setup or not setup.entry_price:
-            logger.error(f"❌ [Execution] Thiếu EntrySetupContext hoặc giá entry cho {symbol}")
+        if not setup or not getattr(setup, 'entry_price', None):
+            logger.error(f"❌ [Execution] Thiếu thông tin hoặc giá entry cho {symbol}")
             return
 
-        order_type = setup.setup_type.upper()
+        order_type = getattr(setup, 'setup_type', 'UNKNOWN').upper()
         
-        msg = f"🚀 [EXECUTE] BUY {order_type} {symbol} @ {fmt_price(setup.entry_price)} | SL: {fmt_price(setup.sl_price)} | TP1: {fmt_price(setup.tp1_price)}"
+        # Hỗ trợ cả TradeLeg (tp_price) và EntrySetupContext (tp1_price)
+        tp_price = getattr(setup, 'tp1_price', getattr(setup, 'tp_price', None))
+        
+        msg = f"🚀 [EXECUTE] BUY {order_type} {symbol} @ {fmt_price(setup.entry_price)} | SL: {fmt_price(setup.sl_price)} | TP1: {fmt_price(tp_price)}"
         
         if self.dry_run:
             logger.debug(f"[DRY-RUN] {msg}")
@@ -90,9 +99,7 @@ class TradeExecutionService:
             logger.info(f"✅ Đã đặt Limit Buy {symbol}: ID {buy_order.get('id')}")
             
             # 2. Xử lý OCO nếu được yêu cầu và sàn hỗ trợ
-            if setup.is_oco and setup.sl_price and setup.tp1_price:
-                # Chú ý: CCXT với Binance hỗ trợ create_order ocoOrder
-                # Cần try/except riêng vì không phải sàn nào cũng hỗ trợ
+            if setup.sl_price and tp_price:
                 try:
                     params = {
                         'stopPrice': setup.sl_price,
@@ -100,7 +107,7 @@ class TradeExecutionService:
                         'stopLimitTimeInForce': 'GTC'
                     }
                     oco_order = self.exchange.create_order(
-                        symbol, 'limit', 'sell', amount, setup.tp1_price, params
+                        symbol, 'limit', 'sell', amount, tp_price, params
                     )
                     logger.info(f"✅ Đã đặt lệnh OCO cho {symbol}: {oco_order.get('id')}")
                 except Exception as oco_err:
@@ -117,17 +124,31 @@ class TradeExecutionService:
         except Exception as e:
             logger.error(f"❌ [Execution] Lỗi không xác định: {e}")
 
-    def execute_grid_setup(self, symbol: str, amount_per_grid: float, setup: GridContext):
+    def execute_grid_setup(self, symbol: str, amount_per_grid: float, legs: List[TradeLeg] = None, setup=None):
         """
-        Thực thi thiết lập lưới Grid.
+        Thực thi thiết lập lưới Grid bằng DTO chuẩn hóa TradeLeg hoặc GridContext.
         """
-        if not setup or (not setup.lower_price and not setup.g1_lower):
-            logger.error(f"❌ [Execution] Thiếu thông số GridContext cho {symbol}")
+        if not legs and setup:
+            legs = []
+            if not getattr(setup, 'is_dual_grid', False):
+                grids = getattr(setup, 'grid_quantity', 0)
+                lower = getattr(setup, 'lower_price', 0)
+                upper = getattr(setup, 'upper_price', 0)
+                sl = getattr(setup, 'stop_loss', 0)
+                tp = getattr(setup, 'take_profit', 0)
+                if grids > 1 and upper > lower:
+                    step = (upper - lower) / (grids - 1)
+                    for i in range(grids):
+                        price = lower + i * step
+                        legs.append(TradeLeg(symbol=symbol, entry_price=price, tp_price=tp, sl_price=sl))
+
+        if not legs:
+            # logger.error(f"❌ [Execution] Danh sách Grid rỗng hoặc không thể tạo legs cho {symbol}")
             return
             
-        lower_p = setup.lower_price if not setup.is_dual_grid else setup.g1_lower
-        upper_p = setup.upper_price if not setup.is_dual_grid else (setup.g2_upper if setup.g2_upper > 0 else setup.g1_upper)
-        grids = setup.grid_quantity if not setup.is_dual_grid else (setup.g1_grids + setup.g2_grids)
+        grids = len(legs)
+        lower_p = legs[0].entry_price
+        upper_p = legs[-1].entry_price
         
         msg = f"🕸️ [EXECUTE GRID] {symbol} | Grids: {grids} | Range: {fmt_price(lower_p)} - {fmt_price(upper_p)}"
         
@@ -137,16 +158,38 @@ class TradeExecutionService:
             return
 
         # LIVE TRADING MODE
-        # Phải check đủ tiền cho n lưới
         total_required = amount_per_grid * grids
         if not self._check_balance(total_required):
             return
 
         try:
-            # TODO: Triển khai rải n lệnh limit theo GridContext
-            # Dùng vòng lặp for i in range(setup.num_grids) ...
-            logger.warning("🚧 Chức năng rải lưới Live (Real Grid) đang được phát triển.")
-            self._send_zalo_notification(f"✅ Rải lưới {symbol} thành công (Dummy)!")
+            logger.info(f"⚙️ Bắt đầu rải {grids} lệnh Grid cho {symbol}...")
+            for i, leg in enumerate(legs):
+                # 1. Limit Buy cho mắt lưới
+                buy_order = self.exchange.create_limit_buy_order(symbol, amount_per_grid, leg.entry_price)
+                logger.debug(f"  👉 Lưới {i+1}/{grids}: Buy Limit @ {fmt_price(leg.entry_price)}")
+                
+                # Tránh Spam API (HTTP 429)
+                time.sleep(0.05)
+                
+                # 2. Tạo OCO cho mắt lưới
+                if leg.sl_price and leg.tp_price:
+                    try:
+                        params = {
+                            'stopPrice': leg.sl_price,
+                            'stopLimitPrice': leg.sl_price,
+                            'stopLimitTimeInForce': 'GTC'
+                        }
+                        oco_order = self.exchange.create_order(
+                            symbol, 'limit', 'sell', amount_per_grid, leg.tp_price, params
+                        )
+                    except Exception as oco_err:
+                        logger.error(f"    ❌ Lỗi OCO lưới {i+1}: {oco_err}")
+                
+                # Tránh Spam API (HTTP 429)
+                time.sleep(0.05)
+
+            self._send_zalo_notification(f"✅ Rải lưới {symbol} ({grids} grids) thành công!")
             
         except ccxt.InsufficientFunds as e:
             logger.error(f"❌ [Grid Execution] Không đủ tiền: {e}")

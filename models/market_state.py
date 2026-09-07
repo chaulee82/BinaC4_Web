@@ -47,6 +47,29 @@ class EarlyWarningContext:
     triggers: List[str] = field(default_factory=list)
 
 @dataclass(slots=True, frozen=True)
+class TradeLeg:
+    """DTO chuẩn hóa tọa độ giá an toàn, tự kiểm duyệt (Fail-Fast)"""
+    symbol: str
+    entry_price: float
+    tp_price: float
+    sl_price: float
+    quantity: Optional[float] = None
+    setup_type: str = "UNKNOWN"
+
+    def is_valid(self, side: str = 'LONG') -> bool:
+        """Tự động kiểm tra tính hợp lệ của tọa độ giá"""
+        if self.entry_price <= 0 or self.tp_price <= 0 or self.sl_price <= 0:
+            raise ValueError(f"Giá không được <= 0: Entry={self.entry_price}, TP={self.tp_price}, SL={self.sl_price}")
+            
+        if side.upper() == 'LONG':
+            if not (self.sl_price < self.entry_price < self.tp_price):
+                raise ValueError(f"[Fail-Fast] Tọa độ LONG không hợp lệ: SL({self.sl_price}) < Entry({self.entry_price}) < TP({self.tp_price}) bị vi phạm!")
+        elif side.upper() == 'SHORT':
+            if not (self.sl_price > self.entry_price > self.tp_price):
+                raise ValueError(f"[Fail-Fast] Tọa độ SHORT không hợp lệ: SL({self.sl_price}) > Entry({self.entry_price}) > TP({self.tp_price}) bị vi phạm!")
+        return True
+
+@dataclass(slots=True, frozen=True)
 class EntrySetupContext:
     """Thông số lệnh thực thi (Dành cho OCO, Breakout, Limit)"""
     setup_type: str                # Phân loại: OCO_SPLIT, GRID_70, BREAKOUT, v.v.

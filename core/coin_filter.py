@@ -749,6 +749,78 @@ def smart_price(p):
             formatted += '.0'
     return formatted
 
+def scan_t3_breakout_countdown(df_4h):
+    if df_4h is None or len(df_4h) < 61:  # 25 (MA25) + 36 (T-72h)
+        return False, []
+
+    # Tính MA25 cho toàn bộ df
+    df_4h = df_4h.copy()
+    df_4h['MA25'] = df_4h['Close'].rolling(window=25).mean()
+
+    # 18 nến cuối
+    last_18 = df_4h.tail(18)
+    # 18 nến trước đó
+    prev_18 = df_4h.iloc[-36:-18]
+    
+    vol_last_18 = float(last_18['Quote_Volume'].sum())
+    vol_prev_18 = float(prev_18['Quote_Volume'].sum())
+    
+    if vol_prev_18 == 0:
+        return False, []
+        
+    vol_ratio = vol_last_18 / vol_prev_18
+    # 1. T-72h Volume Exhaustion: Dưới 30% so với nhịp trước
+    if vol_ratio >= 0.30:
+        return False, []
+
+    # 2. Siêu Nén Bollinger Bands (Micro-Squeeze)
+    close_18 = last_18['Close']
+    ma_18 = float(close_18.mean())
+    std_18 = float(close_18.std(ddof=1)) if len(close_18) == 18 else 0
+    if ma_18 == 0:
+        return False, []
+        
+    bb_up = ma_18 + 2.0 * std_18
+    bb_dn = ma_18 - 2.0 * std_18
+    bb_width = (bb_up - bb_dn) / ma_18
+    
+    if bb_width >= 0.03:
+        return False, []
+
+    # 3. Test Đáy Khôn Ngoan (Micro-Spring)
+    avg_vol_18 = float(last_18['Quote_Volume'].mean())
+    micro_spring_found = False
+    
+    for i in range(len(last_18) - 1):
+        c1 = last_18.iloc[i]
+        c2 = last_18.iloc[i+1]
+        
+        c1_o, c1_c, c1_l = float(c1['Open']), float(c1['Close']), float(c1['Low'])
+        c1_vol, c1_ma25 = float(c1['Quote_Volume']), float(c1['MA25'])
+        
+        c2_o, c2_c, c2_ma25 = float(c2['Open']), float(c2['Close']), float(c2['MA25'])
+        
+        is_red = c1_c < c1_o
+        is_below_ma = c1_l < c1_ma25
+        is_low_vol = c1_vol < avg_vol_18
+        
+        if is_red and is_below_ma and is_low_vol:
+            is_green = c2_c > c2_o
+            is_above_ma = c2_c > c2_ma25
+            if is_green and is_above_ma:
+                micro_spring_found = True
+                break
+
+    if micro_spring_found:
+        reasons = [
+            f"Vol Exhaust: {vol_ratio*100:.1f}%",
+            f"BB Squeeze: {bb_width*100:.1f}%",
+            f"Micro-Spring: Đạt"
+        ]
+        return True, reasons
+        
+    return False, []
+
 def analyze_early(symbol, info):
     info = info or {}
     if not info:
@@ -829,6 +901,10 @@ def analyze_early(symbol, info):
     
     total_early_score = score_drop + score_box + score_vol + score_spikes
 
+    # Gọi Countdown Radar trên 4H
+    df_4h = get_klines_live(symbol, "4h", limit=80)
+    is_imminent, imminent_reasons = scan_t3_breakout_countdown(df_4h)
+
     return {
         'Symbol':      symbol.replace('USDT', ''),
         '_raw_symbol': symbol,
@@ -839,7 +915,9 @@ def analyze_early(symbol, info):
         'Cạn Cung':    round(vol_drop_pct, 1),
         'Nến Gom':     accumulation_spikes,
         'Box_Floor':   min_low_60d,
-        'Box_Ceiling': max_high_60d
+        'Box_Ceiling': max_high_60d,
+        'Imminent':    is_imminent,
+        'Imm_Reasons': imminent_reasons
     }
 
 def _enrich_early_with_darvas(item: dict) -> dict:
@@ -1254,7 +1332,7 @@ def print_final_tables(early_list, df_summary, current_time_str):
         summary_list = []
     else:
         summary_list = [1]
-    _WCOLS3 = [8, 12, 8, 12, 12, 12, 10]
+    _WCOLS3 = [12, 12, 8, 12, 12, 12, 10, 45]
     _TW3    = sum(_WCOLS3) + len(_SEP) * (len(_WCOLS3) - 1)
     def fmt_row3(cells):
         return _SEP.join(ljust_w(trunc_w(c, w), w) for c, w in zip(cells, _WCOLS3))
@@ -1266,17 +1344,27 @@ def print_final_tables(early_list, df_summary, current_time_str):
     if not early_list:
         print("⚠️ KHÔNG TÌM THẤY MÃ NÀO ĐẠT CHUẨN VĨ MÔ.")
     else:
-        print(fmt_row3(["Mã", "Giá Live", "Điểm", "Chiết Khấu", "Nén Hộp", "Cạn Cung", "Nến Gom"]))
+        print(fmt_row3(["Mã", "Giá Live", "Điểm", "Chiết Khấu", "Nén Hộp", "Cạn Cung", "Nến Gom", "Radar Breakout"]))
         print("-" * _TW3)
         for r in early_list:
+            sym_display = r['Symbol']
+            is_imminent = r.get('Imminent', False)
+            imm_reasons = r.get('Imm_Reasons', [])
+            
+            if is_imminent:
+                radar_str = f"🔥 IMMINENT: {' • '.join(imm_reasons)}"
+            else:
+                radar_str = "-"
+                
             print(fmt_row3([
-                r['Symbol'],
+                sym_display,
                 smart_price(r['Giá']),
                 str(r['Điểm']),
                 f"-{r['Chiết Khấu']}%",
                 f"{r['Nén Hộp']}%",
                 f"Giảm {r['Cạn Cung']}%",
                 f"{r['Nến Gom']} nến",
+                radar_str
             ]))
             
             # Tính toán gợi ý Scale Order cho 1000 USDT (10 lệnh -> 100 USDT/lệnh)

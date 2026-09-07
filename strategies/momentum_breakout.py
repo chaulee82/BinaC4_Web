@@ -103,7 +103,7 @@ class MomentumBreakout:
                 return {"score": 30, "status": "Breakout Sạch (Đóng nến qua kháng cự)", "resistance": resistance}
         elif high_price > resistance:
             # Giá chọc râu qua nhưng đóng nến dưới kháng cự -> Fakeout
-            return {"score": -100, "status": "Fakeout (Chọc râu rút chân)", "resistance": resistance}
+            return {"score": 0, "status": "Fakeout (Chọc râu rút chân)", "resistance": resistance}
         elif close_price >= resistance * 0.99:
             return {"score": 15, "status": "Tiệm cận Kháng cự (Chờ Breakout)", "resistance": resistance}
         else:
@@ -126,7 +126,7 @@ class MomentumBreakout:
         elif vol_ratio >= 2.5:
             return {"score": 15, "status": f"Volume Đột Biến ({vol_ratio:.1f}x MA20)"}
         else:
-            return {"score": -100, "status": f"Volume Yếu ({vol_ratio:.1f}x MA20) - Bull Trap"}
+            return {"score": 0, "status": f"Volume Yếu ({vol_ratio:.1f}x MA20) - Bull Trap"}
 
     # =========================================================================
     # CỬA 3: ĐỘNG NĂNG DUY TRÌ (TAKER BUY RATIO) — TỐI ĐA 20 ĐIỂM
@@ -154,7 +154,7 @@ class MomentumBreakout:
             if taker_ratio >= 60.0:
                 return {"score": 20, "status": f"Phe Mua Áp Đảo (Taker Buy {taker_ratio:.1f}%)"}
             else:
-                return {"score": -100, "status": f"Lực Mua Yếu (Taker Buy {taker_ratio:.1f}%)"}
+                return {"score": 0, "status": f"Lực Mua Yếu (Taker Buy {taker_ratio:.1f}%)"}
 
         except Exception as e:
             return {"score": 0, "status": f"Lỗi Taker Buy: {str(e)[:30]}"}
@@ -170,24 +170,27 @@ class MomentumBreakout:
         support = past_lows.min()
         box_size = resistance - support
 
+        # Tính ATR 14 để làm mức đệm an toàn chống quét râu
+        atr_14 = float((df['high'] - df['low']).iloc[-14:].mean())
+
         if entry < resistance:
-            sl = df['low'].iloc[-1] * 0.99
+            sl = df['low'].iloc[-1] - (atr_14 * 2.0)
         else:
-            sl = resistance * 0.995 # Đặt sát dưới nắp hộp
+            sl = resistance - (atr_14 * 2.0) # Đặt sát dưới nắp hộp, đệm 2x ATR
 
         sl_dist = entry - sl
         tp1_price = entry + box_size
         tp1_dist = tp1_price - entry
 
         if sl_dist <= 0:
-            return {"score": -100, "status": "Lỗi SL", "sl": sl, "rr": 0}
+            return {"score": 0, "status": "Lỗi SL", "sl": sl, "rr": 0}
 
         rr_ratio = tp1_dist / sl_dist
 
         if rr_ratio >= 2.0:
             return {"score": 25, "status": f"R/R Tối Ưu ({rr_ratio:.1f}) — SL Sát Hộp", "sl": sl, "rr": rr_ratio}
         else:
-            return {"score": -100, "status": f"🚫 HỦY SETUP (R/R {rr_ratio:.1f} < 2.0 quá rủi ro)", "sl": sl, "rr": rr_ratio}
+            return {"score": 0, "status": f"🚫 HỦY SETUP (R/R {rr_ratio:.1f} < 2.0 quá rủi ro)", "sl": sl, "rr": rr_ratio}
 
     # =========================================================================
     # HÀM CHÍNH: CHẤM ĐIỂM TOÀN DIỆN

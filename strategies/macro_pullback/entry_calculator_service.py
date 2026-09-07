@@ -746,7 +746,8 @@ class EntryCalculatorService:
             return round(price, 4)
         # Coin nhỏ: tính số chữ số thập phân cần thiết
         first_sig = -math.floor(math.log10(abs(price)))
-        return round(price, first_sig + 4)
+        decimals = min(max(first_sig + 4, 8), 10)
+        return round(price, decimals)
 
     def _fmt(self, value) -> str:
         """Format giá trị để in log — trả về '—' nếu None."""

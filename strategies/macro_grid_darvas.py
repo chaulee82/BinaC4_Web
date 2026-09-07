@@ -332,7 +332,8 @@ class MacroGridDarvas:
         if price >= 1:
             return round(price, 4)
         first_sig = -math.floor(math.log10(abs(price)))
-        return round(price, first_sig + 4)
+        decimals = min(max(first_sig + 4, 8), 10)
+        return round(price, decimals)
 
     # =========================================================================
     # ĐIỀU PHỐI TỔNG HỢP — scan_grid_candidate()
