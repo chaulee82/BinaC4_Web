@@ -26,6 +26,8 @@ from engines.dc1_darvas_engine import DC1DarvasEngine
 from engines.dc2_sniper_engine import DC2SniperEngine
 from engines.dc3_breakout_engine import DC3BreakoutEngine
 from engines.dc4_hot_trend_engine import DC4HotTrendEngine
+from engines.dc5_pingpong_engine import DC5PingpongEngine
+from strategies.grid_pingpong import GridPingpongScorer
 from core.exchange_factory import get_working_exchange
 from execution.trade_execution_service import TradeExecutionService
 from engines.dc3_breakout_engine import DC3BreakoutEngine
@@ -116,12 +118,14 @@ def main():
     breakout       = MomentumBreakout()
     hot_trend      = HotTrendPullback()
     grid_calc      = GridCalculator()
+    pingpong       = GridPingpongScorer()
     
     # Khởi tạo Engines (Controller Layer)
     dc1_engine = DC1DarvasEngine(strategy=darvas)
     dc2_engine = DC2SniperEngine(strategy=sniper, early_warning=EarlyWarningMatrix(), entry_calc=entry_calc, repo=repo)
     dc3_engine = DC3BreakoutEngine(strategy=breakout)
     dc4_engine = DC4HotTrendEngine(strategy=hot_trend, grid_calc=grid_calc)
+    dc5_engine = DC5PingpongEngine(strategy=pingpong)
     
     # Chạy 1 lần (Manual Scan Mode)
     if True:
@@ -303,6 +307,12 @@ def main():
                 # =========================================================
                 dc4_states, htb_count, htb_change_threshold, tracking_list = dc4_engine.run(watchlist, live_data_map, safety_map=safety_map)
                 renderer.render_hot_trend_pullback(dc4_states, htb_count, htb_change_threshold, tracking_list)
+                
+                # =========================================================
+                # 5. Chạy Động Cơ 5 (Grid Pingpong)
+                # =========================================================
+                dc5_states = dc5_engine.run(watchlist, live_data_map, safety_map=safety_map)
+                renderer.render_grid_pingpong(dc5_states)
                 
                 # ── 6-8. In các bảng từ coin_filter sau cùng ────────────────
                 if _coin_filter_output:

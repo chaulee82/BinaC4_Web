@@ -259,5 +259,43 @@ class ConsoleRenderer:
                 print("=" * 80)
                 print("\n".join(filtered_lines))
         except Exception as e:
-            print(f"Render Error (Coin Filter): {e}")
+            print(f"Render Error (Coin Filter Results): {e}")
 
+    def render_grid_pingpong(self, symbol_states: List[SymbolState]):
+        """Render Động Cơ 5: Grid Pingpong"""
+        try:
+            if not symbol_states:
+                return
+
+            print("\n" + "=" * 130)
+            print(f"🏓 BẢNG CHẤM ĐIỂM GRID PINGPONG (ĐỘNG CƠ 5 - DAO ĐỘNG QUANH TRỤC)")
+            print("=" * 130)
+            print(f"{'Mã (Symbol)':<15} | {'Điểm':<10} | {'Xếp Hạng (Action)':<25} | {'Chỉ Số (Bounces/Range)':<35} | {'Mốc Quan Trọng (Center/Trigger/SL)'}")
+            print("| --- | --- | --- | --- | --- |")
+            
+            for state in symbol_states:
+                score_ctx = state.scores.get("DC5")
+                if not score_ctx:
+                    continue
+                
+                sym = state.symbol
+                score = score_ctx.total_score
+                act = score_ctx.action_label
+                c1 = score_ctx.c1_score # Bounces / Avg Range
+                c2 = score_ctx.c2_score # Center
+                c3 = score_ctx.c3_score # Trigger
+                c4 = score_ctx.c4_score # SL
+                
+                # Retrieve components if embedded in c1 or pass them gracefully
+                # Since we didn't pass components to state directly, we just print the score with 4 decimals
+                info = f"{c2} | {c3} | {c4}"
+                print(f"{sym:<15} | {score:<10.4f} | {act:<25} | {c1:<35} | {info}")
+                
+                # In Grid Setup
+                g_setup = score_ctx.grid_setup
+                if g_setup:
+                    print(f"  ↳ ⚙️ GRID PINGPONG: Lower = {self.fmt_price(g_setup.lower_price)} | Upper = {self.fmt_price(g_setup.upper_price)} | Grids = {g_setup.grid_quantity} | SL Sell All = {self.fmt_price(g_setup.stop_loss)}")
+                    
+            print("=" * 130 + "\n")
+        except Exception as e:
+            print(f"Render Error (Grid Pingpong): {e}")

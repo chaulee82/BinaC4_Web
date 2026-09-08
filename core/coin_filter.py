@@ -1242,10 +1242,23 @@ def get_filtered_symbols(live_data_map):
         print("\n" + "=" * _TW + "\n")
 
     # ── 7. 🌱 BẢNG 3 - BẮT SỚM NỀN TĂNG (in sau GRID) ───────────────────
-    early_symbols = [
-        s for s in live_data_map
-        if s.endswith('USDT') and s not in EXCLUDE
-    ]
+    _temp_early = []
+    for s, info in live_data_map.items():
+        if s.endswith('USDT') and s not in EXCLUDE:
+            vol_24h = info.get('quote_vol', 0)
+            change_24h = info.get('change_24h', 0)
+            if EARLY_MIN_VOL_USDT <= vol_24h <= EARLY_MAX_VOL_USDT and change_24h >= EARLY_MIN_24H_CHG:
+                # Tính 24h spread giống Pingpong nhưng ta ưu tiên lấy mã "ngủ say" (spread hẹp) hoặc thanh khoản cao
+                high = info.get('high', 0)
+                low = info.get('low', 0)
+                spread = ((high - low) / low * 100) if low > 0 else 0
+                _temp_early.append((s, vol_24h, spread))
+                
+    # Giống Pingpong: Giới hạn quét Top N mã để tăng tốc
+    EARLY_TOP_N = 100
+    # Sắp xếp theo thanh khoản (quote_vol) cao nhất xuống để ưu tiên các "mỏ vàng" an toàn dễ đẩy
+    _temp_early.sort(key=lambda x: x[1], reverse=True)
+    early_symbols = [x[0] for x in _temp_early[:EARLY_TOP_N]]
     # print(f"\n🌱 Đang quét Bảng 3 - Mỏ Vàng Ngủ Say ({len(early_symbols)} mã vol > ${EARLY_MIN_VOL_USDT // 1_000_000}M)...\n")
 
     early_list = []

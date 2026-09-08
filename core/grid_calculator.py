@@ -5,6 +5,7 @@ from enum import Enum
 class GridType(Enum):
     DEFENSIVE_4H = "GRID 4H (Phòng Thủ)"
     SNIPER_TACTICAL = "GRID 1H Sniper"
+    PINGPONG_FLEX = "GRID PINGPONG (Flex)"
 
 class GridCalculator:
     def __init__(self):
@@ -158,3 +159,40 @@ class GridCalculator:
             }
         except Exception as e:
             return {"status": "ERROR", "message": f"Grid 1H calc error: {str(e)}"}
+
+    def calculate_grid_pingpong(self, current_price: float, center_line: float, avg_range_pct: float, quote_vol: float = 0.0) -> dict:
+        """
+        Calculates the Pingpong Grid.
+        Dynamic 3-5 grids based on swing range, but forces 3 grids if Vol < 10M.
+        """
+        try:
+            # Force 3 grids for low cap (2M - 10M)
+            if quote_vol > 0 and quote_vol < 10_000_000:
+                num_grids = 3
+            else:
+                # Nếu Range tổng >= 4.0% -> 5 lưới. < 4.0% -> 3 lưới.
+                if avg_range_pct >= 4.0:
+                    num_grids = 5
+                else:
+                    num_grids = 3
+                
+            # Biên độ mỗi bên bằng 1/2 avg_range_pct. Tính bằng tỷ lệ %.
+            half_range = (avg_range_pct / 100.0) / 2.0
+            
+            # Tính upper và lower từ center line
+            upper_bound = center_line * (1 + half_range)
+            lower_bound = center_line * (1 - half_range)
+            
+            return {
+                "status": "SUCCESS",
+                "engine": GridType.PINGPONG_FLEX.value,
+                "current_price": current_price,
+                "lower_bound": round(lower_bound, 5),
+                "upper_bound": round(upper_bound, 5),
+                "num_grids": num_grids,
+                "metrics": {
+                    "avg_range_pct": round(avg_range_pct, 2)
+                }
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"Grid Pingpong calc error: {str(e)}"}

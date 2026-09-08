@@ -61,6 +61,64 @@ def _calc_rsi(series: pd.Series, period: int = 14) -> float:
     val      = rsi.iloc[-1]
     return float(val) if not np.isnan(val) else 50.0
 
+def _calc_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0) -> int:
+    """Trả về direction (1: uptrend, -1: downtrend) của nến cuối cùng."""
+    high = df['High'].values.astype(np.float64)
+    low = df['Low'].values.astype(np.float64)
+    close = df['Close'].values.astype(np.float64)
+    n = len(df)
+    
+    if n < period + 2:
+        return 1
+        
+    tr = np.empty(n, dtype=np.float64)
+    tr[0] = high[0] - low[0]
+    hl = high[1:] - low[1:]
+    hc = np.abs(high[1:] - close[:-1])
+    lc = np.abs(low[1:] - close[:-1])
+    tr[1:] = np.maximum(hl, np.maximum(hc, lc))
+    
+    atr = np.full(n, np.nan, dtype=np.float64)
+    atr[period - 1] = tr[:period].mean()
+    for i in range(period, n):
+        atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period
+        
+    hl2 = (high + low) / 2.0
+    basic_upper = hl2 + multiplier * atr
+    basic_lower = hl2 - multiplier * atr
+    
+    final_upper = np.where(np.isnan(basic_upper), high, basic_upper).copy()
+    final_lower = np.where(np.isnan(basic_lower), low, basic_lower).copy()
+    direction = np.ones(n, dtype=np.int8)
+    
+    seed_idx = period - 1
+    direction[seed_idx] = 1
+    
+    for i in range(period, n):
+        if basic_upper[i] < final_upper[i - 1] or close[i - 1] > final_upper[i - 1]:
+            final_upper[i] = basic_upper[i]
+        else:
+            final_upper[i] = final_upper[i - 1]
+            
+        if basic_lower[i] > final_lower[i - 1] or close[i - 1] < final_lower[i - 1]:
+            final_lower[i] = basic_lower[i]
+        else:
+            final_lower[i] = final_lower[i - 1]
+            
+        if direction[i - 1] == -1:
+            if close[i] > final_upper[i]:
+                direction[i] = 1
+            else:
+                direction[i] = -1
+        else:
+            if close[i] < final_lower[i]:
+                direction[i] = -1
+            else:
+                direction[i] = 1
+                
+    return int(direction[-1])
+
+
 
 # ─── C1: RSI Phân Cấp Lũy Giảm ────────────────────────────────────────────────
 def _score_rsi_c1(rsi: float) -> tuple:
@@ -327,6 +385,7 @@ class HotTrendPullback:
             ema50_1h   = float(df_1h['Close'].ewm(span=50, adjust=False).mean().iloc[-1])
             ma25_1h    = float(df_1h['Close'].rolling(25).mean().iloc[-1])
             rsi_1h     = _calc_rsi(df_1h['Close'], period=14)
+            st_dir_1h  = _calc_supertrend(df_1h, period=10, multiplier=3.0)
 
             # Swing High/Low từ 48 nến 1H đã đóng (tránh nhiễu từ nến đang mở)
             sh_48      = _swing_high(df_1h, lookback=48)
@@ -404,8 +463,10 @@ class HotTrendPullback:
             # Lọc ra các nến đỏ hoặc doji
             red_doji_3 = recent_3[recent_3['Close'] <= recent_3['Open']]
             
+            max_dump_vol = 0.0
             if len(red_doji_3) > 0:
                 avg_dump_vol = float(red_doji_3['Quote_Volume'].mean())
+                max_dump_vol = float(red_doji_3['Quote_Volume'].max())
             else:
                 # Nếu 3 nến gần nhất đều là xanh, coi như vol xả rất thấp (chưa có nhịp xả gần)
                 avg_dump_vol = float(recent_3['Quote_Volume'].mean()) * 0.3
@@ -415,7 +476,13 @@ class HotTrendPullback:
             else:
                 vol_ratio = 1.0
 
-            if vol_ratio <= 0.40:
+            # Lọc dao rơi: nến xả có volume lớn quá mức cho phép
+            is_falling_knife_vol = max_dump_vol > (peak_push * 0.8) and len(red_doji_3) > 0
+
+            if is_falling_knife_vol:
+                score_c3  = 0
+                status_c3 = f"🔴 CÁ MẬP XẢ (Max Dump > 80% Peak) — TỪ CHỐI"
+            elif vol_ratio <= 0.40:
                 score_c3  = 20
                 status_c3 = f"Kiệt Cung ({vol_ratio*100:.0f}% đỉnh push) ✅"
             elif vol_ratio <= 0.60:
@@ -513,6 +580,10 @@ class HotTrendPullback:
             # Mã Đu Đỉnh (-20 C0) + C1-C5 cao   = tổng bị kéo xuống → từ chối tự nhiên
             if score_c1_rsi == 0:
                 action = "🔴 TỪ CHỐI (RSI Climax/Yếu)"
+            elif st_dir_1h == -1:
+                action = "🔴 TỪ CHỐI (Dưới Supertrend 1H - Dao Rơi)"
+            elif is_falling_knife_vol:
+                action = "🔴 TỪ CHỐI (Volume xả lớn - Cá mập thoát hàng)"
             elif c0['score'] <= -15:
                 # Tín hiệu phân phối vĩ mô quá rõ → từ chối dù vi mô tốt
                 action = "🔴 MACRO GATE: Rủi Ro Phân Phối Đỉnh"
