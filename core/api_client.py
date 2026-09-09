@@ -14,7 +14,25 @@ from requests.adapters import HTTPAdapter
 # Tuy nhiên, urllib3 có sẵn Retry
 from urllib3.util.retry import Retry
 
+import threading
+
 logger = logging.getLogger("APIClient")
+
+# ── HTTP Call Counter (Verification) ───────────────────────────────────
+# Đếm số HTTP request thực sự ra Binance (cache hit không tính).
+# Thread-safe: dùng lock vì BinanceClient được gọi từ nhiều thread song song.
+_http_call_lock  = threading.Lock()
+_http_call_count = 0
+
+def get_http_call_count() -> int:
+    """Trả về số HTTP request thực sự kể từ lần reset gần nhất."""
+    return _http_call_count
+
+def reset_http_call_count():
+    """Reset counter về 0 — gọi trước mỗi phase cần đo."""
+    global _http_call_count
+    with _http_call_lock:
+        _http_call_count = 0
 
 class BinanceClient:
     _instance = None
@@ -53,7 +71,12 @@ class BinanceClient:
     def get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """
         Gửi GET request tới Binance. Tự động fallback sang domain khác nếu domain chính lỗi.
+        Mỗi lần gọi hàm này = 1 HTTP request thực sự ra internet (được đếm vào counter).
         """
+        global _http_call_count
+        with _http_call_lock:
+            _http_call_count += 1
+
         for domain in self.domains:
             url = f"{domain}{endpoint}"
             try:
@@ -61,8 +84,8 @@ class BinanceClient:
                 res.raise_for_status()
                 return res.json()
             except Exception as e:
-                logger.debug(f"[BinanceClient] Thất bại khi gọi {url}: {e}")
+                logger.debug(f"[BinanceClient] That bai khi goi {url}: {e}")
                 continue
-        
-        logger.error(f"[BinanceClient] Tất cả domain đều thất bại cho endpoint {endpoint}")
+
+        logger.error(f"[BinanceClient] Tat ca domain deu that bai cho endpoint {endpoint}")
         return None

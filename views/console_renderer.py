@@ -25,11 +25,11 @@ class ConsoleRenderer:
     def render_early_warning_matrix(self, warning_results: List[Dict[str, Any]], total_scanned: int):
         """Render Bảng Cảnh Báo Sớm"""
         try:
-            print("\n" + "!" * 125)
-            print(f"🚨 HỆ THỐNG CẢNH BÁO SỚM & RỦI RO SẬP (EARLY WARNING MATRIX)")
-            print("!" * 125)
-            print(f"| {'Mức Độ (Level)':<50} | {'Tín Hiệu (Trigger)':<40} | {'Danh Sách Mã (Symbols)'}")
-            print(f"|{'-'*52}|{'-'*42}|{'-'*60}")
+            print("\n" + "!" * 80)
+            print(f"🚨 HỆ THỐNG CẢNH BÁO SỚM & RỦI RO SẬP")
+            print("!" * 80)
+            print(f"| {'Mức Độ (Level)':<30} | {'Tín Hiệu':<25} | {'Danh Sách Mã'}")
+            print(f"|{'-'*32}|{'-'*27}|{'-'*20}")
             
             filtered_warnings = [r for r in warning_results if r.get('level') in (1, 2, 3)]
             if filtered_warnings:
@@ -43,20 +43,20 @@ class ConsoleRenderer:
                     sym_str = ", ".join(symbols)
                     count = len(symbols)
                     lbl_with_count = f"{lbl} ({count}/{total_scanned})"
-                    print(f"| {lbl_with_count:<50} | {trig:<40} | {sym_str}")
+                    print(f"| {lbl_with_count:<30} | {trig:<25} | {sym_str}")
             else:
-                print(f"| {'(Không có mã nào)':<50} | {'-':<40} | {'-'}")
-            print("!" * 125 + "\n")
+                print(f"| {'(Không có mã nào)':<30} | {'-':<25} | {'-'}")
+            print("!" * 80)
         except Exception as e:
             print(f"Render Error (Early Warning): {e}")
 
     def render_darvas_grid(self, symbol_states: List[SymbolState]):
         """Render Động Cơ 1: Darvas Grid"""
         try:
-            print("\n" + "=" * 115)
-            print(f"📦 ĐỘNG CƠ 1: DARVAS GRID (Dành cho Chiến lược Phòng thủ Móng nhà)")
-            print("=" * 115)
-            print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'Trạng Thái Bảng 1':<35} | {'Hành Động'}")
+            print("\n" + "=" * 80)
+            print(f"📦 ĐỘNG CƠ 1: DARVAS GRID")
+            print("=" * 80)
+            print(f"{'Mã':<10} | {'Điểm':<6} | {'Trạng Thái':<20} | {'Hành Động'}")
             print("| --- | --- | --- | --- |")
             
             for state in symbol_states:
@@ -64,108 +64,93 @@ class ConsoleRenderer:
                 if not score_ctx:
                     continue
                 
-                sym = state.symbol
+                sym = state.symbol.replace('/USDT', '')
                 score = score_ctx.total_score
                 act = score_ctx.action_label
-                safe_tag = state.safety_tag
+                safe_tag = state.safety_tag[:20] if state.safety_tag else ""
                 
-                print(f"{sym:<15} | {score:<10} | {safe_tag:<35} | {act}")
+                print(f"{sym:<10} | {score:<6} | {safe_tag:<20} | {act}")
                 if score >= 60 and score_ctx.grid_setup:
                     g_setup = score_ctx.grid_setup
                     sl = g_setup.stop_loss
                     tp = g_setup.take_profit
                     if g_setup.is_dual_grid:
-                        print(f"  ↳ ⚙️ DUAL GRID: [{sym}] SL = {sl} | TP = {tp}")
-                        print(f"     ├── G1 (Bắt đáy): {g_setup.g1_lower} - {g_setup.g1_upper} ({g_setup.g1_grids} Lưới) [70% Vốn]")
-                        print(f"     └── G2 (Đột phá): {g_setup.g2_lower} - {g_setup.g2_upper} ({g_setup.g2_grids} Lưới) [30% Vốn]")
+                        print(f"  ↳ ⚙️ DUAL: SL={sl}|TP={tp} | G1:{g_setup.g1_lower}-{g_setup.g1_upper}({g_setup.g1_grids}L) | G2:{g_setup.g2_lower}-{g_setup.g2_upper}({g_setup.g2_grids}L)")
                     else:
-                        print(f"  ↳ ⚙️ SETUP GRID: [{sym}] Lower = {g_setup.lower_price} | Uper = {g_setup.upper_price} | Grids = {g_setup.grid_quantity}| SL = {sl} | TP = {tp}")
+                        print(f"  ↳ ⚙️ SETUP: L={g_setup.lower_price}|U={g_setup.upper_price}|G={g_setup.grid_quantity}|SL={sl}|TP={tp}")
                         
-            print("=" * 115 + "\n")
+            print("=" * 80)
         except Exception as e:
             print(f"Render Error (Darvas Grid): {e}")
 
     def render_pullback_sniper(self, symbol_states: List[SymbolState]):
         """Render Động Cơ 2: Pullback Sniper"""
         try:
-            print("\n" + "=" * 175)
-            print(f"🎯 BẢNG CHẤM ĐIỂM PULLBACK SNIPER (ĐỘNG CƠ 2 - TÌM LỆNH THỰC THI CHÍNH XÁC)")
-            print("=" * 175)
-            print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'Trạng Thái Bảng 1':<35} | {'C1 (Hội Tụ)':<12} | {'C2 (Vol)':<10} | {'C3 (Sổ Lệnh)':<12} | {'C4 (R/R)':<10} | {'Hành Động'}")
-            print("| --- | --- | --- | --- | --- | --- | --- | --- |")
+            print("\n" + "=" * 100)
+            print(f"🎯 PULLBACK SNIPER (ĐỘNG CƠ 2)")
+            print("=" * 100)
+            print(f"{'Mã':<8} | {'Điểm':<5} | {'Trạng Thái':<15} | {'C1':<4} | {'C2':<4} | {'C3':<4} | {'C4':<4} | {'Hành Động'}")
             
             for state in symbol_states:
                 score_ctx = state.scores.get("DC2")
                 if not score_ctx:
                     continue
                     
-                sym = state.symbol
+                sym = state.symbol.replace('/USDT', '')
                 score = score_ctx.total_score
                 act = score_ctx.action_label
-                safe_tag = state.safety_tag
+                safe_tag = state.safety_tag[:15] if state.safety_tag else ""
                 
                 c1 = score_ctx.c1_score
                 c2 = score_ctx.c2_score
                 c3 = score_ctx.c3_score
                 c4 = score_ctx.c4_score
                 
-                print(f"{sym:<15} | {score:<10} | {safe_tag:<35} | {c1:<12} | {c2:<10} | {c3:<12} | {c4:<10} | {act}")
+                print(f"{sym:<8} | {score:<5} | {safe_tag:<15} | {c1:<4} | {c2:<4} | {c3:<4} | {c4:<4} | {act}")
                 
                 # In Early Warning
                 if score_ctx.early_warning:
                     ew = score_ctx.early_warning
-                    force_tag = " [⚠️ FORCE-CON]" if ew.force_conservative else ""
-                    print(f"   ↳ 🛡️ EW Sniper [{sym}]: {ew.ew_label}{force_tag}")
-                    print(f"      PB Score={ew.pullback_score}/100 "
-                          f"| C1-Wick={ew.c1_wick_score}đ C2-DryUp={ew.c2_micro_dryup_score}đ "
-                          f"C3-Momentum={ew.c3_macro_momentum_score}đ C4-TakerBuy={ew.c4_taker_buy_score}đ")
+                    force_tag = " [⚠️ F-CON]" if ew.force_conservative else ""
+                    print(f"   ↳ 🛡️ EW: {ew.ew_label}{force_tag} | PB={ew.pullback_score} | W={ew.c1_wick_score} D={ew.c2_micro_dryup_score} M={ew.c3_macro_momentum_score} TB={ew.c4_taker_buy_score}")
                     if ew.ew_level == 1:
                         triggers = " | ".join(ew.triggers)
-                        print(f"   ↳ ⛔ [EW CẤP 1 REJECT] {triggers}")
+                        print(f"   ↳ ⛔ [EW1 REJ] {triggers}")
 
                 # In Entry Setup (OCO)
                 if score_ctx.entry_setup1:
                     s1 = score_ctx.entry_setup1
                     sl1_pct = (s1.entry_price - s1.sl_price) / s1.entry_price * 100 if s1.entry_price else 0
                     tp1_pct = (s1.tp1_price - s1.entry_price) / s1.entry_price * 100 if s1.entry_price else 0
-                    print(f"   ↳ OCO-1 [{sym}] Buy={self.fmt_price(s1.entry_price)} "
-                          f"| SL={self.fmt_price(s1.sl_price)}(-{sl1_pct:.1f}%) "
-                          f"| TP={self.fmt_price(s1.tp1_price)}(+{tp1_pct:.1f}%) "
-                          f"| R/R=1:{s1.rr_ratio:.1f}")
+                    print(f"   ↳ OCO-1: Buy={self.fmt_price(s1.entry_price)} | SL={self.fmt_price(s1.sl_price)}(-{sl1_pct:.1f}%) | TP={self.fmt_price(s1.tp1_price)}(+{tp1_pct:.1f}%) | R/R=1:{s1.rr_ratio:.1f}")
                 
                 if score_ctx.entry_setup2:
                     s2 = score_ctx.entry_setup2
                     sl2_pct = (s2.entry_price - s2.sl_price) / s2.entry_price * 100 if s2.entry_price else 0
                     tp2_pct = (s2.tp1_price - s2.entry_price) / s2.entry_price * 100 if s2.entry_price else 0
-                    print(f"   ↳ OCO-2 [{sym}] Buy={self.fmt_price(s2.entry_price)} "
-                          f"| SL={self.fmt_price(s2.sl_price)}(-{sl2_pct:.1f}%) "
-                          f"| TP={self.fmt_price(s2.tp1_price)}(+{tp2_pct:.1f}%) "
-                          f"| R/R=1:{s2.rr_ratio:.1f} "
-                          f"| Trailing={s2.trailing_trigger}")
+                    print(f"   ↳ OCO-2: Buy={self.fmt_price(s2.entry_price)} | SL={self.fmt_price(s2.sl_price)}(-{sl2_pct:.1f}%) | TP={self.fmt_price(s2.tp1_price)}(+{tp2_pct:.1f}%) | R/R=1:{s2.rr_ratio:.1f} | Trail={s2.trailing_trigger}")
                 
                 if score >= 70:
-                    print("-" * 175)
+                    print("-" * 100)
             
-            print("=" * 175 + "\n")
+            print("=" * 100)
         except Exception as e:
             print(f"Render Error (Pullback Sniper): {e}")
 
     def render_momentum_breakout(self, symbol_states: List[SymbolState], btc_gate_label: str):
         """Render Động Cơ 3: Momentum Breakout"""
         try:
-            print("\n" + "=" * 175)
-            print(f"🚀 BẢNG CHẤM ĐIỂM MOMENTUM BREAKOUT (ĐỘNG CƠ 3 - SĂN BỨT PHÁ ĐỘNG LƯỢNG)")
-            print(f"   📡 BTC 1H Gate: {btc_gate_label}")
-            print("=" * 175)
-            print(f"{'Mã (Symbol)':<15} | {'Tổng Điểm':<10} | {'C1 (PriceAct)':<25} | {'C2 (Volume)':<25} | {'C3 (OrderBook)':<25} | {'C4 (R/R)':<25} | {'Bonus (Taker)':<25} | {'Hành Động'}")
-            print("| --- | --- | --- | --- | --- | --- | --- | --- |")
+            print("\n" + "=" * 100)
+            print(f"🚀 MOMENTUM BREAKOUT (ĐỘNG CƠ 3) | BTC: {btc_gate_label}")
+            print("=" * 100)
+            print(f"{'Mã':<8} | {'Điểm':<5} | {'C1(PA)':<10} | {'C2(Vol)':<10} | {'C3(OB)':<10} | {'C4(R/R)':<10} | {'Bonus':<6} | {'Hành Động'}")
             
             for state in symbol_states:
                 score_ctx = state.scores.get("DC3")
                 if not score_ctx:
                     continue
                 
-                sym = state.symbol
+                sym = state.symbol.replace('/USDT', '')
                 score = score_ctx.total_score
                 act = score_ctx.action_label
                 c1 = score_ctx.c1_score
@@ -174,7 +159,7 @@ class ConsoleRenderer:
                 c4 = score_ctx.c4_score
                 bonus = score_ctx.bonus_score
                 
-                print(f"{sym:<15} | {score:<10} | {c1:<25} | {c2:<25} | {c3:<25} | {c4:<25} | {bonus:<25} | {act}")
+                print(f"{sym:<8} | {score:<5} | {c1:<10} | {c2:<10} | {c3:<10} | {c4:<10} | {bonus:<6} | {act}")
                 
                 # In Entry Setup
                 if score_ctx.entry_setup1:
@@ -183,38 +168,35 @@ class ConsoleRenderer:
                         sl_pct = (setup.entry_price - setup.sl_price) / setup.entry_price * 100 if setup.entry_price else 0
                         tp1_pct = (setup.tp1_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
                         tp2_pct = (setup.tp2_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
-                        print(f"   ↳ ⚙️ SETUP [{sym}] Entry = {self.fmt_price(setup.entry_price)} | SL = {self.fmt_price(setup.sl_price)} (-{sl_pct:.1f}%) | R/R = 1:{setup.rr_ratio:.1f}")
-                        print(f"       📄 [MOCK SCALE-OUT] TP1={self.fmt_price(setup.tp1_price)} (+{tp1_pct:.1f}%) | TP2={self.fmt_price(setup.tp2_price)} (+{tp2_pct:.1f}%)")
+                        print(f"   ↳ ⚙️ SETUP: In={self.fmt_price(setup.entry_price)} | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}")
+                        print(f"       📄 [MOCK] TP1={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | TP2={self.fmt_price(setup.tp2_price)}(+{tp2_pct:.1f}%)")
                     else:
                         sl_pct = (setup.entry_price - setup.sl_price) / setup.entry_price * 100 if setup.entry_price else 0
                         tp1_pct = (setup.tp1_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
-                        print(f"   ↳ ⚙️ SETUP: [{sym}] Buy Market = {self.fmt_price(setup.entry_price)} | Chốt Lời (TP1) = {self.fmt_price(setup.tp1_price)} (+{tp1_pct:.1f}%) | Cắt Lỗ (SL) = {self.fmt_price(setup.sl_price)} (-{sl_pct:.1f}%) | R/R = 1:{setup.rr_ratio:.1f}")
+                        print(f"   ↳ ⚙️ SETUP: In={self.fmt_price(setup.entry_price)} | TP1={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}")
                 
                 if score > 0:
-                    print("-" * 175)
-            print("=" * 175 + "\n")
+                    print("-" * 100)
+            print("=" * 100)
         except Exception as e:
             print(f"Render Error (Momentum Breakout): {e}")
 
     def render_hot_trend_pullback(self, symbol_states: List[SymbolState], htb_count: int, htb_threshold: float, tracking_list: List[str]):
         """Render Động Cơ 4: Hot Trend Pullback"""
         try:
-            print("\n" + "=" * 175)
-            print(f"🔥 BẢNG CHẤM ĐIỂM HOT TREND PULLBACK (ĐỘNG CƠ 4 - SĂN ĐIỂM VÀO LỆNH PULLBACK)")
-            print(f"   📡 Nguồn: {htb_count} mã Hot Trend (change_24h >= {htb_threshold}%, vol >= 3M USDT) — Độc lập với watchlist tích lũy")
-            print("=" * 175)
+            print("\n" + "=" * 100)
+            print(f"🔥 HOT TREND PULLBACK (ĐỘNG CƠ 4) | Nguồn: {htb_count} mã (>={htb_threshold}%, vol>=3M)")
+            print("=" * 100)
             
             if not symbol_states:
-                print("⚠️  KHÔNG TÌM THẤY MÃ NÀO ĐỦ ĐIỀU KIỆN HOT TREND PULLBACK HIỆN TẠI.")
-                print("    → Thị trường chưa có nhịp pullback rõ ràng, hoặc các mã tăng đang vẫn ở đỉnh.")
-                print("-" * 175)
+                print("⚠️ KHÔNG TÌM THẤY MÃ NÀO ĐỦ ĐIỀU KIỆN HOT TREND PULLBACK HIỆN TẠI.")
             
             for state in symbol_states:
                 score_ctx = state.scores.get("DC4")
                 if not score_ctx:
                     continue
                 
-                sym = state.symbol
+                sym = state.symbol.replace('/USDT', '')
                 score = score_ctx.total_score
                 act = score_ctx.action_label
                 c1 = score_ctx.c1_score
@@ -223,30 +205,25 @@ class ConsoleRenderer:
                 c4 = score_ctx.c4_score
                 c5 = score_ctx.bonus_score
                 
-                print(f"[{sym:<6}] Điểm: {score:<12} | RSI1H: {score_ctx.rsi_1h:<5.1f} | Pull%: {score_ctx.pullback_pct:<6.1f} | 🎯 Hành Động: {act}")
-                print(f"   ↳ 📈 C1 Trend  : {c1}")
-                print(f"   ↳ 📉 C2 Pullbck: {c2}")
-                print(f"   ↳ 📊 C3 Volume : {c3}")
-                print(f"   ↳ 🧱 C4 Bệ Đỡ  : {c4}")
-                print(f"   ↳ 💸 C5 Taker  : {c5}")
+                print(f"[{sym:<6}] Điểm: {score:<6} | RSI1H: {score_ctx.rsi_1h:<4.1f} | Pull%: {score_ctx.pullback_pct:<5.1f} | 🎯 {act}")
+                print(f"   ↳ C1: {c1} | C2: {c2} | C3: {c3} | C4: {c4} | C5: {c5}")
                 
                 macro = state.macro_state
                 if macro:
-                    print(f"   ↳ 🌀 C0 Macro  : {macro.trend_label} | {macro.drop_180d_pct}% | {macro.ma_status}")
+                    print(f"   ↳ 🌀 Macro: {macro.trend_label} | {macro.drop_180d_pct}% | {macro.ma_status}")
                 
                 if score_ctx.entry_setup1:
                     setup = score_ctx.entry_setup1
                     sl_pct = (setup.entry_price - setup.sl_price) / setup.entry_price * 100 if setup.entry_price else 0
                     tp1_pct = (setup.tp1_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
-                    print(f"   ↳ ⚙️ SETUP [{sym}] Buy={self.fmt_price(setup.entry_price)} | SL={self.fmt_price(setup.sl_price)} (-{sl_pct:.1f}%) | TP={self.fmt_price(setup.tp1_price)} (+{tp1_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}")
+                    print(f"   ↳ ⚙️ SETUP: In={self.fmt_price(setup.entry_price)} | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | TP={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}")
                 
-                print("-" * 175)
+                print("-" * 100)
                 
             if tracking_list:
                 print("👀 THEO DÕI THÊM: " + ", ".join(tracking_list))
-                print("-" * 175)
                 
-            print("=" * 175 + "\n")
+            print("=" * 100)
         except Exception as e:
             print(f"Render Error (Hot Trend Pullback): {e}")
 
@@ -267,18 +244,17 @@ class ConsoleRenderer:
             if not symbol_states:
                 return
 
-            print("\n" + "=" * 130)
-            print(f"🏓 BẢNG CHẤM ĐIỂM GRID PINGPONG (ĐỘNG CƠ 5 - DAO ĐỘNG QUANH TRỤC)")
-            print("=" * 130)
-            print(f"{'Mã (Symbol)':<15} | {'Điểm':<10} | {'Xếp Hạng (Action)':<25} | {'Chỉ Số (Bounces/Range)':<35} | {'Mốc Quan Trọng (Center/Trigger/SL)'}")
-            print("| --- | --- | --- | --- | --- |")
+            print("\n" + "=" * 100)
+            print(f"🏓 GRID PINGPONG (ĐỘNG CƠ 5)")
+            print("=" * 100)
+            print(f"{'Mã':<8} | {'Điểm':<8} | {'Action':<15} | {'Bounces/Range':<20} | {'Center/Trigger/SL'}")
             
             for state in symbol_states:
                 score_ctx = state.scores.get("DC5")
                 if not score_ctx:
                     continue
                 
-                sym = state.symbol
+                sym = state.symbol.replace('/USDT', '')
                 score = score_ctx.total_score
                 act = score_ctx.action_label
                 c1 = score_ctx.c1_score # Bounces / Avg Range
@@ -286,16 +262,14 @@ class ConsoleRenderer:
                 c3 = score_ctx.c3_score # Trigger
                 c4 = score_ctx.c4_score # SL
                 
-                # Retrieve components if embedded in c1 or pass them gracefully
-                # Since we didn't pass components to state directly, we just print the score with 4 decimals
                 info = f"{c2} | {c3} | {c4}"
-                print(f"{sym:<15} | {score:<10.4f} | {act:<25} | {c1:<35} | {info}")
+                print(f"{sym:<8} | {score:<8.4f} | {act:<15} | {c1:<20} | {info}")
                 
                 # In Grid Setup
                 g_setup = score_ctx.grid_setup
                 if g_setup:
-                    print(f"  ↳ ⚙️ GRID PINGPONG: Lower = {self.fmt_price(g_setup.lower_price)} | Upper = {self.fmt_price(g_setup.upper_price)} | Grids = {g_setup.grid_quantity} | SL Sell All = {self.fmt_price(g_setup.stop_loss)}")
+                    print(f"  ↳ ⚙️ GRID: Low={self.fmt_price(g_setup.lower_price)} | Up={self.fmt_price(g_setup.upper_price)} | Lưới={g_setup.grid_quantity} | SL Sell={self.fmt_price(g_setup.stop_loss)}")
                     
-            print("=" * 130 + "\n")
+            print("=" * 100)
         except Exception as e:
             print(f"Render Error (Grid Pingpong): {e}")

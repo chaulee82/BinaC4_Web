@@ -93,50 +93,16 @@ def calculate_rsi(df, period=14):
     val = rsi.iloc[-1]
     return float(val) if not np.isnan(val) else 50.0
 
-_klines_cache = {}
-_CACHE_TTL = 60  # 60 giây (đủ cho 1 vòng quét toàn diện mà không lấy dữ liệu cũ)
+# ── Bước 2+3: Dùng shared cache toàn hệ thống (TTL 120s, không sleep khi cache hit) ──
+from core.klines_cache import get_klines_cached
 
 def get_klines_live(symbol, interval, limit=100):
-    global _klines_cache
-    now = time.time()
-    cache_key = (symbol, interval)
-    
-    # Trả về data từ cache nếu còn hạn và đủ số lượng nến
-    if cache_key in _klines_cache:
-        cached_time, df = _klines_cache[cache_key]
-        if now - cached_time < _CACHE_TTL and len(df) >= limit:
-            return df.tail(limit).copy()
-
-    time.sleep(0.02)
-    client = BinanceClient()
-    
-    # Tối ưu: Lấy dư một chút ở lần đầu để phục vụ cho các module sau yêu cầu limit lớn hơn
-    fetch_limit = limit
-    if interval == '15m': fetch_limit = max(limit, 100)
-    elif interval == '1h': fetch_limit = max(limit, 168)
-    elif interval == '4h': fetch_limit = max(limit, 120)
-    elif interval == '1d': fetch_limit = max(limit, 180)
-
-    data = client.get(f"/api/v3/klines", params={"symbol": symbol, "interval": interval, "limit": fetch_limit})
-    if isinstance(data, list) and len(data) > 0:
-        df = pd.DataFrame(data, columns=[
-            'Open_Time', 'Open', 'High', 'Low', 'Close', 'Volume',
-            'Close_Time', 'Quote_Volume', 'Trades', 'Taker_Buy_Base', 'Taker_Buy_Quote', 'Ignore'
-        ])
-        for c in ['Open', 'High', 'Low', 'Close', 'Quote_Volume', 'Taker_Buy_Quote']:
-            df[c] = pd.to_numeric(df[c], errors='coerce')
-            
-        # Lưu vào cache
-        _klines_cache[cache_key] = (now, df)
-        
-        # Dọn dẹp cache rác nếu phình to (vd > 1000 items)
-        if len(_klines_cache) > 1000:
-            keys_to_delete = [k for k, (t, _) in _klines_cache.items() if now - t > _CACHE_TTL]
-            for k in keys_to_delete:
-                del _klines_cache[k]
-                
-        return df.tail(limit).copy()
-    return None
+    """
+    Thin wrapper: ủy quyền toàn bộ cho shared klines_cache.
+    Cache hit → trả về ngay, KHÔNG sleep.
+    Cache miss → gọi API một lần, lưu vào cache chung.
+    """
+    return get_klines_cached(symbol, interval, limit)
 
 def check_higher_lows_4h(df_4h, lookback=6):
     lows = df_4h['Low'].tail(lookback).values
@@ -150,7 +116,7 @@ def check_ma25_slope_4h(df_4h):
     ma25_prev = float(df_4h['Close'].iloc[-26:-1].mean())
     return ma25_curr > ma25_prev
 
-def process_symbol(symbol, live_info):
+def process_symbol(symbol, live_info, skip_darvas=False):
     if not live_info: return None
 
     df_15m = get_klines_live(symbol, "15m", limit=100)
@@ -590,9 +556,10 @@ def process_symbol(symbol, live_info):
     has_darvas_floor = False
     darvas_setup = {}
     darvas_score = 0
+    darvas_res = {}
 
-    # Phương pháp 2: Gọi Darvas bảo lãnh nếu vượt qua được màng lọc cơ sở (Giảm tải API)
-    if _base_safe:
+    # Bước 4: Gọi Darvas chỉ khi được phép (skip_darvas=False) — giảm từ ~80 xuống 10 calls
+    if _base_safe and not skip_darvas:
         from strategies.macro_grid_darvas import MacroGridDarvas
         darvas = _get_shared_darvas()
         darvas_res = darvas.scan_grid_candidate(symbol, '4h')
@@ -1087,6 +1054,7 @@ def analyze_momentum(symbol, info):
     }
 
 def get_filtered_symbols(live_data_map):
+
     auto_candidates = []
     for symbol, info in live_data_map.items():
         if symbol.endswith("USDT") and symbol not in EXCLUDE and info.get('volume_usdt', 0) >= 2_000_000:
@@ -1096,16 +1064,32 @@ def get_filtered_symbols(live_data_map):
     auto_candidates = sorted(auto_candidates, key=lambda x: x[1], reverse=True)[:TOP_AUTO_COUNT]
     auto_symbols = [s[0] for s in auto_candidates]
     all_symbols = list(dict.fromkeys(MANUAL_SYMBOLS + auto_symbols))
-    
-    print(f"🎯 TỔNG CỘNG CÓ {len(all_symbols)} MÃ ĐƯỢC ĐƯA VÀO BẢNG CHẤM ĐIỂM MOMENTUM!\n")
+
+    print(f"\U0001f3af TỔNG CỘNG CÓ {len(all_symbols)} MÃ ĐƯỢC ĐƯĂ VÀO BẢNG CHẤM ĐIỂM MOMENTUM!\n")
     print("⏳ Hệ thống đang bắt đầu tính toán GRID và chấm điểm (Vui lòng đợi 1-2 phút)...\n")
-    
+
     summary_list = []
     if all_symbols:
         from concurrent.futures import as_completed
+
+        # ── Buước 5: Pre-fetch toàn bộ klines song song trước analysis loop ──
+        print("⏳ Đang tải dữ liệu nến song song (warm cache)...")
+        from core.klines_cache import warm_klines_cache, reset_api_call_count, get_api_call_count
+        reset_api_call_count()
+        t_warm_start = time.time()
+        warm_klines_cache(all_symbols, intervals=['15m', '1h', '4h', '1d'], max_workers=20)
+        t_warm = time.time() - t_warm_start
+        api_cnt = get_api_call_count()
+        print(f"✅ Pre-fetch xong: {api_cnt} API calls trong {t_warm:.1f}s")
+        reset_api_call_count()
+
+        # ── Buước 4: skip_darvas=True — Darvas chỉ chạy sau sort cho Top 10 safe ──
         with ThreadPoolExecutor(max_workers=8) as executor:
-            futures = {executor.submit(process_symbol, s, live_data_map.get(s, {})): s for s in all_symbols}
-            
+            futures = {
+                executor.submit(process_symbol, s, live_data_map.get(s, {}), True): s
+                for s in all_symbols
+            }
+
             processed = 0
             for future in as_completed(futures):
                 res = future.result()
@@ -1115,8 +1099,9 @@ def get_filtered_symbols(live_data_map):
                 if processed % 5 == 0 or processed == len(all_symbols):
                     from datetime import datetime
                     current_time = datetime.now().strftime('%H:%M:%S')
-                    print(f"  [{current_time}] ▶ Đã quét xong: {processed}/{len(all_symbols)} mã...", flush=True)
-                    
+                    print(f"\r  [{current_time}] ▶ Đã quét xong: {processed}/{len(all_symbols)} mã...", end="", flush=True)
+        print()  # newline sau progress
+
     if summary_list:
         df_summary = (
             pd.DataFrame(summary_list)
@@ -1127,12 +1112,36 @@ def get_filtered_symbols(live_data_map):
             .reset_index(drop=True)
         )
 
-        # ⚡ Gọi Darvas Hybrid Override cho Top 5 is_safe
-        safe_indices = df_summary.index[df_summary['is_safe'] == True].tolist()[:5]
-        for idx in safe_indices:
+        # ── Tinh chỉnh Bước 4: Darvas Pre-filter Score ──────────────────────────
+        # Thay vì dùng toàn bộ is_safe (có thể 50-80 mã), tính pre-filter score nhanh
+        # trên RAM để chọn Top 10 xứng đáng nhất — tránh gửi mã yếu vào Darvas nặng.
+        #
+        # Pre-filter Score = Vol24H(M) × RSI_momentum (thể hiện thanh khoản + đà tăng)
+        # Vol lớn → nhiều tiền vào, RSI vừa phải (40-65) → lý tưởng để grid.
+        # Không cần gọi API — tất cả dữ liệu đã có sẵn trong df_summary.
+        def _darvas_prefilter_score(row) -> float:
+            vol_m  = row.get("Vol24H(M)", 0)                    # Thanh khoản
+            rsi    = row.get("RSI1H", 50)                       # RSI 1H
+            total  = row.get("TỔNG", 0)                         # Score tổng hợp
+            # RSI momentum: peak tại 55 (lý tưởng grid), phạt nếu quá mua/bán
+            rsi_bonus = max(0.0, 1.0 - abs(rsi - 55.0) / 30.0)
+            return vol_m * rsi_bonus * (total / 100.0)
+
+        safe_mask = df_summary["is_safe"] == True
+        if safe_mask.any():
+            df_safe_candidates = df_summary[safe_mask].copy()
+            df_safe_candidates["_prefilter"] = df_safe_candidates.apply(_darvas_prefilter_score, axis=1)
+            # Lấy Top 10 theo pre-filter score — chỉ những mã này mới chạy Darvas
+            top10_indices = df_safe_candidates.nlargest(10, "_prefilter").index.tolist()
+        else:
+            top10_indices = []
+
+        # ⚡ Gọi Darvas Hybrid Override cho Top 10 is_safe (pre-filtered)
+        for idx in top10_indices:
             row_dict = df_summary.loc[idx].to_dict()
             enriched = _enrich_early_with_darvas(row_dict)
             df_summary.at[idx, 'grid_setup'] = enriched.get('grid_setup', {})
+
 
         vietnam_tz = timezone(timedelta(hours=7))
         current_time_str = datetime.now(vietnam_tz).strftime("%Y-%m-%d %H:%M:%S")
@@ -1332,6 +1341,7 @@ def get_filtered_symbols(live_data_map):
             seen_usdt.add(sym_usdt)
         safety_map.setdefault(sym_ccxt, "⚠️ CHƯA XÉT")
 
+
     return symbols_ordered, safety_map, early_list, df_summary if summary_list else None, current_time_str if summary_list else ""
 
 if __name__ == "__main__":
@@ -1447,3 +1457,4 @@ def print_final_tables(early_list, df_summary, current_time_str):
                 f"{row['Vola24H%']}%",
             ]))
         print("\n" + "=" * _TW + "\n")
+
