@@ -1096,11 +1096,7 @@ def get_filtered_symbols(live_data_map):
                 if res is not None:
                     summary_list.append(res)
                 processed += 1
-                if processed % 5 == 0 or processed == len(all_symbols):
-                    from datetime import datetime
-                    current_time = datetime.now().strftime('%H:%M:%S')
-                    print(f"\r  [{current_time}] ▶ Đã quét xong: {processed}/{len(all_symbols)} mã...", end="", flush=True)
-        print()  # newline sau progress
+
 
     if summary_list:
         df_summary = (
