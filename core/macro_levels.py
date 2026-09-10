@@ -67,6 +67,7 @@ def calculate_universal_macro_levels(
     klines_4h_df: pd.DataFrame,
     klines_1h_df: pd.DataFrame,
     tick_size: float,
+    klines_15m_df: pd.DataFrame = None,
     sl_atr_multiplier: float = 1.5,
     sl_margin_pct: float = 0.03,
 ) -> dict:
@@ -112,9 +113,34 @@ def calculate_universal_macro_levels(
         peak_1h = float(recent_1h['high'].max())
 
         # ── 4. Tính 4 mốc thô ────────────────────────────────────────────────
-        raw_entry_4h = macro_low_4h + (box_height * 0.20)  # Vùng chiết khấu 20% từ đáy
+        raw_entry_4h = macro_low_4h + (box_height * 0.382)  # Vùng cảnh giới 38.2% từ đáy
         raw_tp_1h    = peak_1h                              # Cản ngắn hạn 24H
         raw_tp_4h    = macro_high_4h                        # Đỉnh hộp vĩ mô 5 ngày
+
+        # ── 4.5. Nội Suy Kỹ Thuật (15M Interpolation) ───────────────────────
+        if klines_15m_df is not None and not klines_15m_df.empty and len(klines_15m_df) >= 200:
+            close_15m = klines_15m_df['close'].astype(float)
+            ema20 = float(close_15m.ewm(span=20, adjust=False).mean().iloc[-1])
+            ema50 = float(close_15m.ewm(span=50, adjust=False).mean().iloc[-1])
+            ma99 = float(close_15m.rolling(99).mean().iloc[-1])
+            ma200 = float(close_15m.rolling(200).mean().iloc[-1])
+            
+            # BB(20, 2)
+            ma20 = close_15m.rolling(20).mean()
+            std20 = close_15m.rolling(20).std()
+            lower_bb = float((ma20 - 2 * std20).iloc[-1])
+            
+            supports = [ema20, ema50, ma99, ma200, lower_bb]
+            valid_supports = [s for s in supports if not pd.isna(s) and s > 0]
+            
+            if valid_supports:
+                closest_support = min(valid_supports, key=lambda x: abs(x - raw_entry_4h))
+                dist_pct = abs(closest_support - raw_entry_4h) / raw_entry_4h
+                
+                # Ngưỡng ±3%
+                if dist_pct <= 0.03:
+                    logger.debug(f"[MacroLevels] Nội suy 15M: Hút Entry từ {raw_entry_4h} về {closest_support} (sai số {dist_pct:.1%})")
+                    raw_entry_4h = closest_support
 
         # ── 5. SL linh hoạt theo ATR (chống "quét thanh khoản" của đội lái) ──
         atr_4h = _calc_atr(klines_4h_df, period=14)

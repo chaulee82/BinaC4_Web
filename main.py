@@ -192,6 +192,7 @@ def main():
                         df_1h = repo.get_klines_df(sym_api, '1h', 50)
                         df_4h = repo.get_klines_df(sym_api, '4h', 50)
                         df_1d = repo.get_klines_df(sym_api, '1d', 50)
+                        df_15m = repo.get_klines_df(sym_api, '15m', 250)
 
                         res = early_warning.check_warning_level(df_1h, df_4h, df_1d)
                         res['symbol'] = sym
@@ -204,6 +205,7 @@ def main():
                             klines_4h_df=df_4h,
                             klines_1h_df=df_1h,
                             tick_size=tick_size,
+                            klines_15m_df=df_15m,
                             sl_atr_multiplier=_sl_atr_mult,
                             sl_margin_pct=_sl_margin,
                         )

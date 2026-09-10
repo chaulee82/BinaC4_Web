@@ -25,7 +25,7 @@ _MAX_ITEMS = 2000  # Tối đa 2000 entries (symbol × interval combinations)
 # ── Fetch limits mặc định cho từng interval ──────────────────────────────────
 # Lấy dư để phục vụ nhiều module với limit khác nhau mà không fetch lại
 _DEFAULT_FETCH_LIMIT = {
-    '15m': 100,
+    '15m': 250,
     '1h':  168,
     '4h':  120,
     '1d':  180,

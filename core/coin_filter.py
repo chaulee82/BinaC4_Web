@@ -1445,10 +1445,11 @@ def print_final_tables(early_list, df_summary, current_time_str, macro_levels_ma
                     sym_api = sym_ccxt.replace('/', '')
                     df_1h = get_klines_live(sym_api, '1h', limit=50)
                     df_4h = get_klines_live(sym_api, '4h', limit=50)
-                    if df_1h is not None and df_4h is not None and len(df_1h) >= 24 and len(df_4h) >= 30:
+                    df_15m = get_klines_live(sym_api, '15m', limit=250)
+                    if df_1h is not None and df_4h is not None and df_15m is not None and len(df_1h) >= 24 and len(df_4h) >= 30:
                         cache = ExchangeInfoCache()
                         tick_size = cache.get_tick_size(sym_api)
-                        m_dict = calculate_universal_macro_levels(df_4h, df_1h, tick_size)
+                        m_dict = calculate_universal_macro_levels(df_4h, df_1h, tick_size, klines_15m_df=df_15m)
                         if m_dict['status'] == 'SUCCESS':
                             macro = MacroLevels(
                                 entry_4h=m_dict['entry_4h'],
