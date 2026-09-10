@@ -102,7 +102,7 @@ class BinanceClient:
                 res.raise_for_status()
                 return res.json()
             except Exception as e:
-                logger.debug(f"[BinanceClient] That bai khi goi {url}: {e}")
+                logger.warning(f"[BinanceClient] That bai khi goi {url}: {e}")
                 continue
 
         logger.error(f"[BinanceClient] Tat ca domain deu that bai cho endpoint {endpoint}")

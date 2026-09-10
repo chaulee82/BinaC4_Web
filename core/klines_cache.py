@@ -127,7 +127,7 @@ def get_klines_cached(symbol: str, interval: str, limit: int = 100) -> Optional[
 def warm_klines_cache(
     symbols: List[str],
     intervals: Optional[List[str]] = None,
-    max_workers: int = 12          # Binance-safe: 12 luồng song song ~ 240 req/s max
+    max_workers: int = 10          # Giảm xuống 10 luồng để an toàn hơn cho API
 ):
     """
     Pre-fetch klines song song cho danh sách symbols trước khi chạy analysis loop.
@@ -174,13 +174,24 @@ def warm_klines_cache(
                 _cache[key] = (t, df)
         return sym, itv, df is not None
 
+    from concurrent.futures import as_completed
     ok = 0
     fail = 0
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        for sym, itv, success in pool.map(_fetch_task, tasks):
-            if success:
-                ok += 1
-            else:
-                fail += 1
+    batch_size = 40
+    
+    for i in range(0, len(tasks), batch_size):
+        batch = tasks[i:i + batch_size]
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [pool.submit(_fetch_task, task) for task in batch]
+            for future in as_completed(futures):
+                sym, itv, success = future.result()
+                if success:
+                    ok += 1
+                else:
+                    fail += 1
+        
+        # Nghỉ giữa các batch để tránh bị tường lửa (WAF) khóa IP
+        if i + batch_size < len(tasks):
+            time.sleep(0.5)
 
     logger.info(f"[KlinesCache] Warm cache xong: {ok} thanh cong, {fail} that bai.")

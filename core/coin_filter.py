@@ -1060,9 +1060,23 @@ def get_filtered_symbols(live_data_map):
             if info.get('daily_vola', 0) >= 2.5:
                 auto_candidates.append((symbol, info.get('volume_usdt', 0)))
 
+    import os
+    import json
+    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'settings.json')
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            settings = json.load(f)
+            engine_top_n = settings.get("trading", {}).get("engine_top_n", 80)
+    except Exception:
+        engine_top_n = 80
+
     auto_candidates = sorted(auto_candidates, key=lambda x: x[1], reverse=True)[:TOP_AUTO_COUNT]
     auto_symbols = [s[0] for s in auto_candidates]
     all_symbols = list(dict.fromkeys(MANUAL_SYMBOLS + auto_symbols))
+    
+    # Cắt xuống đúng engine_top_n trước khi gọi warm_klines_cache
+    if len(all_symbols) > engine_top_n:
+        all_symbols = all_symbols[:engine_top_n]
 
     print(f"\U0001f3af TỔNG CỘNG CÓ {len(all_symbols)} MÃ ĐƯỢC ĐƯĂ VÀO BẢNG CHẤM ĐIỂM MOMENTUM!\n")
     print("⏳ Hệ thống đang bắt đầu tính toán GRID và chấm điểm (Vui lòng đợi 1-2 phút)...\n")
