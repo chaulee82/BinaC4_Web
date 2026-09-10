@@ -19,7 +19,7 @@ from strategies.hot_trend_pullback import HotTrendPullback
 from core.coin_filter import get_filtered_symbols
 from core.early_warning import EarlyWarningMatrix
 from views.console_renderer import ConsoleRenderer
-from models.market_state import SymbolState, ScoreContext, GridContext, MacroState, EarlyWarningContext, EntrySetupContext
+from models.market_state import SymbolState, ScoreContext, GridContext, MacroState, EarlyWarningContext, EntrySetupContext, MacroLevels
 from core.market_data_repo import MarketDataRepository
 from core.cache_service import CacheService
 from engines.dc1_darvas_engine import DC1DarvasEngine
@@ -33,6 +33,8 @@ from execution.trade_execution_service import TradeExecutionService
 from engines.dc3_breakout_engine import DC3BreakoutEngine
 from engines.dc4_hot_trend_engine import DC4HotTrendEngine
 from core.grid_calculator import GridCalculator
+from core.exchange_info_cache import ExchangeInfoCache
+from core.macro_levels import calculate_universal_macro_levels
 
 # Thiết lập logging
 logging.basicConfig(
@@ -101,7 +103,18 @@ def main():
     # Load cấu hình
     settings = load_settings()
     timeframe = settings.get("trading", {}).get("default_timeframe", "4h")
-    
+
+    # ── Đọc tham số Macro Levels từ settings.json ──────────────────────────
+    _ml_cfg = settings.get("macro_levels", {})
+    _sl_atr_mult  = float(_ml_cfg.get("sl_atr_multiplier",   1.5))
+    _sl_margin    = float(_ml_cfg.get("sl_margin_pct",        0.03))
+
+    # ── Khởi tạo Exchange Info Cache (1 lần duy nhất khi startup) ──────────
+    exc_info = ExchangeInfoCache()
+    _exc_loaded = exc_info.load()
+    if not _exc_loaded:
+        logger.warning("[ExchangeInfoCache] Không load được tick_size — Macro Levels sẽ dùng giá trị mặc định.")
+
     logger.info(f"Timeframe: {timeframe}")
 
     # Khởi tạo DI Container
@@ -179,13 +192,36 @@ def main():
                         df_1h = repo.get_klines_df(sym_api, '1h', 50)
                         df_4h = repo.get_klines_df(sym_api, '4h', 50)
                         df_1d = repo.get_klines_df(sym_api, '1d', 50)
-                        
+
                         res = early_warning.check_warning_level(df_1h, df_4h, df_1d)
                         res['symbol'] = sym
+
+                        # ── Tính Macro Levels ngay trong luồng EW ──────────
+                        # df_4h & df_1h đã có sẵn trong RAM (klines_cache hit)
+                        # → Zero extra API calls
+                        tick_size = exc_info.get_tick_size(sym_api)
+                        ml_result = calculate_universal_macro_levels(
+                            klines_4h_df=df_4h,
+                            klines_1h_df=df_1h,
+                            tick_size=tick_size,
+                            sl_atr_multiplier=_sl_atr_mult,
+                            sl_margin_pct=_sl_margin,
+                        )
+                        if ml_result.get('status') == 'success':
+                            res['macro_levels'] = MacroLevels(
+                                entry_4h=ml_result['entry_4h'],
+                                tp_1h   =ml_result['tp_1h'],
+                                tp_4h   =ml_result['tp_4h'],
+                                sl_4h   =ml_result['sl_4h'],
+                            )
+                        else:
+                            res['macro_levels'] = None
+                            logger.debug(f"[MacroLevels] {sym}: {ml_result.get('message', 'error')}")
+
                         return res
                     except Exception as e:
                         logger.error(f"Loi EW cho {sym}: {e}")
-                        return {'symbol': sym, 'level': 0, 'label': '', 'trigger': ''}
+                        return {'symbol': sym, 'level': 0, 'label': '', 'trigger': '', 'macro_levels': None}
 
                 with ThreadPoolExecutor(max_workers=10) as _ew_pool:
                     warning_results = list(_ew_pool.map(_check_ew, watchlist))
@@ -214,10 +250,18 @@ def main():
                     logger.warning("Toàn bộ danh mục bị BẤT HOẠT do rủi ro sập. Nghỉ ngơi chu kỳ này.")
                     
             if watchlist:
+                # ── Build macro_levels_map: sym → MacroLevels (lookup O(1) cho engine) ──
+                # warning_results đã chứa macro_levels cho mỗi mã từ bước _check_ew
+                macro_levels_map = {
+                    r['symbol']: r.get('macro_levels')
+                    for r in warning_results
+                    if r.get('macro_levels') is not None
+                }
+
                 # =========================================================
                 # 1. Chạy Động Cơ 1 (Macro Grid Darvas)
                 # =========================================================
-                dc1_states = dc1_engine.run(watchlist, live_data_map, timeframe=timeframe, safety_map=safety_map)
+                dc1_states = dc1_engine.run(watchlist, live_data_map, timeframe=timeframe, safety_map=safety_map, macro_levels_map=macro_levels_map)
                 renderer.render_darvas_grid(dc1_states)
                 
                 # Kích hoạt GridManager
@@ -270,7 +314,7 @@ def main():
                 logger.info("[DC2] Kiem tra Macro Trend 1D truoc khi cham diem Pullback...")
                 avg_vola_24h = cache.get_avg_vola_24h()
                 
-                dc2_states = dc2_engine.run(dc2_watchlist, live_data_map, avg_vola_24h, timeframe=timeframe, safety_map=safety_map)
+                dc2_states = dc2_engine.run(dc2_watchlist, live_data_map, avg_vola_24h, timeframe=timeframe, safety_map=safety_map, macro_levels_map=macro_levels_map)
                 renderer.render_pullback_sniper(dc2_states)
 
                 # Kích hoạt thực thi cho các mã đạt điểm
@@ -299,19 +343,19 @@ def main():
                 # =========================================================
                 # 3. Chạy Động Cơ 3 (Momentum Breakout)
                 # =========================================================
-                dc3_states, btc_gate_label = dc3_engine.run(watchlist, live_data_map, timeframe=timeframe, safety_map=safety_map)
+                dc3_states, btc_gate_label = dc3_engine.run(watchlist, live_data_map, timeframe=timeframe, safety_map=safety_map, macro_levels_map=macro_levels_map)
                 renderer.render_momentum_breakout(dc3_states, btc_gate_label)
                 
                 # =========================================================
                 # 4. Chạy Động Cơ 4 (Hot Trend Pullback) — Độc lập với watchlist
                 # =========================================================
-                dc4_states, htb_count, htb_change_threshold, tracking_list = dc4_engine.run(watchlist, live_data_map, safety_map=safety_map)
+                dc4_states, htb_count, htb_change_threshold, tracking_list = dc4_engine.run(watchlist, live_data_map, safety_map=safety_map, macro_levels_map=macro_levels_map)
                 renderer.render_hot_trend_pullback(dc4_states, htb_count, htb_change_threshold, tracking_list)
                 
                 # =========================================================
                 # 5. Chạy Động Cơ 5 (Grid Pingpong)
                 # =========================================================
-                dc5_states = dc5_engine.run(watchlist, live_data_map, safety_map=safety_map)
+                dc5_states = dc5_engine.run(watchlist, live_data_map, safety_map=safety_map, macro_levels_map=macro_levels_map)
                 renderer.render_grid_pingpong(dc5_states)
                 
                 # ── 6-8. In các bảng từ coin_filter sau cùng ────────────────
@@ -347,7 +391,7 @@ def main():
                         if setup:
                             executor.execute_grid_setup(symbol=state.symbol, amount_per_grid=0.01, setup=setup)
             from core.coin_filter import print_final_tables
-            print_final_tables(early_list, df_summary, current_time_str)
+            print_final_tables(early_list, df_summary, current_time_str, macro_levels_map=(macro_levels_map if 'macro_levels_map' in locals() else None))
             
             logger.info("Hoàn tất quét thị trường. Chương trình kết thúc.")
             

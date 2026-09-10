@@ -61,9 +61,7 @@ def _fetch_from_binance(symbol: str, interval: str, fetch_limit: int) -> Optiona
     from core.api_client import BinanceClient
     client = BinanceClient()
 
-    # Rate-limit throttle: chỉ đặt khi thực sự gọi HTTP, không ảnh hưởng cache hit
-    time.sleep(0.05)   # 50ms — giao động tự nhiên giữa các thread
-
+    # API Client giờ đã có Global Rate Limiter tích hợp sẵn
     _api_call_count += 1
     data = client.get("/api/v3/klines", params={
         "symbol":   symbol,

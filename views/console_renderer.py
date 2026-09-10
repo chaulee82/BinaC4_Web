@@ -79,6 +79,10 @@ class ConsoleRenderer:
                     else:
                         print(f"  ↳ ⚙️ SETUP: L={g_setup.lower_price}|U={g_setup.upper_price}|G={g_setup.grid_quantity}|SL={sl}|TP={tp}")
                         
+                if state.macro_levels:
+                    macro = state.macro_levels
+                    print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}")
+
             print("=" * 80)
         except Exception as e:
             print(f"Render Error (Darvas Grid): {e}")
@@ -130,6 +134,10 @@ class ConsoleRenderer:
                     tp2_pct = (s2.tp1_price - s2.entry_price) / s2.entry_price * 100 if s2.entry_price else 0
                     print(f"   ↳ OCO-2: Buy={self.fmt_price(s2.entry_price)} | SL={self.fmt_price(s2.sl_price)}(-{sl2_pct:.1f}%) | TP={self.fmt_price(s2.tp1_price)}(+{tp2_pct:.1f}%) | R/R=1:{s2.rr_ratio:.1f} | Trail={s2.trailing_trigger}")
                 
+                if state.macro_levels:
+                    macro = state.macro_levels
+                    print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}")
+
                 if score >= 70:
                     print("-" * 100)
             
@@ -175,6 +183,10 @@ class ConsoleRenderer:
                         tp1_pct = (setup.tp1_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
                         print(f"   ↳ ⚙️ SETUP: In={self.fmt_price(setup.entry_price)} | TP1={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}")
                 
+                if state.macro_levels:
+                    macro = state.macro_levels
+                    print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}")
+
                 if score > 0:
                     print("-" * 100)
             print("=" * 100)
@@ -218,6 +230,12 @@ class ConsoleRenderer:
                     tp1_pct = (setup.tp1_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
                     print(f"   ↳ ⚙️ SETUP: In={self.fmt_price(setup.entry_price)} | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | TP={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}")
                 
+                if state.macro_levels:
+                    macro = state.macro_levels
+                    print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}")
+                else:
+                    print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới)")
+
                 print("-" * 100)
                 
             if tracking_list:
@@ -270,6 +288,12 @@ class ConsoleRenderer:
                 if g_setup:
                     print(f"  ↳ ⚙️ GRID: Low={self.fmt_price(g_setup.lower_price)} | Up={self.fmt_price(g_setup.upper_price)} | Lưới={g_setup.grid_quantity} | SL Sell={self.fmt_price(g_setup.stop_loss)}")
                     
+                if state.macro_levels:
+                    macro = state.macro_levels
+                    print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}")
+                else:
+                    print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới)")
+
             print("=" * 100)
         except Exception as e:
             print(f"Render Error (Grid Pingpong): {e}")

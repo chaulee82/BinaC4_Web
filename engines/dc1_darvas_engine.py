@@ -1,13 +1,13 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from engines.base_engine import BaseEngine
-from models.market_state import SymbolState, ScoreContext, GridContext
+from models.market_state import SymbolState, ScoreContext, GridContext, MacroLevels
 from strategies.macro_grid_darvas import MacroGridDarvas
 
 class DC1DarvasEngine(BaseEngine):
     def __init__(self, strategy: MacroGridDarvas):
         self.strategy = strategy
 
-    def run(self, watchlist: List[str], live_data_map: Dict[str, Any], timeframe: str = '4h', safety_map: Dict[str, str] = None, **kwargs) -> List[SymbolState]:
+    def run(self, watchlist: List[str], live_data_map: Dict[str, Any], timeframe: str = '4h', safety_map: Dict[str, str] = None, macro_levels_map: Optional[Dict[str, MacroLevels]] = None, **kwargs) -> List[SymbolState]:
         if safety_map is None:
             safety_map = {}
             
@@ -55,6 +55,7 @@ class DC1DarvasEngine(BaseEngine):
                 avg_vola_24h=0.0,
                 coin_vola_24h=0.0,
                 safety_tag=safety_map.get(sym, "⚠️ CHƯA XÉT"),
+                macro_levels=(macro_levels_map or {}).get(sym),
                 scores={"DC1": score_ctx}
             )
             dc1_states.append(state)

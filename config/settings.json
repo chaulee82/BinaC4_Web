@@ -8,6 +8,13 @@
             "min_spacing_pct": 1.5
         }
     },
+    "macro_levels": {
+        "sl_atr_multiplier": 1.5,
+        "sl_margin_pct": 0.03,
+        "macro_4h_lookback": 30,
+        "peak_1h_lookback": 24,
+        "entry_discount_pct": 0.20
+    },
     "system": {
         "log_level": "INFO",
         "watchlist": [

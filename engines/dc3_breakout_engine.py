@@ -1,6 +1,6 @@
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from engines.base_engine import BaseEngine
-from models.market_state import SymbolState, ScoreContext, EntrySetupContext
+from models.market_state import SymbolState, ScoreContext, EntrySetupContext, MacroLevels
 from strategies.momentum_breakout import MomentumBreakout
 import logging
 
@@ -10,7 +10,7 @@ class DC3BreakoutEngine(BaseEngine):
     def __init__(self, strategy: MomentumBreakout):
         self.strategy = strategy
 
-    def run(self, watchlist: List[str], live_data_map: Dict[str, Any], timeframe: str = '4h', safety_map: Dict[str, str] = None, **kwargs) -> Tuple[List[SymbolState], str]:
+    def run(self, watchlist: List[str], live_data_map: Dict[str, Any], timeframe: str = '4h', safety_map: Dict[str, str] = None, macro_levels_map: Optional[Dict[str, MacroLevels]] = None, **kwargs) -> Tuple[List[SymbolState], str]:
         if safety_map is None:
             safety_map = {}
             
@@ -78,6 +78,7 @@ class DC3BreakoutEngine(BaseEngine):
             state = SymbolState(
                 symbol=sym, current_price=0.0, volume_24h=0.0, avg_vola_24h=0.0, coin_vola_24h=0.0,
                 safety_tag=safety_map.get(sym, "⚠️ CHƯA XÉT"),
+                macro_levels=(macro_levels_map or {}).get(sym),
                 scores={"DC3": score_ctx}
             )
             dc3_states.append(state)

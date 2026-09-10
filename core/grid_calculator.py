@@ -166,15 +166,20 @@ class GridCalculator:
         Dynamic 3-5 grids based on swing range, but forces 3 grids if Vol < 10M.
         """
         try:
-            # Force 3 grids for low cap (2M - 10M)
-            if quote_vol > 0 and quote_vol < 10_000_000:
+            # Scale num_grids theo cả vol lẫn biên độ:
+            #   Vol < 5M            → 3 lưới (vốn hóa rất thấp, an toàn trước)
+            #   Vol 5M–10M + range >= 5% → 5 lưới (biên độ đủ rộng để khớp)
+            #   Vol 5M–10M + range < 5%  → 3 lưới (range hẹp, giữ 3)
+            #   Vol >= 10M + range >= 4% → 5 lưới
+            #   Vol >= 10M + range < 4%  → 3 lưới
+            if quote_vol > 0 and quote_vol < 5_000_000:
                 num_grids = 3
+            elif quote_vol < 10_000_000:
+                # Vol trung thấp: chỉ mở 5 lưới khi biên độ đủ rộng (>= 5%)
+                num_grids = 5 if avg_range_pct >= 5.0 else 3
             else:
-                # Nếu Range tổng >= 4.0% -> 5 lưới. < 4.0% -> 3 lưới.
-                if avg_range_pct >= 4.0:
-                    num_grids = 5
-                else:
-                    num_grids = 3
+                # Vol cao: ngưỡng mở 5 lưới thấp hơn (>= 4%)
+                num_grids = 5 if avg_range_pct >= 4.0 else 3
                 
             # Biên độ mỗi bên bằng 1/2 avg_range_pct. Tính bằng tỷ lệ %.
             half_range = (avg_range_pct / 100.0) / 2.0

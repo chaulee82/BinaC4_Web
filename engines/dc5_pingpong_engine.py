@@ -1,6 +1,6 @@
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from engines.base_engine import BaseEngine
-from models.market_state import SymbolState, ScoreContext, GridContext
+from models.market_state import SymbolState, ScoreContext, GridContext, MacroLevels
 from strategies.grid_pingpong import GridPingpongScorer
 import logging
 
@@ -10,7 +10,7 @@ class DC5PingpongEngine(BaseEngine):
     def __init__(self, strategy: GridPingpongScorer):
         self.strategy = strategy
 
-    def run(self, watchlist: List[str], live_data_map: Dict[str, Any], safety_map: Dict[str, str] = None, **kwargs) -> List[SymbolState]:
+    def run(self, watchlist: List[str], live_data_map: Dict[str, Any], safety_map: Dict[str, str] = None, macro_levels_map: Optional[Dict[str, MacroLevels]] = None, **kwargs) -> List[SymbolState]:
         if safety_map is None:
             safety_map = {}
             
@@ -59,6 +59,33 @@ class DC5PingpongEngine(BaseEngine):
                     grid_setup=grid_ctx
                 )
                 
+                sym_ccxt = sym if "/" in sym else sym.replace("USDT", "/USDT")
+                macro = (macro_levels_map or {}).get(sym_ccxt)
+
+                if not macro:
+                    try:
+                        from core.macro_levels import calculate_universal_macro_levels
+                        from core.exchange_info_cache import ExchangeInfoCache
+                        from core.klines_cache import get_klines_cached
+                        from models.market_state import MacroLevels
+                        
+                        sym_api = sym_ccxt.replace('/', '')
+                        df_1h = get_klines_cached(sym_api, '1h', limit=50)
+                        df_4h = get_klines_cached(sym_api, '4h', limit=50)
+                        if df_1h is not None and df_4h is not None and len(df_1h) >= 24 and len(df_4h) >= 30:
+                            cache = ExchangeInfoCache()
+                            tick_size = cache.get_tick_size(sym_api)
+                            m_dict = calculate_universal_macro_levels(df_4h, df_1h, tick_size)
+                            if m_dict['status'] == 'SUCCESS':
+                                macro = MacroLevels(
+                                    entry_4h=m_dict['entry_4h'],
+                                    sl_4h=m_dict['sl_4h'],
+                                    tp_1h=m_dict['tp_1h'],
+                                    tp_4h=m_dict['tp_4h']
+                                )
+                    except Exception:
+                        pass
+
                 state = SymbolState(
                     symbol=sym, 
                     current_price=price, 
@@ -66,6 +93,7 @@ class DC5PingpongEngine(BaseEngine):
                     avg_vola_24h=0.0, 
                     coin_vola_24h=0.0,
                     safety_tag=safety_map.get(sym, "⚠️ CHƯA XÉT"),
+                    macro_levels=macro,
                     scores={"DC5": score_ctx}
                 )
                 dc5_states.append(state)

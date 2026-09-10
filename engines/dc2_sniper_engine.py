@@ -1,8 +1,8 @@
 import pandas as pd
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from engines.base_engine import BaseEngine
-from models.market_state import SymbolState, ScoreContext, EarlyWarningContext, EntrySetupContext
+from models.market_state import SymbolState, ScoreContext, EarlyWarningContext, EntrySetupContext, MacroLevels
 from strategies.macro_pullback.pullback_sniper import PullbackSniper
 from core.early_warning import EarlyWarningMatrix
 from strategies.macro_pullback.entry_calculator_service import EntryCalculatorService
@@ -17,7 +17,7 @@ class DC2SniperEngine(BaseEngine):
         self.entry_calc = entry_calc
         self.repo = repo
 
-    def run(self, watchlist: List[str], live_data_map: Dict[str, Any], avg_vola_24h: float, timeframe: str = '4h', safety_map: Dict[str, str] = None, **kwargs) -> List[SymbolState]:
+    def run(self, watchlist: List[str], live_data_map: Dict[str, Any], avg_vola_24h: float, timeframe: str = '4h', safety_map: Dict[str, str] = None, macro_levels_map: Optional[Dict[str, MacroLevels]] = None, **kwargs) -> List[SymbolState]:
         if safety_map is None:
             safety_map = {}
             
@@ -147,6 +147,7 @@ class DC2SniperEngine(BaseEngine):
             state = SymbolState(
                 symbol=sym, current_price=0.0, volume_24h=0.0, avg_vola_24h=0.0, coin_vola_24h=0.0,
                 safety_tag=safety_map.get(sym, "⚠️ CHƯA XÉT"),
+                macro_levels=(macro_levels_map or {}).get(sym),
                 scores={"DC2": score_ctx}
             )
             dc2_states.append(state)

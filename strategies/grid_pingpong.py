@@ -9,15 +9,17 @@ Mục đích: Chiến lược Grid Pingpong
 import time
 import pandas as pd
 import numpy as np
+from scipy import stats
 from concurrent.futures import ThreadPoolExecutor
 
 from core.coin_filter import get_klines_live, EXCLUDE
 from core.grid_calculator import GridCalculator
+from core.anti_pump_filter import apply_anti_pump_filter
 
 # ─── Tham Số Cấu Hình ──────────────────────────────────────────────────────────
 PP_MIN_VOL_USDT = 2_000_000   # Vol 24h tối thiểu hạ xuống 2M USDT
-PP_MIN_BOUNCES  = 4.0         # Tần suất tối thiểu 24h
-PP_MIN_RANGE    = 2.0         # Biên độ tối thiểu (%)
+PP_MIN_BOUNCES  = 3.0         # Tần suất tối thiểu 24h
+PP_MIN_RANGE    = 1.5         # Biên độ tối thiểu (%)
 PP_TOP_N        = 200         # Số mã quét tối đa
 PP_WORKERS      = 20
 PP_RESULT_TOP   = 5           # Lấy Top 5
@@ -53,7 +55,27 @@ class GridPingpongScorer:
         symbol, quote_vol = args
         try:
             time.sleep(0.03)
-            
+
+            # ── Hard Filter 0: Anti-Pump/Dump (Bộ Lọc Bơm Xả 1D) ───────────────
+            # Lấy nến 1D trước — chi phí thấp, loại bỏ sớm các mã nguy hiểm
+            # trước khi tốn tài nguyên tính toán các chỉ báo phức tạp hơn.
+            df_1d = get_klines_live(symbol, '1d', limit=20)
+            close_live_ticker = 0.0  # Placeholder, sẽ được gán lại từ 1H bên dưới
+
+            # Tạm dùng close nến 1D cuối để filter sơ bộ (giá realtime sẽ dùng sau)
+            if df_1d is not None and len(df_1d) >= 14:
+                _close_1d = pd.to_numeric(df_1d['Close'], errors='coerce').iloc[-1]
+                pump_result = apply_anti_pump_filter(df_1d, float(_close_1d))
+                if not pump_result['is_safe']:
+                    # Trả về dict rejected để run_scan thu thập vào blacklist
+                    return {
+                        '_rejected': True,
+                        'symbol': symbol,
+                        'danger_score': pump_result['danger_score'],
+                        'dump_pct': pump_result['dump_pct'],
+                        'reason': pump_result['reason']
+                    }
+
             # Lấy data 1H (100 nến để tính MA25 và MA99)
             df_1h = get_klines_live(symbol, '1h', limit=100)
             if df_1h is None or len(df_1h) < 100:
@@ -63,7 +85,14 @@ class GridPingpongScorer:
                 df_1h[col] = pd.to_numeric(df_1h[col], errors='coerce')
                 
             close_live = float(df_1h['Close'].iloc[-1])
-            ma25 = df_1h['Close'].rolling(window=25).mean()
+
+            # [CHỐNG NHIỄU] Dùng Trimmed Mean (cắt 10% đầu+đuôi) thay SMA thuần.
+            # Lý do: SMA bị kéo lệch bởi 1 cây nến bơm xả dựng đứng (kim tiêm).
+            # Trimmed Mean loại bỏ ~2-3 nến cực đoan trước khi tính trục,
+            # giúp center_line bám đúng vùng tích lũy thực tế của thị trường.
+            ma25 = df_1h['Close'].rolling(window=25).apply(
+                lambda x: stats.trim_mean(x, proportiontocut=0.1), raw=True
+            )
             ma99 = df_1h['Close'].rolling(window=99).mean()
             ma99_val = float(ma99.iloc[-1])
             
@@ -125,7 +154,10 @@ class GridPingpongScorer:
             # Tuy nhiên, ta đã quét 48 nến để có context, chia đôi số bounce để xấp xỉ 24h
             n_cycles_24h = min(n_up, n_down) / 2.0 
             
-            avg_range = np.mean(swing_ranges) if swing_ranges else 0.0
+            # Dùng median thay mean để tránh avg_range bị kéo ảo bởi
+            # các cú pump/dump đột biến (outlier swing 15-17%) trong 48 nến.
+            # Median phản ánh đúng biên độ dao động THỰC TẾ của đa số nhịp.
+            avg_range = float(np.median(swing_ranges)) if swing_ranges else 0.0
             
             # P_core: Điểm Lõi Dao Động
             p_core = n_cycles_24h * avg_range
@@ -224,11 +256,27 @@ class GridPingpongScorer:
         if not candidates:
             return []
 
-        results = []
+        safe_results    = []  # Mã vượt qua tất cả filter → vào pool lưới
+        pump_blacklist  = []  # Mã bị Anti-Pump Filter từ chối
+
         with ThreadPoolExecutor(max_workers=PP_WORKERS) as pool:
             for res in pool.map(cls.analyze_symbol, candidates):
-                if res is not None:
-                    results.append(res)
+                if res is None:
+                    continue
+                if res.get('_rejected'):
+                    # Gom vào blacklist để in log cảnh báo
+                    pump_blacklist.append(res)
+                else:
+                    safe_results.append(res)
 
-        results.sort(key=lambda x: x['pingpong_score'], reverse=True)
-        return results[:result_top]
+        # ── In Danh Sách Đen theo Danger Score giảm dần ─────────────────────────
+        if pump_blacklist:
+            pump_blacklist.sort(key=lambda x: x['danger_score'], reverse=True)
+            _bl_str = ", ".join(
+                f"{item['symbol'].replace('USDT', '')} ({item['danger_score']:.0f})"
+                for item in pump_blacklist
+            )
+            print(f"🚨 [DC5] Từ chối bơm/xả: {_bl_str}")
+
+        safe_results.sort(key=lambda x: x['pingpong_score'], reverse=True)
+        return safe_results[:result_top]

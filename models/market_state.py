@@ -1,6 +1,16 @@
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
 
+
+@dataclass(slots=True, frozen=True)
+class MacroLevels:
+    """Bộ 4 mốc chiến lược vĩ mô — tính từ hộp 4H (30 nến) và đỉnh 1H (24 nến)."""
+    entry_4h: float   # Vùng chiết khấu 20% từ đáy hộp 4H — bệ đỡ gốc toàn hệ thống
+    tp_1h:    float   # Đỉnh ngắn hạn 24H — chốt 50% khi lướt sóng / dấu hiệu suy yếu
+    tp_4h:    float   # Đỉnh hộp vĩ mô 5 ngày — chốt 100% khi gom hàng đáy G1
+    sl_4h:    float   # Dưới đáy vĩ mô theo ATR linh hoạt — chặn "quét thanh khoản"
+
+
 @dataclass(slots=True, frozen=True)
 class MacroState:
     """Chứa các chỉ số Vĩ mô & Xu hướng (Bao gồm Bảng 3 Radar)"""
@@ -120,6 +130,9 @@ class SymbolState:
     htb_change_pct: float = 0.0
     
     macro_state: Optional[MacroState] = None
-    
+
+    # Hệ tọa độ Vĩ mô (4 mốc chiến lược) — gán sau khi kéo nến xong
+    macro_levels: Optional[MacroLevels] = None
+
     # Kết quả sau khi chạy qua các Động cơ
     scores: Dict[str, ScoreContext] = field(default_factory=dict)

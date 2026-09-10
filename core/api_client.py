@@ -18,6 +18,20 @@ import threading
 
 logger = logging.getLogger("APIClient")
 
+class RateLimiter:
+    def __init__(self, max_req_per_sec: float):
+        self.interval = 1.0 / max_req_per_sec
+        self.lock = threading.Lock()
+        self.last_req_time = 0.0
+
+    def wait(self):
+        with self.lock:
+            now = time.time()
+            elapsed = now - self.last_req_time
+            if elapsed < self.interval:
+                time.sleep(self.interval - elapsed)
+            self.last_req_time = time.time()
+
 # ── HTTP Call Counter (Verification) ───────────────────────────────────
 # Đếm số HTTP request thực sự ra Binance (cache hit không tính).
 # Thread-safe: dùng lock vì BinanceClient được gọi từ nhiều thread song song.
@@ -67,6 +81,9 @@ class BinanceClient:
             "https://api2.binance.com",
             "https://api3.binance.com"
         ]
+        
+        # Giới hạn 15 req/s = 900 req/min (An toàn dưới mức 1200 của Binance)
+        self.rate_limiter = RateLimiter(15.0)
 
     def get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """
@@ -80,6 +97,7 @@ class BinanceClient:
         for domain in self.domains:
             url = f"{domain}{endpoint}"
             try:
+                self.rate_limiter.wait()
                 res = self.session.get(url, headers=self.headers, params=params, timeout=3.0)
                 res.raise_for_status()
                 return res.json()

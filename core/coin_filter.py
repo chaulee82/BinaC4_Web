@@ -807,10 +807,10 @@ def analyze_early(symbol, info):
 
     close_now = float(df_1d['Close'].iloc[-1])
     
-    # 1. CHIẾT KHẤU TỪ ĐỈNH 180D (Màng lọc cứng: 60% - 90%)
+    # 1. CHIẾT KHẤU TỪ ĐỈNH 180D (Màng lọc cứng: 50% - 95%)
     max_high_180d = float(df_1d['High'].max())
     drop_180d = ((max_high_180d - close_now) / max_high_180d) * 100 if max_high_180d > 0 else 0
-    if drop_180d < 60.0 or drop_180d > 90.0:
+    if drop_180d < 50.0 or drop_180d > 95.0:
         return None
 
     # 2. HỘP DARVAS 60 NGÀY (Màng lọc cứng: Biên độ < 30%)
@@ -821,7 +821,7 @@ def analyze_early(symbol, info):
         return None
         
     box_amplitude = ((max_high_60d - min_low_60d) / min_low_60d) * 100
-    if box_amplitude > 130.0:
+    if box_amplitude > 150.0:
         return None
         
     if not (min_low_60d <= close_now <= max_high_60d):
@@ -836,12 +836,11 @@ def analyze_early(symbol, info):
     adv_box = float(df_1d_60['Quote_Volume'].mean())
     adv_drop = float(df_drop_phase['Quote_Volume'].mean())
     
-    if adv_drop == 0:
-        return None
-        
-    vol_dry_up_ratio = adv_box / adv_drop
-    if vol_dry_up_ratio > 0.75:
-        return None
+    # Kiểm tra cạn cung (Khối lượng ADV 60 ngày < 85% ADV lúc rơi)
+    if adv_drop > 0:
+        vol_dry_up_ratio = adv_box / adv_drop
+        if vol_dry_up_ratio > 0.85:
+            return None
         
     vol_drop_pct = (1.0 - vol_dry_up_ratio) * 100
 
@@ -1346,7 +1345,7 @@ if __name__ == "__main__":
     symbols, safety_map = get_filtered_symbols(cache.get_live_data_map())
     print("\n[+] Danh sách lọc (Format CCXT):", symbols)
 
-def print_final_tables(early_list, df_summary, current_time_str):
+def print_final_tables(early_list, df_summary, current_time_str, macro_levels_map=None):
     if df_summary is None or df_summary.empty:
         summary_list = []
     else:
@@ -1418,6 +1417,38 @@ def print_final_tables(early_list, df_summary, current_time_str):
                 error_msg = grid_setup.get('message', 'Không rõ lỗi')
                 engine = grid_setup.get('engine', 'GRID 4H')
                 print(f"  ↳ ⚙️ {engine}: [{sym}] - Lỗi tính toán: {error_msg}")
+            
+            # In Macro Levels
+            sym_ccxt = sym if "/" in sym else f"{sym}/USDT"
+            macro = (macro_levels_map or {}).get(sym_ccxt)
+            
+            if not macro:
+                try:
+                    from core.macro_levels import calculate_universal_macro_levels
+                    from core.exchange_info_cache import ExchangeInfoCache
+                    from models.market_state import MacroLevels
+                    
+                    sym_api = sym_ccxt.replace('/', '')
+                    df_1h = get_klines_live(sym_api, '1h', limit=50)
+                    df_4h = get_klines_live(sym_api, '4h', limit=50)
+                    if df_1h is not None and df_4h is not None and len(df_1h) >= 24 and len(df_4h) >= 30:
+                        cache = ExchangeInfoCache()
+                        tick_size = cache.get_tick_size(sym_api)
+                        m_dict = calculate_universal_macro_levels(df_4h, df_1h, tick_size)
+                        if m_dict['status'] == 'SUCCESS':
+                            macro = MacroLevels(
+                                entry_4h=m_dict['entry_4h'],
+                                sl_4h=m_dict['sl_4h'],
+                                tp_1h=m_dict['tp_1h'],
+                                tp_4h=m_dict['tp_4h']
+                            )
+                except Exception:
+                    pass
+
+            if macro:
+                print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}")
+            else:
+                print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới)")
 
     print("=" * _TW3 + "\n")
     # ── 8. 🏆 BẢNG CHẤM ĐIỂM REBALANCE (in sau cùng) ──────────────────
