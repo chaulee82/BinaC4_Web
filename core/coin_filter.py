@@ -920,10 +920,10 @@ def _enrich_early_with_darvas(item: dict) -> dict:
             ceil = item.get('Box_Ceiling')
             if floor and ceil:
                 gia = item.get('Giá')
-                g1_l = round(floor, 5)
-                g1_u = round(ceil * 0.8, 5)  # 80% box dưới
+                g1_l = round(floor, 10)
+                g1_u = round(ceil * 0.8, 10)  # 80% box dưới
                 g2_l = g1_u
-                g2_u = round(ceil, 5)        # 20% box trên
+                g2_u = round(ceil, 10)        # 20% box trên
                 item['grid_setup'] = {
                     "status": "SUCCESS",
                     "engine": "GRID Vĩ Mô 1D (Lưới Kép)",
@@ -936,8 +936,8 @@ def _enrich_early_with_darvas(item: dict) -> dict:
                     "g2_upper": g2_u,
                     "g2_grids": 10,
                     "g2_capital_pct": 30,
-                    "hard_stop_loss": round(floor * 0.95, 5),
-                    "hard_take_profit": round(ceil * 1.05, 5),
+                    "hard_stop_loss": round(floor * 0.95, 10),
+                    "hard_take_profit": round(ceil * 1.05, 10),
                     "tp_buffer_pct": 0.05
                 }
     except Exception as e:
@@ -1433,7 +1433,7 @@ def print_final_tables(early_list, df_summary, current_time_str, macro_levels_ma
                 print(f"  ↳ ⚙️ {engine}: [{sym}] - Lỗi tính toán: {error_msg}")
             
             # In Macro Levels
-            sym_ccxt = sym if "/" in sym else f"{sym}/USDT"
+            sym_ccxt = sym if "/" in sym else (f"{sym[:-4]}/{sym[-4:]}" if sym.endswith("USDT") else f"{sym}/USDT")
             macro = (macro_levels_map or {}).get(sym_ccxt)
             
             if not macro:
@@ -1442,7 +1442,7 @@ def print_final_tables(early_list, df_summary, current_time_str, macro_levels_ma
                     from core.exchange_info_cache import ExchangeInfoCache
                     from models.market_state import MacroLevels
                     
-                    sym_api = sym_ccxt.replace('/', '')
+                    sym_api = sym.replace('/', '')
                     df_1h = get_klines_live(sym_api, '1h', limit=50)
                     df_4h = get_klines_live(sym_api, '4h', limit=50)
                     df_15m = get_klines_live(sym_api, '15m', limit=250)
@@ -1461,7 +1461,7 @@ def print_final_tables(early_list, df_summary, current_time_str, macro_levels_ma
                     pass
 
             if macro:
-                print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}")
+                print(f"    ↳ [Macro 4H] Entry: {smart_price(macro.entry_4h):<10} | SL Cứng: {smart_price(macro.sl_4h):<10} | TP 1H: {smart_price(macro.tp_1h):<10} | TP 4H: {smart_price(macro.tp_4h):<10}")
             else:
                 print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới)")
 

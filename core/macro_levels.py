@@ -99,6 +99,11 @@ def calculate_universal_macro_levels(
         if klines_1h_df is None or klines_1h_df.empty or len(klines_1h_df) < 5:
             return {"status": "error", "message": "Không đủ dữ liệu nến 1H (cần ≥ 5 nến)"}
 
+        klines_4h_df = klines_4h_df.rename(columns=str.lower)
+        klines_1h_df = klines_1h_df.rename(columns=str.lower)
+        if klines_15m_df is not None:
+            klines_15m_df = klines_15m_df.rename(columns=str.lower)
+
         # ── 2. Quét biên độ Vĩ mô 4H (30 nến ~ 5 ngày) ──────────────────────
         recent_4h = klines_4h_df.tail(30)
         macro_low_4h  = float(recent_4h['low'].min())

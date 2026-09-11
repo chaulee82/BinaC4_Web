@@ -19,8 +19,8 @@ from typing import Optional, List, Tuple
 logger = logging.getLogger("KlinesCache")
 
 # ── Config ────────────────────────────────────────────────────────────────────
-_CACHE_TTL = 120   # 120 giây — đủ cho process_symbol + EarlyWarning + Darvas dùng chung 1 batch
-_MAX_ITEMS = 2000  # Tối đa 2000 entries (symbol × interval combinations)
+_CACHE_TTL = 900   # 900 giây (15 phút) — Đảm bảo cache sống sót qua toàn bộ quá trình quét của tất cả Động Cơ
+_MAX_ITEMS = 4000  # Tối đa 4000 entries (symbol × interval combinations) - Đủ cho toàn bộ thị trường
 
 # ── Fetch limits mặc định cho từng interval ──────────────────────────────────
 # Lấy dư để phục vụ nhiều module với limit khác nhau mà không fetch lại

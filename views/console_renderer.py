@@ -10,17 +10,22 @@ class ConsoleRenderer:
     
     @staticmethod
     def fmt_price(price: float) -> str:
-        """Định dạng giá thông minh, tự động cắt số 0"""
-        if price >= 10:
-            return f"{price:.2f}"
-        elif price >= 1:
-            return f"{price:.3f}"
-        elif price >= 0.1:
-            return f"{price:.4f}"
-        elif price >= 0.01:
-            return f"{price:.5f}"
-        else:
-            return f"{price:.6f}"
+        """Định dạng giá thông minh, hiển thị chính xác để khớp với R/R"""
+        if price is None:
+            return "—"
+        
+        # Sử dụng 10 chữ số thập phân để cover giá trị của các coin nhỏ,
+        # tránh bị chuyển sang số mũ khoa học (e.g. 1e-05)
+        s = f"{price:.10f}"
+        
+        # Xóa các số 0 vô nghĩa ở đuôi
+        s = s.rstrip('0')
+        
+        # Nếu cắt hết số 0 mà dư dấu chấm thì thêm '0' (ví dụ "12." -> "12.0")
+        if s.endswith('.'):
+            s += '0'
+            
+        return s
 
     def render_early_warning_matrix(self, warning_results: List[Dict[str, Any]], total_scanned: int):
         """Render Bảng Cảnh Báo Sớm"""
@@ -116,27 +121,27 @@ class ConsoleRenderer:
                 if score_ctx.early_warning:
                     ew = score_ctx.early_warning
                     force_tag = " [⚠️ F-CON]" if ew.force_conservative else ""
-                    print(f"   ↳ 🛡️ EW: {ew.ew_label}{force_tag} | PB={ew.pullback_score} | W={ew.c1_wick_score} D={ew.c2_micro_dryup_score} M={ew.c3_macro_momentum_score} TB={ew.c4_taker_buy_score}")
+                    print(f"   ↳ [{sym}] 🛡️ EW: {ew.ew_label}{force_tag} | PB={ew.pullback_score} | W={ew.c1_wick_score} D={ew.c2_micro_dryup_score} M={ew.c3_macro_momentum_score} TB={ew.c4_taker_buy_score}")
                     if ew.ew_level == 1:
                         triggers = " | ".join(ew.triggers)
-                        print(f"   ↳ ⛔ [EW1 REJ] {triggers}")
+                        print(f"   ↳ [{sym}] ⛔ [EW1 REJ] {triggers}")
 
                 # In Entry Setup (OCO)
                 if score_ctx.entry_setup1:
                     s1 = score_ctx.entry_setup1
                     sl1_pct = (s1.entry_price - s1.sl_price) / s1.entry_price * 100 if s1.entry_price else 0
                     tp1_pct = (s1.tp1_price - s1.entry_price) / s1.entry_price * 100 if s1.entry_price else 0
-                    print(f"   ↳ OCO-1: Buy={self.fmt_price(s1.entry_price)} | SL={self.fmt_price(s1.sl_price)}(-{sl1_pct:.1f}%) | TP={self.fmt_price(s1.tp1_price)}(+{tp1_pct:.1f}%) | R/R=1:{s1.rr_ratio:.1f}")
+                    print(f"   ↳ [{sym}] OCO-1: Buy={self.fmt_price(s1.entry_price)} | SL={self.fmt_price(s1.sl_price)}(-{sl1_pct:.1f}%) | TP={self.fmt_price(s1.tp1_price)}(+{tp1_pct:.1f}%) | R/R=1:{s1.rr_ratio:.1f}")
                 
                 if score_ctx.entry_setup2:
                     s2 = score_ctx.entry_setup2
                     sl2_pct = (s2.entry_price - s2.sl_price) / s2.entry_price * 100 if s2.entry_price else 0
                     tp2_pct = (s2.tp1_price - s2.entry_price) / s2.entry_price * 100 if s2.entry_price else 0
-                    print(f"   ↳ OCO-2: Buy={self.fmt_price(s2.entry_price)} | SL={self.fmt_price(s2.sl_price)}(-{sl2_pct:.1f}%) | TP={self.fmt_price(s2.tp1_price)}(+{tp2_pct:.1f}%) | R/R=1:{s2.rr_ratio:.1f} | Trail={s2.trailing_trigger}")
+                    print(f"   ↳ [{sym}] OCO-2: Buy={self.fmt_price(s2.entry_price)} | SL={self.fmt_price(s2.sl_price)}(-{sl2_pct:.1f}%) | TP={self.fmt_price(s2.tp1_price)}(+{tp2_pct:.1f}%) | R/R=1:{s2.rr_ratio:.1f} | Trail={s2.trailing_trigger}")
                 
                 if state.macro_levels:
                     macro = state.macro_levels
-                    print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}")
+                    print(f"    ↳ [{sym}] [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}")
 
                 if score >= 70:
                     print("-" * 100)
@@ -185,7 +190,7 @@ class ConsoleRenderer:
                 
                 if state.macro_levels:
                     macro = state.macro_levels
-                    print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}")
+                    print(f"    ↳ [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}")
 
                 if score > 0:
                     print("-" * 100)
@@ -232,7 +237,7 @@ class ConsoleRenderer:
                 
                 if state.macro_levels:
                     macro = state.macro_levels
-                    print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}")
+                    print(f"    ↳ [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}")
                 else:
                     print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới)")
 
@@ -290,7 +295,7 @@ class ConsoleRenderer:
                     
                 if state.macro_levels:
                     macro = state.macro_levels
-                    print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}")
+                    print(f"    ↳ [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}")
                 else:
                     print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới)")
 
