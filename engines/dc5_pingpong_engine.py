@@ -90,7 +90,8 @@ class DC5PingpongEngine(BaseEngine):
                                     tp_1h=m_dict['tp_1h'],
                                     tp_4h=m_dict['tp_4h']
                                 )
-                    except Exception:
+                    except Exception as e:
+                        print(f"!!! Error calculating macro for {sym_api}: {e}")
                         pass
 
                 state = SymbolState(

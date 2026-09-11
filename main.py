@@ -209,7 +209,7 @@ def main():
                             sl_atr_multiplier=_sl_atr_mult,
                             sl_margin_pct=_sl_margin,
                         )
-                        if ml_result.get('status') == 'success':
+                        if ml_result.get('status') == 'SUCCESS':
                             res['macro_levels'] = MacroLevels(
                                 entry_4h=ml_result['entry_4h'],
                                 tp_1h   =ml_result['tp_1h'],

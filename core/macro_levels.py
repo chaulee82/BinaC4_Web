@@ -18,7 +18,7 @@ Cách dùng:
         sl_atr_multiplier=1.5,   # Từ settings.json
         sl_margin_pct=0.03,       # Fallback nếu ATR không tính được
     )
-    # → {"status": "success", "entry_4h": ..., "tp_1h": ..., "tp_4h": ..., "sl_4h": ...}
+    # → {"status": "SUCCESS", "entry_4h": ..., "tp_1h": ..., "tp_4h": ..., "sl_4h": ...}
 """
 
 import logging
@@ -170,7 +170,7 @@ def calculate_universal_macro_levels(
             logger.debug(f"[MacroLevels] TP 1H ({tp_1h}) ≤ Entry ({entry_4h}) — giá đang trên đỉnh ngắn hạn")
 
         return {
-            "status":   "success",
+            "status":   "SUCCESS",
             "entry_4h": entry_4h,
             "tp_1h":    tp_1h,
             "tp_4h":    tp_4h,
