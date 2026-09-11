@@ -14,12 +14,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 from core.coin_filter import get_klines_live, EXCLUDE
 from core.grid_calculator import GridCalculator
-from core.anti_pump_filter import apply_anti_pump_filter
 
 # ─── Tham Số Cấu Hình ──────────────────────────────────────────────────────────
 PP_MIN_VOL_USDT = 2_000_000   # Vol 24h tối thiểu hạ xuống 2M USDT
-PP_MIN_BOUNCES  = 3.0         # Tần suất tối thiểu 24h
-PP_MIN_RANGE    = 1.5         # Biên độ tối thiểu (%)
+PP_MIN_BOUNCES  = 4.0         # Tần suất tối thiểu: tăng lên 4 để bù trừ range hạ xuống
+# [DC5-v3] Hạ sàn xuống 3.5% — bắt pingpong trong thị trường sideways/chậm
+# Bù trừ bằng PP_MIN_BOUNCES=4 (cần nhiều nhịp hơn để xác nhận pattern)
+PP_MIN_RANGE    = 3.5         # Biên độ tối thiểu (%) — phí Maker/Taker ~0.1%x2 + slippage ~0.1%
+                               # Range 3.5% ≈ TP thực ~3.1% sau phí — vẫn có lãi
 PP_TOP_N        = 200         # Số mã quét tối đa
 PP_WORKERS      = 20
 PP_RESULT_TOP   = 5           # Lấy Top 5
@@ -30,25 +32,46 @@ class GridPingpongScorer:
     """
 
     @staticmethod
-    def get_candidates(live_data_map: dict, top_n: int = PP_TOP_N) -> list:
-        candidates = []
+    def get_candidates(live_data_map: dict, top_n: int = PP_TOP_N,
+                       priority_symbols: list = None) -> list:
+        """
+        Xây dựng pool ứng viên cho DC5.
+        priority_symbols: danh sách mã ưu tiên từ watchlist bảng 1
+          (đã qua F2 Trend nội bộ — đang trên cấu trúc MA99 4H/1D).
+          Đưa lên đầu để DC5 quét trước, bổ sung top spread cho đủ pool.
+        """
+        # ── Bước 1: Ưu tiên watchlist bảng 1 (đã xác nhận trend tốt) ──
+        priority_set = set()
+        priority_list = []
+        if priority_symbols:
+            for raw in priority_symbols:
+                sym = raw.replace('/', '') if '/' in raw else raw
+                if not sym.endswith('USDT'): sym = sym + 'USDT'
+                if sym in EXCLUDE or sym not in live_data_map: continue
+                info = live_data_map[sym]
+                quote_vol = info.get('quote_vol', 0)
+                if quote_vol < PP_MIN_VOL_USDT: continue
+                priority_list.append((sym, quote_vol))
+                priority_set.add(sym)
+
+        # ── Bước 2: Bổ sung top spread từ live_data_map ──
+        spread_candidates = []
         for symbol, info in live_data_map.items():
-            if not symbol.endswith('USDT') or symbol in EXCLUDE:
-                continue
+            if not symbol.endswith('USDT') or symbol in EXCLUDE: continue
+            if symbol in priority_set: continue  # Đã có trong priority
             quote_vol = info.get('quote_vol', 0)
-            if quote_vol < PP_MIN_VOL_USDT:
-                continue
-            
+            if quote_vol < PP_MIN_VOL_USDT: continue
             high = info.get('high', 0)
             low = info.get('low', 0)
             spread = ((high - low) / low * 100) if low > 0 else 0
-            
-            candidates.append((symbol, quote_vol, spread))
-            
-        # Sort by 24h Spread (mã dao động mạnh nhất lên đầu)
-        candidates.sort(key=lambda x: x[2], reverse=True)
-        # Chỉ return (symbol, quote_vol) cho phân tích
-        return [(s[0], s[1]) for s in candidates[:top_n]]
+            spread_candidates.append((symbol, quote_vol, spread))
+
+        spread_candidates.sort(key=lambda x: x[2], reverse=True)
+        supplement = [(s[0], s[1]) for s in spread_candidates]
+
+        # Ưu tiên chạy trước, sau đó bổ sung đến top_n
+        combined = priority_list + supplement
+        return combined[:top_n]
 
     @staticmethod
     def analyze_symbol(args) -> dict:
@@ -56,25 +79,40 @@ class GridPingpongScorer:
         try:
             time.sleep(0.03)
 
-            # ── Hard Filter 0: Anti-Pump/Dump (Bộ Lọc Bơm Xả 1D) ───────────────
-            # Lấy nến 1D trước — chi phí thấp, loại bỏ sớm các mã nguy hiểm
-            # trước khi tốn tài nguyên tính toán các chỉ báo phức tạp hơn.
+            # ── Hard Filter 0: Anti-Pump nhẹ riêng cho DC5 ──────────────────────
+            # DC5 cần mã dao động mạnh (≥5%) — những mã này có lịch sử râu/bơm tự nhiên.
+            # [DC5-v2] Chỉ chặn Climax CỰC ĐOAN (>8x ATR) — pump thẳng đứng 1 ngày.
+            # Không chặn theo dump_ratio hay râu xả: MA99 Trend Filter đã bảo vệ.
             df_1d = get_klines_live(symbol, '1d', limit=20)
-            close_live_ticker = 0.0  # Placeholder, sẽ được gán lại từ 1H bên dưới
 
-            # Tạm dùng close nến 1D cuối để filter sơ bộ (giá realtime sẽ dùng sau)
             if df_1d is not None and len(df_1d) >= 14:
-                _close_1d = pd.to_numeric(df_1d['Close'], errors='coerce').iloc[-1]
-                pump_result = apply_anti_pump_filter(df_1d, float(_close_1d))
-                if not pump_result['is_safe']:
-                    # Trả về dict rejected để run_scan thu thập vào blacklist
-                    return {
-                        '_rejected': True,
-                        'symbol': symbol,
-                        'danger_score': pump_result['danger_score'],
-                        'dump_pct': pump_result['dump_pct'],
-                        'reason': pump_result['reason']
-                    }
+                _col_map = {}
+                for _t in ['high', 'low', 'open', 'close']:
+                    for _c in df_1d.columns:
+                        if _c.lower() == _t: _col_map[_t] = _c; break
+                if len(_col_map) == 4:
+                    _dfc = df_1d.tail(14).copy().rename(columns={v: k for k, v in _col_map.items()})
+                    for _c in ['high', 'low', 'open', 'close']:
+                        _dfc[_c] = pd.to_numeric(_dfc[_c], errors='coerce')
+                    _tr0 = abs(_dfc['high'] - _dfc['low'])
+                    _tr1 = abs(_dfc['high'] - _dfc['close'].shift(1))
+                    _tr2 = abs(_dfc['low']  - _dfc['close'].shift(1))
+                    _atr14 = pd.concat([_tr0, _tr1, _tr2], axis=1).max(axis=1).mean()
+                    _is_extreme = False
+                    if _atr14 > 0:
+                        for _, _row in _dfc.tail(5).iterrows():
+                            _body = abs(float(_row['close']) - float(_row['open']))
+                            # Climax cực đoan: thân nến > 8x ATR — pump thẳng đứng 1 phiên
+                            if _body > 8.0 * _atr14:
+                                _is_extreme = True; break
+                    if _is_extreme:
+                        return {
+                            '_rejected': True,
+                            'symbol': symbol,
+                            'danger_score': 100.0,
+                            'dump_pct': 0.0,
+                            'reason': 'DC5 Anti-Pump: Climax cuc doan (>8x ATR)'
+                        }
 
             # Lấy data 1H (100 nến để tính MA25 và MA99)
             df_1h = get_klines_live(symbol, '1h', limit=100)
@@ -101,13 +139,16 @@ class GridPingpongScorer:
                 return None
             
             # ── 1. Tính toán Bounces & Avg Range ────────────────────────────────
-            # Phân tích trong 48 nến gần nhất (2 ngày) để xem độ ping pong
-            df_recent = df_1h.iloc[-48:]
-            ma25_recent = ma25.iloc[-48:]
+            # [DC5-v2] Hạ timeframe: quét hộp Pingpong trên 30 nến 1H (thay vì 48 nến 4H)
+            # → len lỏi vùng tích lũy ngắn hạn trong ngày, tăng tần suất ra vào lệnh
+            df_recent = df_1h.iloc[-30:]
+            ma25_recent = ma25.iloc[-30:]
             
             n_up = 0
             n_down = 0
-            swing_ranges = []
+            swing_ranges = []   # Toàn bộ swing (dùng cho avg_range)
+            swings_up   = []    # Swing từ đáy lên đỉnh (pump — bot SPOT bán được đỉnh → ít nguy hiểm)
+            swings_down = []    # Swing từ đỉnh xuống đáy (dump — bot mua vào đáy → rủi ro hơn)
             
             # State machine đơn giản để đếm số nhịp Ping Pong hoàn chỉnh
             # Nhịp ping pong là: tạo Swing High (High > MA25) -> xuyên qua MA25 -> tạo Swing Low (Low < MA25)
@@ -133,20 +174,23 @@ class GridPingpongScorer:
                     if current_state == 1:
                         if h > last_extreme:
                             last_extreme = h
-                        if l < m: # Cross down
-                            # Tính swing range của nhịp vừa rồi
+                        if l < m: # Cross down — swing Đỉnh→Đáy (dump)
                             current_state = -1
                             new_extreme = l
-                            swing_ranges.append(abs(last_extreme - new_extreme) / new_extreme * 100)
+                            sw = abs(last_extreme - new_extreme) / new_extreme * 100
+                            swing_ranges.append(sw)
+                            swings_down.append(sw)   # Spike XUỐNG: bot mua vào → rủi ro
                             n_up += 1
                             last_extreme = new_extreme
                     elif current_state == -1:
                         if l < last_extreme:
                             last_extreme = l
-                        if h > m: # Cross up
+                        if h > m: # Cross up — swing Đáy→Đỉnh (pump)
                             current_state = 1
                             new_extreme = h
-                            swing_ranges.append(abs(new_extreme - last_extreme) / last_extreme * 100)
+                            sw = abs(new_extreme - last_extreme) / last_extreme * 100
+                            swing_ranges.append(sw)
+                            swings_up.append(sw)     # Spike LÊN: bot bán được đỉnh → có lợi
                             n_down += 1
                             last_extreme = new_extreme
                             
@@ -193,14 +237,40 @@ class GridPingpongScorer:
             
             
             # Hard Filter 3: Lọc Biên Độ Tối Thiểu
-            # Nhóm 2M - 10M yêu cầu biên độ >= 4.0%
-            required_range = 4.0 if quote_vol < 10_000_000 else PP_MIN_RANGE
+            # [DC5-v2] Giữ cứng sàn 5% mọi nhóm vol — dưới 5% sau phí+slippage gần như hoà vốn
+            required_range = PP_MIN_RANGE  # 5.0% — cố định, không phân biệt vol
             if avg_range < required_range:
                 return None
                 
             # Hard Filter 4: Lọc Tần Suất Bắt Buộc
             if (n_cycles_24h * 2.0) < PP_MIN_BOUNCES:
                 return None
+
+            # ── Hard Filter 5: Độ Mượt Swing (Swing Outlier Guard) ───────────────
+            # Bắt bẫy NEWT-style: 1 cú pump kim tiêm tạo ra 1 swing cực đại ảo,
+            # ── Hard Filter 5: Độ Mượt Swing — Phân Biệt Hướng (Directional Outlier Guard) ──
+            # Với SPOT Grid: spike LÊN (pump) → bot BÁN được đỉnh → CÓ LỢI
+            #               spike XUỐNG (dump) → bot MUA vào đáy → RỦI RO nếu không hồi
+            # → Phân biệt ngưỡng: dump outlier nghiêm hơn pump outlier
+            if len(swing_ranges) >= 3:
+                _sw_med = float(np.median(np.array(swing_ranges)))
+
+                # (a) Dump outlier — spike XUỐNG: ngưỡng nghiêm 2.5x
+                if swings_down and _sw_med > 0:
+                    _dump_max = float(max(swings_down))
+                    if _dump_max / _sw_med > 2.5:
+                        return None  # Bẫy dump kim tiêm — bot sẽ mua vào đáy không hồi
+
+                # (b) Pump outlier — spike LÊN: ngưỡng lỏng 4.0x (bot bán được đỉnh → ok)
+                if swings_up and _sw_med > 0:
+                    _pump_max = float(max(swings_up))
+                    if _pump_max / _sw_med > 4.0:
+                        return None  # Pump quá cực đoan — khó tái lập, hộp pingpong ảo
+
+                # (c) CV tổng thể: dao động quá loạn (áp dụng toàn bộ swing_ranges)
+                _sw_std = float(np.array(swing_ranges).std())
+                if _sw_med > 0 and (_sw_std / _sw_med) > 0.9:
+                    return None  # Pingpong không đều — không đủ độ mượt để lướt sóng
             
             if pingpong_score >= 30:
                 rank = "Hạng S - Siêu phẩm"
@@ -251,8 +321,11 @@ class GridPingpongScorer:
             return None
 
     @classmethod
-    def run_scan(cls, live_data_map: dict, top_n: int = PP_TOP_N, result_top: int = PP_RESULT_TOP) -> list:
-        candidates = cls.get_candidates(live_data_map, top_n=top_n)
+    def run_scan(cls, live_data_map: dict, top_n: int = PP_TOP_N,
+                 result_top: int = PP_RESULT_TOP,
+                 priority_symbols: list = None) -> list:
+        candidates = cls.get_candidates(live_data_map, top_n=top_n,
+                                        priority_symbols=priority_symbols)
         if not candidates:
             return []
 

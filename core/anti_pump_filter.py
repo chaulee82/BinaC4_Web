@@ -62,7 +62,8 @@ def apply_anti_pump_filter(klines_1d_df, current_price):
                 danger_score += ratio * 5.0
 
         # Tin hieu 2: Dump Ratio - Gia rot sau tu dinh 5 ngay
-        if dump_ratio > 0.20:
+        # [DC5-v2] Noi max_dump_ratio len 25% (tu 20%) — bao ve boi trim_mean center + SL 2.5x ATR
+        if dump_ratio > 0.25:
             reasons.append(f"Xa -{dump_ratio:.1%} tu dinh")
             danger_score += dump_ratio * 100.0
 

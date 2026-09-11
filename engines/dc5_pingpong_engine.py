@@ -14,7 +14,13 @@ class DC5PingpongEngine(BaseEngine):
         if safety_map is None:
             safety_map = {}
             
-        pingpong_results = self.strategy.run_scan(live_data_map)
+        # Truyền watchlist từ bảng 1 làm pool ưu tiên:
+        # Các mã trong watchlist đã xác nhận trend tốt (qua EW + coin_filter)
+        # → DC5 quét chúng trước, giảm lãng phí trên mã downtrend
+        pingpong_results = self.strategy.run_scan(
+            live_data_map,
+            priority_symbols=watchlist  # watchlist từ bảng 1 — đã lọc trend
+        )
 
         dc5_states = []
         
