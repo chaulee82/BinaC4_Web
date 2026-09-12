@@ -6,6 +6,18 @@
         "grid_trading": {
             "max_grids": 10,
             "min_spacing_pct": 1.5
+        },
+        "engine5": {
+            "grid_count_min": 12,
+            "grid_count_max": 24,
+            "macro_box_range_min": -20.0,
+            "macro_box_range_max": -16.0,
+            "bounce_threshold": 1.69,
+            "range_threshold": 3.5,
+            "lower_price_buffer": 1.5,
+            "climax_penalty_threshold": 25.0,
+            "target_profit_per_grid_min": 1.5,
+            "target_profit_per_grid_max": 1.8
         }
     },
     "macro_levels": {

@@ -264,16 +264,19 @@ class ConsoleRenderer:
     def render_grid_pingpong(self, symbol_states: List[SymbolState]):
         """Render Động Cơ 5: Grid Pingpong"""
         try:
-            if not symbol_states:
-                return
-
             print("\n" + "=" * 100)
             print(f"🏓 GRID PINGPONG (ĐỘNG CƠ 5)")
             print("=" * 100)
+            
+            if not symbol_states:
+                print("⚠️ KHÔNG TÌM THẤY MÃ NÀO ĐỦ ĐIỀU KIỆN GRID PINGPONG UPTREND HIỆN TẠI.")
+                print("=" * 100)
+                return
+
             print(f"{'Mã':<8} | {'Điểm':<8} | {'Action':<15} | {'Bounces/Range':<20} | {'Center/Trigger/SL'}")
             
             for state in symbol_states:
-                score_ctx = state.scores.get("DC5")
+                score_ctx = state.scores.get("DC5_UPTREND") or state.scores.get("DC5")
                 if not score_ctx:
                     continue
                 

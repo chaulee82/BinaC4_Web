@@ -201,3 +201,27 @@ class GridCalculator:
             }
         except Exception as e:
             return {"status": "ERROR", "message": f"Grid Pingpong calc error: {str(e)}"}
+
+    def calculate_grid_pingpong_uptrend(self, current_price: float, center_line: float, hard_sl: float, buffer_pct: float = 1.5, num_grids: int = 24) -> dict:
+        """
+        Calculates the Pingpong Uptrend Grid (Engine 5 Macro Uptrend).
+        """
+        try:
+            # Lower bound = Hard SL + buffer
+            lower_bound = hard_sl * (1 + buffer_pct / 100.0)
+            
+            # Upper bound = Symmetric over Center
+            upper_bound = center_line + (center_line - lower_bound)
+            
+            return {
+                "status": "SUCCESS",
+                "engine": "GRID PINGPONG UPTREND",
+                "current_price": current_price,
+                "lower_bound": round(lower_bound, 10),
+                "upper_bound": round(upper_bound, 10),
+                "num_grids": num_grids,
+                "metrics": {}
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"Grid Pingpong Uptrend calc error: {str(e)}"}
+

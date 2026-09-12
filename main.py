@@ -26,8 +26,8 @@ from engines.dc1_darvas_engine import DC1DarvasEngine
 from engines.dc2_sniper_engine import DC2SniperEngine
 from engines.dc3_breakout_engine import DC3BreakoutEngine
 from engines.dc4_hot_trend_engine import DC4HotTrendEngine
-from engines.dc5_pingpong_engine import DC5PingpongEngine
-from strategies.grid_pingpong import GridPingpongScorer
+from engines.dc5_pingpong_uptrend_engine import DC5PingpongUptrendEngine
+from strategies.grid_pingpong_uptrend import GridPingpongUptrendScorer
 from core.exchange_factory import get_working_exchange
 from execution.trade_execution_service import TradeExecutionService
 from engines.dc3_breakout_engine import DC3BreakoutEngine
@@ -131,14 +131,14 @@ def main():
     breakout       = MomentumBreakout()
     hot_trend      = HotTrendPullback()
     grid_calc      = GridCalculator()
-    pingpong       = GridPingpongScorer()
+    pingpong       = GridPingpongUptrendScorer()
     
     # Khởi tạo Engines (Controller Layer)
     dc1_engine = DC1DarvasEngine(strategy=darvas)
     dc2_engine = DC2SniperEngine(strategy=sniper, early_warning=EarlyWarningMatrix(), entry_calc=entry_calc, repo=repo)
     dc3_engine = DC3BreakoutEngine(strategy=breakout)
     dc4_engine = DC4HotTrendEngine(strategy=hot_trend, grid_calc=grid_calc)
-    dc5_engine = DC5PingpongEngine(strategy=pingpong)
+    dc5_engine = DC5PingpongUptrendEngine(strategy=pingpong)
     
     # Chạy 1 lần (Manual Scan Mode)
     if True:
