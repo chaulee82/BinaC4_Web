@@ -294,7 +294,8 @@ class ConsoleRenderer:
                 # In Grid Setup
                 g_setup = score_ctx.grid_setup
                 if g_setup:
-                    print(f"  ↳ ⚙️ GRID: Low={self.fmt_price(g_setup.lower_price)} | Up={self.fmt_price(g_setup.upper_price)} | Lưới={g_setup.grid_quantity} | SL Sell={self.fmt_price(g_setup.stop_loss)}")
+                    grid_label = "GRID ⚡" if g_setup.grid_quantity == 2 else "GRID"
+                    print(f"  ↳ ⚙️ {grid_label}: Low={self.fmt_price(g_setup.lower_price)} | Up={self.fmt_price(g_setup.upper_price)} | Lưới={g_setup.grid_quantity} | SL Sell={self.fmt_price(g_setup.stop_loss)}")
                     
                 if state.macro_levels:
                     macro = state.macro_levels

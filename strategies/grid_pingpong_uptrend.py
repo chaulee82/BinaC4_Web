@@ -175,7 +175,9 @@ class GridPingpongUptrendScorer:
             swing_ranges = []
             
             current_state = None  # 1: Above, -1: Below
-            last_extreme = None
+            local_extreme = None
+            last_peak = None
+            last_trough = None
             
             for i in range(len(df_recent)):
                 h = float(df_recent['High'].iloc[i])
@@ -188,33 +190,35 @@ class GridPingpongUptrendScorer:
                 if current_state is None:
                     if c > m:
                         current_state = 1
-                        last_extreme = h
+                        local_extreme = h
                     elif c < m:
                         current_state = -1
-                        last_extreme = l
+                        local_extreme = l
                 else:
                     if current_state == 1:
-                        if h > last_extreme:
-                            last_extreme = h
-                        if c < m: # Cross down (Close below MA)
+                        if h > local_extreme:
+                            local_extreme = h
+                        if c < m: # Nến đóng dưới MA -> Kết thúc sóng tăng
+                            last_peak = local_extreme
+                            if last_trough is not None:
+                                sw = abs(last_peak - last_trough) / last_trough * 100
+                                swing_ranges.append(sw)
+                                if sw >= BOUNCE_THRESHOLD:
+                                    n_bounces += 1
                             current_state = -1
-                            new_extreme = l
-                            sw = abs(last_extreme - new_extreme) / new_extreme * 100
-                            swing_ranges.append(sw)
-                            if sw >= BOUNCE_THRESHOLD:
-                                n_bounces += 1
-                            last_extreme = new_extreme
+                            local_extreme = l # Bắt đầu tìm đáy mới
                     elif current_state == -1:
-                        if l < last_extreme:
-                            last_extreme = l
-                        if c > m: # Cross up (Close above MA)
+                        if l < local_extreme:
+                            local_extreme = l
+                        if c > m: # Nến đóng trên MA -> Kết thúc sóng giảm
+                            last_trough = local_extreme
+                            if last_peak is not None:
+                                sw = abs(last_peak - last_trough) / last_trough * 100
+                                swing_ranges.append(sw)
+                                if sw >= BOUNCE_THRESHOLD:
+                                    n_bounces += 1
                             current_state = 1
-                            new_extreme = h
-                            sw = abs(new_extreme - last_extreme) / last_extreme * 100
-                            swing_ranges.append(sw)
-                            if sw >= BOUNCE_THRESHOLD:
-                                n_bounces += 1
-                            last_extreme = new_extreme
+                            local_extreme = h # Bắt đầu tìm đỉnh mới
                             
             avg_range = float(np.median(swing_ranges)) if swing_ranges else 0.0
             
@@ -256,11 +260,25 @@ class GridPingpongUptrendScorer:
                 num_grids=GRID_MAX
             )
 
+            lower_bound = grid_params.get('lower_bound', 0)
+            upper_bound = grid_params.get('upper_bound', 0)
+            
+            # --- PERPETUAL OCO HACK ---
+            cycles = n_bounces / 2.0
+            is_oco_perpetual = (cycles <= 1.5) and (avg_range >= 20.0)
+            
+            if is_oco_perpetual:
+                final_grids = 2
+                final_trigger = lower_bound * 1.015
+            else:
+                final_grids = grid_params.get('num_grids', GRID_MAX)
+                final_trigger = center_line
+
             return {
                 'symbol': symbol,
                 'price': close_live,
                 'pingpong_score': round(pingpong_score, 4),
-                'bounces_24h': round(n_bounces / 2.0, 1),
+                'bounces_24h': round(cycles, 1),
                 'avg_range': round(avg_range, 2),
                 'rank': rank,
                 'components': {
@@ -273,11 +291,11 @@ class GridPingpongUptrendScorer:
                 },
                 'grid_setup': {
                     'center_line': round(center_line, 5),
-                    'upper_bound': grid_params.get('upper_bound', 0),
-                    'lower_bound': grid_params.get('lower_bound', 0),
-                    'grids': grid_params.get('num_grids', GRID_MAX),
+                    'upper_bound': upper_bound,
+                    'lower_bound': lower_bound,
+                    'grids': final_grids,
                     'trailing_up': True,
-                    'trigger_price': round(center_line, 5),
+                    'trigger_price': round(final_trigger, 5),
                     'stop_loss_sell_all': round(hard_sl, 5)
                 }
             }
