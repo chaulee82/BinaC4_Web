@@ -1,6 +1,7 @@
 import pandas as pd
 from typing import List, Dict, Any
 from models.market_state import SymbolState, ScoreContext, GridContext, EarlyWarningContext, EntrySetupContext, MacroState
+from core.grid_tp2_builder import build_macro_grid_payload
 
 class ConsoleRenderer:
     """
@@ -26,6 +27,34 @@ class ConsoleRenderer:
             s += '0'
             
         return s
+
+    @staticmethod
+    def _print_grid_tp2(state: SymbolState, entry: float, sl_short: float, tp2_target: float, fallback_ratio: float):
+        """In dòng cài đặt nhanh Spot Grid `🎯 [GRID TP2 - {symbol}]`. Fail-safe: lỗi không làm vỡ bảng."""
+        try:
+            tick_size = None
+            try:
+                from core.exchange_info_cache import ExchangeInfoCache
+                cache = ExchangeInfoCache()
+                if cache.is_ready():
+                    tick_size = cache.get_tick_size(state.symbol.replace('/', ''), default=0.0) or None
+            except Exception:
+                tick_size = None
+
+            macro_sl = state.macro_levels.sl_4h if state.macro_levels else None
+            payload = build_macro_grid_payload(
+                symbol=state.symbol,
+                entry=entry,
+                sl_short=sl_short,
+                tp_target=tp2_target,
+                macro_sl=macro_sl,
+                tick_size=tick_size,
+                fallback_ratio=fallback_ratio,
+            )
+            if payload:
+                print(payload["display_line"])
+        except Exception as e:
+            print(f"   ↳ 🎯 [GRID TP2] Render Error: {e}")
 
     def render_early_warning_matrix(self, warning_results: List[Dict[str, Any]], total_scanned: int):
         """Render Bảng Cảnh Báo Sớm"""
@@ -143,6 +172,11 @@ class ConsoleRenderer:
                     macro = state.macro_levels
                     print(f"    ↳ [{sym}] [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}")
 
+                # GRID TP2 (DC2): Trig=OCO-2 Buy | SL ngắn=OCO-2 SL | Trần=OCO-2 TP | Fallback 0.96
+                if score_ctx.entry_setup2:
+                    s2 = score_ctx.entry_setup2
+                    self._print_grid_tp2(state, s2.entry_price, s2.sl_price, s2.tp1_price, fallback_ratio=0.96)
+
                 if score >= 70:
                     print("-" * 100)
             
@@ -172,7 +206,8 @@ class ConsoleRenderer:
                 c4 = score_ctx.c4_score
                 bonus = score_ctx.bonus_score
                 
-                print(f"{sym:<8} | {score:<5} | {c1:<10} | {c2:<10} | {c3:<10} | {c4:<10} | {bonus:<6} | {act}")
+                flow = f" {state.money_flow_tag}" if state.money_flow_tag else ""
+                print(f"{sym:<8}{flow} | {score:<5} | {c1:<10} | {c2:<10} | {c3:<10} | {c4:<10} | {bonus:<6} | {act}")
                 
                 # In Entry Setup
                 if score_ctx.entry_setup1:
@@ -191,6 +226,12 @@ class ConsoleRenderer:
                 if state.macro_levels:
                     macro = state.macro_levels
                     print(f"    ↳ [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}")
+
+                # GRID TP2 (DC3): Trig=In | SL ngắn=SL | Trần=TP2 (rỗng → TP1×1.05) | Fallback 0.95
+                if score_ctx.entry_setup1:
+                    setup = score_ctx.entry_setup1
+                    tp2_target = setup.tp2_price if setup.tp2_price and setup.tp2_price > 0 else setup.tp1_price * 1.05
+                    self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95)
 
                 if score > 0:
                     print("-" * 100)
@@ -222,7 +263,8 @@ class ConsoleRenderer:
                 c4 = score_ctx.c4_score
                 c5 = score_ctx.bonus_score
                 
-                print(f"[{sym:<6}] Điểm: {score:<6} | RSI1H: {score_ctx.rsi_1h:<4.1f} | Pull%: {score_ctx.pullback_pct:<5.1f} | 🎯 {act}")
+                flow = f" {state.money_flow_tag}" if state.money_flow_tag else ""
+                print(f"[{sym:<6}]{flow} Điểm: {score:<6} | RSI1H: {score_ctx.rsi_1h:<4.1f} | Pull%: {score_ctx.pullback_pct:<5.1f} | 🎯 {act}")
                 print(f"   ↳ C1: {c1} | C2: {c2} | C3: {c3} | C4: {c4} | C5: {c5}")
                 
                 macro = state.macro_state
@@ -240,6 +282,16 @@ class ConsoleRenderer:
                     print(f"    ↳ [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}")
                 else:
                     print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới)")
+
+                # GRID TP2 (DC4): Trig=In | SL ngắn=SL | Trần=max(TP, TP 4H) (khuyết 4H → TP×1.04) | Fallback 0.95
+                if score_ctx.entry_setup1:
+                    setup = score_ctx.entry_setup1
+                    macro_tp = state.macro_levels.tp_4h if state.macro_levels else None
+                    if macro_tp and macro_tp > 0:
+                        tp2_target = max(setup.tp1_price, macro_tp)
+                    else:
+                        tp2_target = setup.tp1_price * 1.04
+                    self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95)
 
                 print("-" * 100)
                 

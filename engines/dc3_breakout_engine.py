@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from engines.base_engine import BaseEngine
 from models.market_state import SymbolState, ScoreContext, EntrySetupContext, MacroLevels
 from strategies.momentum_breakout import MomentumBreakout
+from core.money_flow import money_flow_tag
 import logging
 
 logger = logging.getLogger("DC3Engine")
@@ -79,6 +80,7 @@ class DC3BreakoutEngine(BaseEngine):
                 symbol=sym, current_price=0.0, volume_24h=0.0, avg_vola_24h=0.0, coin_vola_24h=0.0,
                 safety_tag=safety_map.get(sym, "⚠️ CHƯA XÉT"),
                 macro_levels=(macro_levels_map or {}).get(sym),
+                money_flow_tag=money_flow_tag(sym),
                 scores={"DC3": score_ctx}
             )
             dc3_states.append(state)

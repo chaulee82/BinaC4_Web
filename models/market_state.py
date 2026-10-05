@@ -134,5 +134,8 @@ class SymbolState:
     # Hệ tọa độ Vĩ mô (4 mốc chiến lược) — gán sau khi kéo nến xong
     macro_levels: Optional[MacroLevels] = None
 
+    # Biểu tượng Dòng tiền đột biến (15M Quote Volume spike) — vd "💰💰x3.4🟢"
+    money_flow_tag: str = ""
+
     # Kết quả sau khi chạy qua các Động cơ
     scores: Dict[str, ScoreContext] = field(default_factory=dict)
