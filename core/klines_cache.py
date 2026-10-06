@@ -28,12 +28,15 @@ _DEFAULT_FETCH_LIMIT = {
     '15m': 250,
     '1h':  168,
     '4h':  120,
-    '1d':  180,
+    '1d':  300,   # ≥ 300 nến 1D → gộp được ≥ 100 nến 3D (đủ tính MA99 3D) — weight API vẫn = 2
 }
 
 # ── Internal storage ─────────────────────────────────────────────
 # Key dạng string: f"{symbol}_{interval}" (dễ debug, serialize, evict hơn tuple)
 _cache: dict = {}   # key: "{BTCUSDT_1h}" → (timestamp: float, df: DataFrame)
+# key → fetch_limit đã yêu cầu. Mã mới niêm yết trả về ít nến hơn limit → vẫn coi là cache hit
+# (tránh gọi API lặp vô hạn khi lịch sử < 300 nến 1D).
+_fetched_limit: dict = {}
 _lock  = threading.Lock()
 
 # ── API call counter (diagnostic) ────────────────────────────────────────────
@@ -89,6 +92,7 @@ def _cleanup_if_needed(now: float):
         expired = [k for k, (t, _) in _cache.items() if now - t > _CACHE_TTL]
         for k in expired:
             del _cache[k]
+            _fetched_limit.pop(k, None)
         logger.debug(f"[KlinesCache] Evicted {len(expired)} entries. Remaining: {len(_cache)}")
 
 
@@ -105,7 +109,7 @@ def get_klines_cached(symbol: str, interval: str, limit: int = 100) -> Optional[
     with _lock:
         if cache_key in _cache:
             cached_time, df = _cache[cache_key]
-            if now - cached_time < _CACHE_TTL and len(df) >= limit:
+            if now - cached_time < _CACHE_TTL and (len(df) >= limit or _fetched_limit.get(cache_key, 0) >= limit):
                 return df.tail(limit).copy()   # cache hit: instant, 0ms
 
     # ── Cache miss → gọi API (outside lock để không block thread khác) ──
@@ -119,6 +123,7 @@ def get_klines_cached(symbol: str, interval: str, limit: int = 100) -> Optional[
     now2 = time.time()
     with _lock:
         _cache[cache_key] = (now2, df)
+        _fetched_limit[cache_key] = fetch_limit
         _cleanup_if_needed(now2)
 
     return df.tail(limit).copy()
@@ -154,7 +159,7 @@ def warm_klines_cache(
                 else:
                     cached_time, df = _cache[key]
                     min_limit = _DEFAULT_FETCH_LIMIT.get(itv, 100)
-                    if now - cached_time >= _CACHE_TTL or len(df) < min_limit:
+                    if now - cached_time >= _CACHE_TTL or (len(df) < min_limit and _fetched_limit.get(key, 0) < min_limit):
                         tasks.append((sym, itv))
 
     if not tasks:
@@ -172,6 +177,7 @@ def warm_klines_cache(
             key = f"{sym}_{itv}"   # string key
             with _lock:
                 _cache[key] = (t, df)
+                _fetched_limit[key] = fetch_limit
         return sym, itv, df is not None
 
     from concurrent.futures import as_completed

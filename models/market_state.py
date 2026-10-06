@@ -9,6 +9,9 @@ class MacroLevels:
     tp_1h:    float   # Đỉnh ngắn hạn 24H — chốt 50% khi lướt sóng / dấu hiệu suy yếu
     tp_4h:    float   # Đỉnh hộp vĩ mô 5 ngày — chốt 100% khi gom hàng đáy G1
     sl_4h:    float   # Dưới đáy vĩ mô theo ATR linh hoạt — chặn "quét thanh khoản"
+    # Hồ sơ Khung 3D (core.macro_levels.get_3d_profile): MA7/25/99 3D, BOLL 3D, ST 3D,
+    # chiến thuật định tuyến (strategy_3d), Wide Grid 28L, dòng tiền bạo phát...
+    d3:       Optional[Dict[str, Any]] = None
 
 
 @dataclass(slots=True, frozen=True)

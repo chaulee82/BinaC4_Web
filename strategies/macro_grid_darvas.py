@@ -38,6 +38,8 @@ class MacroGridDarvas:
     MARUBOZU_BODY_PCT    = 0.80    # Thân nến Marubozu chiếm ≥ 80% tổng độ dài
     MARUBOZU_VOL_MULT    = 3.0     # + Vol > 3× MA → Black Swan
     MIN_SCORE_FOR_GRID   = 60      # Ngưỡng điểm tối thiểu để tính thông số Grid
+    MAX_ATR_PCT_OF_PRICE = 0.12    # [BUGFIX] ATR dùng dựng lưới không vượt 12% thị giá
+    MAX_GRIDS            = 35      # [BUGFIX] Trần số lưới mỗi tầng
 
     def __init__(self, exchange=None):
         from core.exchange_factory import get_working_exchange
@@ -407,6 +409,8 @@ class MacroGridDarvas:
                 atr_4h     = float(atr_series.iloc[-1])
                 if not atr_4h or np.isnan(atr_4h):
                     atr_4h = (box['ceiling'] - box['floor']) * 0.10
+                # [BUGFIX] Khống chế ATR dị thường (râu nến lịch sử/listing) → tối đa 12% thị giá
+                atr_4h = min(atr_4h, current_price * self.MAX_ATR_PCT_OF_PRICE)
 
                 floor_p   = box['floor']
                 ceiling_p = box['ceiling']
@@ -419,17 +423,20 @@ class MacroGridDarvas:
                 g2_upper = ceiling_p + (3.0 * atr_4h)
                 g2_amp   = (g2_upper - g2_lower) / g2_lower if g2_lower > 0 else 0.05
 
+                # [BUGFIX] SL luôn dương & hợp lý (không sâu hơn 15% dưới đáy hộp)
+                stop_loss = max(floor_p - (1.5 * atr_4h), floor_p * 0.85)
+
                 grid_setup = {
                     "is_dual_grid":   True,
                     "g1_lower":       self._round_price(g1_lower),
                     "g1_upper":       self._round_price(g1_upper),
-                    "g1_grids":       max(8, int((g1_amp * 100) / 0.8)),
+                    "g1_grids":       min(self.MAX_GRIDS, max(8, int((g1_amp * 100) / 0.8))),
                     "g1_capital_pct": 70,
                     "g2_lower":       self._round_price(g2_lower),
                     "g2_upper":       self._round_price(g2_upper),
-                    "g2_grids":       max(5, int((g2_amp * 100) / 0.8)),
+                    "g2_grids":       min(self.MAX_GRIDS, max(5, int((g2_amp * 100) / 0.8))),
                     "g2_capital_pct": 30,
-                    "stop_loss":      self._round_price(floor_p  - (1.5 * atr_4h)),
+                    "stop_loss":      self._round_price(stop_loss),
                     "take_profit":    self._round_price(g2_upper + (1.0 * atr_4h)),
                     # Thông tin hộp để hiển thị ở coin_filter.py
                     "lower_price":    self._round_price(floor_p),

@@ -34,13 +34,14 @@ class DC4HotTrendEngine(BaseEngine):
                 return None
 
             tick_size = ExchangeInfoCache().get_tick_size(sym_api)
-            m = calculate_universal_macro_levels(df_4h, df_1h, tick_size, klines_15m_df=df_15m)
+            m = calculate_universal_macro_levels(df_4h, df_1h, tick_size, klines_15m_df=df_15m, symbol=sym_api)
             if m.get('status') == 'SUCCESS':
                 return MacroLevels(
                     entry_4h=m['entry_4h'],
                     sl_4h=m['sl_4h'],
                     tp_1h=m['tp_1h'],
                     tp_4h=m['tp_4h'],
+                    d3=m.get('d3'),
                 )
             logger.debug(f"[DC4 Macro] {sym_api}: {m.get('message', 'error')}")
         except Exception as e:
@@ -70,6 +71,8 @@ class DC4HotTrendEngine(BaseEngine):
                 rsi = res.get('RSI 1H', 0)
                 pull = res.get('Pullback%', 0)
                 act = res.get('Hành Động', '')
+                if res.get('explosive_tag'):
+                    act = f"{act} | {res['explosive_tag']}"
                 
                 c1 = res.get('C1 Trend', '')
                 c2 = res.get('C2 Pullback', '')
@@ -94,7 +97,7 @@ class DC4HotTrendEngine(BaseEngine):
                     tp1 = setup['take_profit']
                     rr = setup.get('rr_ratio', 0)
                     setup1 = EntrySetupContext(
-                        setup_type="LIMIT",
+                        setup_type="TRIGGER_DIP" if setup.get('is_trigger') else "LIMIT",
                         entry_price=entry,
                         sl_price=sl,
                         tp1_price=tp1,

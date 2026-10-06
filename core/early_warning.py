@@ -37,10 +37,13 @@ class EarlyWarningMatrix:
     # =========================================================================
     # HÀM 1: CHECK_WARNING_LEVEL — EW Tổng Quát (dùng cho toàn watchlist)
     # =========================================================================
-    def check_warning_level(self, df_1h: pd.DataFrame, df_4h: pd.DataFrame, df_1d: pd.DataFrame) -> dict:
+    def check_warning_level(self, df_1h: pd.DataFrame, df_4h: pd.DataFrame, df_1d: pd.DataFrame, d3: dict = None) -> dict:
         """
         Nạp DataFrame chứa nến OHLCV 1H, 4H, 1D.
         Trả về cấp độ cảnh báo rủi ro (0: An toàn, 1: Theo dõi, 2: Nguy hiểm, 3: Khẩn cấp)
+
+        d3: Hồ sơ Khung 3D (core.macro_levels.get_3d_profile). Nếu close > MA7 3D và
+            Supertrend 3D xanh → MIỄN TRỪ CẤP 3 (chỉ xếp Cấp 1 Theo dõi).
         """
         try:
             # Helper to preprocess dataframe
@@ -72,6 +75,14 @@ class EarlyWarningMatrix:
             supertrend_col_1d = [col for col in df_1d.columns if 'SUPERT_' in col]
             st_1d = latest_1d[supertrend_col_1d[0]] if supertrend_col_1d else 0
             if st_1d > 0 and latest_1d['close'] < st_1d:
+                _raw3d = (d3 or {}).get('_raw') or {}
+                if _raw3d and _raw3d.get('close_3d', 0) > _raw3d.get('ma7_3d', float('inf')) and _raw3d.get('st_dir_3d') == 1:
+                    return {
+                        "level": 1,
+                        "label": "⚠️ CẤP 1: THEO DÕI (Miễn Cấp 3 - Uptrend 3D)",
+                        "trigger": "Thủng ST 1D nhưng trên MA7 3D & ST 3D 🟢",
+                        "action": "Giữ vị thế theo khung 3D. Dừng mua đuổi 1H."
+                    }
                 return {
                     "level": 3,
                     "label": "💀 CẤP 3: KHẨN CẤP (Gãy Trend 1D)",

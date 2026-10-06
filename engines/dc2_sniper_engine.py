@@ -42,6 +42,7 @@ class DC2SniperEngine(BaseEngine):
             c2 = dt.get('Gate_2_Volume', {}).get('score', 0)
             c3 = dt.get('Gate_3_OrderBook', {}).get('score', 0)
             c4 = dt.get('Gate_4_RR', {}).get('score', 0)
+            c0 = res.get('macro_bonus', dt.get('Gate_0_MacroBonus', {}).get('score', 0))
             
             ew_ctx = None
             setup1 = None
@@ -139,6 +140,7 @@ class DC2SniperEngine(BaseEngine):
                 total_score=score,
                 action_label=act,
                 c1_score=c1, c2_score=c2, c3_score=c3, c4_score=c4,
+                bonus_score=c0,
                 early_warning=ew_ctx,
                 entry_setup1=setup1,
                 entry_setup2=setup2
@@ -152,4 +154,20 @@ class DC2SniperEngine(BaseEngine):
             )
             dc2_states.append(state)
         
+        # Sắp xếp hiển thị 3 tầng:
+        #   1) ✅ AN TOÀN xếp trên ⚠️ Cạn Cầu / Trượt Giá
+        #   2) Điểm tổng cao hơn (đã gồm C0 Macro Bonus)
+        #   3) Biên lãi kỳ vọng OCO-2 TP (%) lớn hơn
+        def _oco2_tp_pct(st: SymbolState) -> float:
+            s2 = st.scores["DC2"].entry_setup2 or st.scores["DC2"].entry_setup1
+            if s2 and s2.entry_price:
+                return (s2.tp1_price - s2.entry_price) / s2.entry_price * 100
+            return 0.0
+
+        dc2_states.sort(key=lambda st: (
+            1 if 'AN TOÀN' in (st.safety_tag or '') else 0,
+            float(st.scores["DC2"].total_score or 0),
+            _oco2_tp_pct(st),
+        ), reverse=True)
+
         return dc2_states

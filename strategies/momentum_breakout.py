@@ -239,25 +239,69 @@ class MomentumBreakout:
             c3 = self.evaluate_taker_buy(symbol)
             c4 = self.evaluate_risk(df, current_price)
 
-            total_score = c1['score'] + c2['score'] + c3['score'] + c4['score']
+            # ── [3D ROUTER] Hồ sơ Khung 3D + Dòng Tiền Bạo Phát ──────────────
+            try:
+                from core.macro_levels import get_3d_profile
+                d3 = get_3d_profile(symbol)
+            except Exception:
+                d3 = None
+            is_breakout_3d = bool(d3 and d3.get('is_3d_breakout_wave'))
+            expl = (d3 or {}).get('explosive') or {}
+            is_explosive = bool(expl.get('is_explosive')) and not (d3 or {}).get('is_3d_broken_ma7')
+
+            # Chiến thuật 2: Miễn phạt râu trên (Fakeout râu) khi giá đã đóng qua kháng cự
+            if is_breakout_3d and c1['score'] < 15 and 'Râu' in c1.get('status', '') \
+                    and current_price > c1.get('resistance', float('inf')):
+                c1 = {**c1, "score": 15, "status": "Breakout (🚀 Miễn phạt râu - Siêu Sóng 3D)"}
+
+            bonus_3d, bonus_parts = 0, []
+            if is_breakout_3d and d3.get('score_bonus_3d', 0) > 0:
+                bonus_3d += d3['score_bonus_3d']
+                bonus_parts.append(f"🚀+{d3['score_bonus_3d']}")
+            if is_explosive:
+                bonus_3d += expl.get('bonus', 0)
+                bonus_parts.append(f"💥+{expl.get('bonus', 0)}")
+            # Trần thưởng kết hợp (Chân Sóng 3D + Bạo Phát) ≤ +30 — chống lạm phát điểm
+            from core.macro_levels import COMBINED_BONUS_CAP
+            if bonus_3d > COMBINED_BONUS_CAP:
+                bonus_3d = COMBINED_BONUS_CAP
+                bonus_parts.append(f"⇒+{COMBINED_BONUS_CAP}(cap)")
+
+            total_score = c1['score'] + c2['score'] + c3['score'] + c4['score'] + bonus_3d
 
             # Tính R/R ratio thực tế và Dynamic TP
             sl_price = c4.get('sl')
             rr_ratio = 0.0
+            entry_price = current_price
+
+            # [Dòng Tiền Bạo Phát] Trigger đón nhịp nhúng −2.5% → −4.5% (EMA20 1H / BOLL UP 3D)
+            if is_explosive:
+                from core.macro_levels import explosive_trigger_price
+                entry_price = explosive_trigger_price(current_price, d3.get('ema20_1h', 0.0),
+                                                      d3.get('boll_up_3d', 0.0), d3.get('tick_size', 0.0))
+                if not sl_price or sl_price >= entry_price * 0.99:
+                    sl_price = entry_price * 0.97
             
-            if sl_price and sl_price < current_price:
+            if sl_price and sl_price < entry_price:
                 rr_ratio = c4.get('rr', 0)
                 # Tính TP1 theo R/R
-                tp1_dist = (current_price - sl_price) * max(rr_ratio, 2.0)
-                tp1_price = current_price + tp1_dist
+                tp1_dist = (entry_price - sl_price) * max(rr_ratio, 2.0)
+                tp1_price = entry_price + tp1_dist
+                if is_breakout_3d:
+                    # Chiến thuật 2: mở rộng mục tiêu theo BOLL UP 3D
+                    from core.macro_levels import breakout_tp_target
+                    tp1_price = breakout_tp_target(entry_price, sl_price, tp1_price, d3)
+                    tp1_dist = tp1_price - entry_price
+                if is_breakout_3d or is_explosive:
+                    rr_ratio = tp1_dist / (entry_price - sl_price)
                 
                 # Cân đối TP1/TP2 theo cấu trúc mới
-                tp2_price = current_price + (tp1_dist * 1.5)
-                tp_trail  = current_price + (tp1_dist * 1.7)
+                tp2_price = entry_price + (tp1_dist * 1.5)
+                tp_trail  = entry_price + (tp1_dist * 1.7)
             else:
-                tp1_price = current_price * 1.05
-                tp2_price = current_price * 1.10
-                tp_trail  = current_price * 1.15
+                tp1_price = entry_price * 1.05
+                tp2_price = entry_price * 1.10
+                tp_trail  = entry_price * 1.15
             
             # sort_score = total_score + rr_ratio (tiebreaker: cùng điểm thì R/R cao hơn lên trước)
             sort_score = total_score + rr_ratio
@@ -267,12 +311,15 @@ class MomentumBreakout:
                 action = "🟢 BREAKOUT HÀNG THẬT: Bắn lệnh Hybrid Executor"
             elif total_score >= 65:
                 action = "🟡 THEO DÕI: Cần tích lũy thêm Volume"
+            if is_explosive:
+                action = f"{action} | {expl['tag']} → Trig đón nhúng"
 
             trade_setup = {}
             is_real_breakout = (c1['score'] >= 25)
-            if total_score >= 65 or is_real_breakout:
+            # Mã có Dòng Tiền Bạo Phát luôn có setup để in đủ ⚙️ SETUP + 🎯 GRID TP2
+            if total_score >= 65 or is_real_breakout or is_explosive:
                 trade_setup = {
-                    "entry": current_price,
+                    "entry": entry_price,
                     "stop_loss": sl_price,
                     "take_profit": tp1_price,   # Tương thích ngược với executor hiện tại
                     "tp1": tp1_price,            # [DC3-5] Scale-out Mock
@@ -293,6 +340,7 @@ class MomentumBreakout:
                     "Gate_2_Volume": c2['status'],
                     "Gate_3_OrderBook": c3['status'],
                     "Gate_4_RR": c4['status'],
+                    "Bonus_TakerBuy": " ".join(bonus_parts) if bonus_parts else "-",
                 },
                 "trade_setup": trade_setup,
                 "btc_rsi": btc_gate.get("rsi", 0)

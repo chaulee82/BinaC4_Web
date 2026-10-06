@@ -79,13 +79,14 @@ class DC5PingpongUptrendEngine(BaseEngine):
                         if df_1h is not None and df_4h is not None and df_15m is not None and len(df_1h) >= 24 and len(df_4h) >= 30:
                             cache = ExchangeInfoCache()
                             tick_size = cache.get_tick_size(sym_api)
-                            m_dict = calculate_universal_macro_levels(df_4h, df_1h, tick_size, klines_15m_df=df_15m)
+                            m_dict = calculate_universal_macro_levels(df_4h, df_1h, tick_size, klines_15m_df=df_15m, symbol=sym_api)
                             if m_dict['status'] == 'SUCCESS':
                                 macro = MacroLevels(
                                     entry_4h=m_dict['entry_4h'],
                                     sl_4h=m_dict['sl_4h'],
                                     tp_1h=m_dict['tp_1h'],
-                                    tp_4h=m_dict['tp_4h']
+                                    tp_4h=m_dict['tp_4h'],
+                                    d3=m_dict.get('d3'),
                                 )
                     except Exception as e:
                         print(f"!!! Error calculating macro for {sym_api}: {e}")

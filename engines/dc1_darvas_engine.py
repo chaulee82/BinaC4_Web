@@ -15,6 +15,21 @@ class DC1DarvasEngine(BaseEngine):
         for symbol in watchlist:
             result = self.strategy.scan_grid_candidate(symbol, timeframe)
             darvas_results.append(result)
+
+        # ── [3D ROUTER] ⛔ Gãy MA7 3D → −30 điểm & TỪ CHỐI (không "Khởi tạo ngay") ──
+        try:
+            from core.macro_levels import get_3d_profile
+        except Exception:
+            get_3d_profile = None
+        if get_3d_profile:
+            for res in darvas_results:
+                try:
+                    d3 = get_3d_profile(res.get('symbol', ''))
+                except Exception:
+                    d3 = None
+                if d3 and d3.get('is_3d_broken_ma7'):
+                    res['total_score'] = res.get('total_score', 0) - 30
+                    res['action'] = f"⛔ GÃY MA7 3D (MA7_3D={d3.get('ma7_3d')}) — TỪ CHỐI"
             
         # Sắp xếp theo điểm tổng giảm dần và chỉ lấy Top 5
         darvas_results.sort(key=lambda x: x.get('total_score', 0), reverse=True)

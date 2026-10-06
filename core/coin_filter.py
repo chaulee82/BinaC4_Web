@@ -132,6 +132,10 @@ def process_symbol(symbol, live_info, skip_darvas=False):
     ma7_1h  = float(df_1h['Close'].tail(7).mean())
     ema7_1h = float(df_1h['Close'].ewm(span=7, adjust=False).mean().iloc[-1])
     ma25_1h = df_1h['Close'].tail(25).mean()
+    # MA99 1H + độ dốc 24 nến (phục vụ Healthy Pullback & Trend Structure Bonus)
+    ma99_1h = float(df_1h['Close'].tail(99).mean()) if len(df_1h) >= 99 else float(ma25_1h)
+    ma99_1h_prev24 = float(df_1h['Close'].iloc[-123:-24].mean()) if len(df_1h) >= 123 else ma99_1h
+    is_ma99_1h_upslope = ma99_1h > ma99_1h_prev24
     rsi_1h = calculate_rsi(df_1h, period=14)
     score_rsi = calculate_rsi_score(rsi_1h)
 
@@ -170,8 +174,31 @@ def process_symbol(symbol, live_info, skip_darvas=False):
         _ew_level   = 0
         _ew_trigger = ""
 
+    # ── Healthy Pullback (Chỉnh lành mạnh trong Uptrend) ──
+    # MA25_1H > MA99_1H, giá còn trên MA99_1H (buffer 1%) và RSI 1H vùng lý tưởng 42-62
+    # → Nhịp lùi về MA7/EMA7 chỉ là điểm Buy Limit của Grid, KHÔNG phạt EW CẤP 1.
+    _is_healthy_pullback = (ma25_1h > ma99_1h) and (close_live >= ma99_1h * 0.99) and (42.0 <= rsi_1h <= 62.0)
+    _healthy_pb_active   = _is_healthy_pullback and _ew_level <= 1
+    _ew1_exempt          = (_ew_level == 1) and _is_healthy_pullback
+
+    # ── [3D ROUTER] Hồ sơ Khung 3D (cache hit — 0 API call) ──
+    try:
+        from core.macro_levels import get_3d_profile
+        _d3 = get_3d_profile(symbol)
+    except Exception:
+        _d3 = None
+    _is_high_flag_3d = bool(_d3 and _d3.get('is_3d_high_flag_wide_grid'))
+    _hf_exempt_3d    = _is_high_flag_3d and bool(_d3.get('ew_exempt_3d'))
+    _is_broken_3d    = bool(_d3 and _d3.get('is_3d_broken_ma7'))
+    # 🦅 Cột cờ 3D / 🚀 Chân sóng 3D → được mở khóa nhóm Grid hợp lệ (trừ khi gãy MA7 3D)
+    _is_wave_3d      = (not _is_broken_3d) and (_is_high_flag_3d or bool(_d3 and _d3.get('is_3d_breakout_wave')))
+    _ew1_exempt_3d   = (_ew_level == 1) and _hf_exempt_3d and not _ew1_exempt
+    if _ew1_exempt_3d:
+        _ew1_exempt = True   # Cột Cờ Cao 3D neo > MA7 3D × 1.10 → miễn phạt EW CẤP 1
+
     # Nếu CẤP 1 trở lên: tắt mode tích lũy — không thể tích lũy khi cấu trúc MA ngắn hạn bị phá
-    if _ew_level >= 1 and mode_tich_luy:
+    # (Miễn trừ cho EW CẤP 1 khi đang là Healthy Pullback)
+    if _ew_level >= 1 and mode_tich_luy and not _ew1_exempt:
         mode_tich_luy = False
 
     close_1d = df_1d['Close'].iloc[-1]
@@ -293,7 +320,12 @@ def process_symbol(symbol, live_info, skip_darvas=False):
     elif _ew_level == 2:
         warning_reasons.append(f"🛑 EW CẤP 2: {_ew_trigger}")
     elif _ew_level == 1:
-        warning_reasons.append(f"⚠️ EW CẤP 1: {_ew_trigger}")
+        if _ew1_exempt_3d:
+            warning_reasons.append(f"🦅 EW CẤP 1 (Miễn Phạt - Cột Cờ 3D): {_ew_trigger}")
+        elif _ew1_exempt:
+            warning_reasons.append(f"🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): {_ew_trigger}")
+        else:
+            warning_reasons.append(f"⚠️ EW CẤP 1: {_ew_trigger}")
 
     if rsi_label:
         warning_reasons.append(rsi_label)
@@ -410,6 +442,8 @@ def process_symbol(symbol, live_info, skip_darvas=False):
     elif is_1h_broken:
         if mode_tich_luy:
             trang_thai = "🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Gom)"
+        elif _healthy_pb_active:
+            trang_thai = "🛡️ PULLBACK LÀNH MẠNH (Uptrend)"
         else:
             trang_thai = "⚠️ CHỈNH NGẮN HẠN (Đợi Nền)"
     else:
@@ -426,7 +460,10 @@ def process_symbol(symbol, live_info, skip_darvas=False):
             trang_thai = "🔴 DOWNTREND (Rủi Ro)"
 
     if max_wick_30d >= 15.0:
-        warning_reasons.append(f"⚠️ Giật Râu 30D ({max_wick_30d:.1f}%)")
+        if _hf_exempt_3d:
+            warning_reasons.append(f"🦅 Giật Râu 30D ({max_wick_30d:.1f}%) — Miễn Phạt Cột Cờ 3D")
+        else:
+            warning_reasons.append(f"⚠️ Giật Râu 30D ({max_wick_30d:.1f}%)")
 
     price_7d_ago = df_1d['Close'].iloc[-7] if len(df_1d) >= 7 else df_1d['Close'].iloc[0]
     change_7d_pct = ((close_live - price_7d_ago) / price_7d_ago) * 100
@@ -483,7 +520,11 @@ def process_symbol(symbol, live_info, skip_darvas=False):
     elif score_rau_24h <= 20.0:
         phan_loai_grid = "⛔ NÉ GRID (Bơm Xả Râu Dài)"
     elif is_1h_broken and not mode_tich_luy:
-        phan_loai_grid = "⛔ NÉ GRID (Cạn Cầu / Trượt Giá)"
+        if _healthy_pb_active or _is_wave_3d:
+            # Uptrend còn nguyên (MA25 > MA99, RSI 42-62) → lùi về vùng Buy Limit, không phạt
+            phan_loai_grid = "🛡️ GRID ĐÓN PULLBACK"
+        else:
+            phan_loai_grid = "⛔ NÉ GRID (Cạn Cầu / Trượt Giá)"
     else:
         if mode_tich_luy:
             phan_loai_grid = "🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)"
@@ -520,7 +561,36 @@ def process_symbol(symbol, live_info, skip_darvas=False):
     elif "🔴 DOWNTREND" in trang_thai:
         total_score_raw -= 20.0
 
-    total_score = round(max(0.0, min(100.0, total_score_raw - penalty * 3.0)), 1)
+    # ── Trend Structure Bonus (cộng trước khi clamp 100) ──
+    trend_bonus = 0.0
+    if "UPTREND MẠNH" in trang_thai:
+        # Leader chuẩn: Close > MA25 > MA99 (1H) và MA99 dốc lên → +12; thiếu cấu trúc MA99 → +6
+        if close_live > ma25_1h > ma99_1h and is_ma99_1h_upslope:
+            trend_bonus = 12.0
+        else:
+            trend_bonus = 6.0
+    elif "ĐANG TĂNG" in trang_thai or "PULLBACK LÀNH MẠNH" in trang_thai:
+        trend_bonus = 6.0
+    elif "DOWNTREND" in trang_thai:
+        trend_bonus = -10.0   # Đẩy mã gãy xu hướng xuống cuối bảng
+
+    if trend_bonus > 0:
+        warning_reasons.append(f"🚀 Trend Bonus +{trend_bonus:.0f}")
+
+    # ── [3D ROUTER] Điều chỉnh theo Chiến thuật Khung 3D ──
+    bonus_3d = 0.0
+    if _is_broken_3d:
+        bonus_3d = -25.0
+        warning_reasons.insert(0, f"⛔ MẤT MA7_3D ({_d3['ma7_3d']}) −25")
+    elif _is_high_flag_3d:
+        bonus_3d = 15.0
+        warning_reasons.append("🦅 CỘT CỜ CAO 3D +15")
+    elif _d3 and _d3.get('is_3d_breakout_wave'):
+        warning_reasons.append("🚀 SIÊU SÓNG 3D")
+    elif _d3 and _d3.get('is_3d_overhead_capped') and _d3.get('overhead_cap_3d'):
+        warning_reasons.append(f"⚠️ CẢN 3D {_d3['overhead_cap_name']}={_d3['overhead_cap_3d']}")
+
+    total_score = round(max(0.0, min(100.0, total_score_raw + trend_bonus + bonus_3d - penalty * 3.0)), 1)
 
     diff_from_ma25_pct = ((close_live - ma25_1h) / ma25_1h) * 100
     if close_live >= ma25_1h:
@@ -533,7 +603,7 @@ def process_symbol(symbol, live_info, skip_darvas=False):
 
     _is_grid_ok  = phan_loai_grid in (
         "🛡️ GRID HẸP (12 Lưới)", "🔥 GRID RỘNG (16 Lưới)",
-        "🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)"
+        "🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)", "🛡️ GRID ĐÓN PULLBACK"
     )
     _rsi_ok      = (rsi_1h < 70.0)
     _change24_ok = (live_info['change_24h'] < 12.0)
@@ -550,7 +620,8 @@ def process_symbol(symbol, live_info, skip_darvas=False):
                  ("DOWNTREND" not in trang_thai) and \
                  _no_wick_heavy and \
                  ("Tiền Sử Xả Dốc" not in warning_str) and \
-                 _is_grid_ok and _rsi_ok and _change24_ok and _discount_ok and _macro_rsi_ok
+                 _is_grid_ok and _rsi_ok and _change24_ok and _discount_ok and _macro_rsi_ok and \
+                 not _is_broken_3d   # ⛔ Mất MA7 3D → loại khỏi nhóm Top an toàn
 
     darvas_floor = 0.0
     has_darvas_floor = False
@@ -579,7 +650,7 @@ def process_symbol(symbol, live_info, skip_darvas=False):
         warning_reasons.append(f"⛔ RSI 1D Quá Khẩu Độ ({rsi_1d:.1f})")
 
     # Bẫy chặn động: Nếu RSI 1D >= 75.0, bắt buộc ATR Squeeze (C4) phải đạt tuyệt đối (20đ)
-    if rsi_1d >= 75.0:
+    if rsi_1d >= 75.0 and not _is_wave_3d:   # 🦅/🚀 3D: miễn bẫy ATR Squeeze (RSI1D<80 vẫn bắt buộc)
         c4_score = darvas_setup.get('c4_score', 0) if has_darvas_floor else (darvas_res.get('details', {}).get('C4_score', 0) if 'darvas_res' in locals() else 0)
         if c4_score < 20:
             warning_reasons.append(f"⛔ RSI 1D Cao ({rsi_1d:.1f}) nhưng ATR Squeeze chưa kịch trần")
@@ -788,6 +859,87 @@ def scan_t3_breakout_countdown(df_4h):
         
     return False, []
 
+def _rsi_series(closes: pd.Series, period: int = 14) -> pd.Series:
+    """Chuỗi RSI (Wilder/EWM) — cùng công thức với calculate_rsi() nhưng trả về cả series."""
+    closes = pd.to_numeric(closes, errors='coerce').dropna()
+    deltas = closes.diff()
+    gains = deltas.mask(deltas < 0, 0)
+    losses = -deltas.mask(deltas > 0, 0)
+    avg_gain = gains.ewm(com=period - 1, min_periods=period).mean()
+    avg_loss = losses.ewm(com=period - 1, min_periods=period).mean()
+    rs = avg_gain / avg_loss.replace(0, 0.000001)
+    return 100 - (100 / (1 + rs))
+
+# ── Bảng 3: Awakening Bonus (tối đa +35đ) ──
+AWAKE_MAX_SCORE      = 35.0
+STATIC_MAX_SCORE     = 65.0
+AWAKE_POCKET_VOL_X   = 1.2    # Vol nến ≥ 1.2× MA20 Vol 1D
+AWAKE_POCKET_TAKER   = 55.0   # Hoặc Taker Buy ≥ 55%
+
+def _calc_awakening_bonus(df_1d: pd.DataFrame) -> dict:
+    """
+    Chấm điểm "thức giấc" cho mã ngủ đông (Bảng 3) — Pure function, dễ Unit Test.
+      1. Cấu trúc giá vượt MA ngắn hạn : +15 (Close > MA7 & MA25) | +8 (Close > MA7 hoặc MA7 dốc lên)
+      2. Dòng tiền mồi / Pocket Pivot  : +10 (Nến xanh hiện tại/liền trước + Vol ≥ 1.2×MA20 hoặc Taker ≥ 55%)
+      3. Động lượng RSI 1D & độ dốc    : +10 (48 ≤ RSI ≤ 68 & dốc lên) | +5 (42 ≤ RSI < 48 & dốc lên)
+    """
+    res = {'score': 0.0, 'ma_score': 0.0, 'pocket_score': 0.0, 'rsi_score': 0.0,
+           'pocket_pivot': False, 'pocket_vol_x': 0.0, 'pocket_taker': 0.0,
+           'rsi_1d': 50.0, 'tags': []}
+    try:
+        if df_1d is None or len(df_1d) < 30:
+            return res
+        closes = pd.to_numeric(df_1d['Close'], errors='coerce')
+        close_now = float(closes.iloc[-1])
+        ma7  = float(closes.tail(7).mean())
+        ma25 = float(closes.tail(25).mean())
+        ma7_prev3 = float(closes.iloc[-10:-3].mean())
+        ma7_up = ma7 > ma7_prev3
+
+        # 1. Cấu trúc giá vượt MA ngắn hạn
+        if close_now > ma7 and close_now > ma25:
+            res['ma_score'] = 15.0
+            res['tags'].append("Giá>MA7&MA25")
+        elif close_now > ma7 or ma7_up:
+            res['ma_score'] = 8.0
+            res['tags'].append("Giá>MA7" if close_now > ma7 else "MA7↗")
+
+        # 2. Dòng tiền mồi / Pocket Pivot (nến hiện tại hoặc nến liền trước)
+        for idx in (-1, -2):
+            k = df_1d.iloc[idx]
+            o, c = float(k['Open']), float(k['Close'])
+            qv = float(k['Quote_Volume'])
+            ma20_vol = float(df_1d['Quote_Volume'].iloc[idx - 20:idx].mean())
+            vol_x = (qv / ma20_vol) if ma20_vol > 0 else 0.0
+            tb = float(k['Taker_Buy_Quote']) if 'Taker_Buy_Quote' in df_1d.columns else 0.0
+            taker = (tb / qv * 100) if qv > 0 else 0.0
+            if c > o and (vol_x >= AWAKE_POCKET_VOL_X or taker >= AWAKE_POCKET_TAKER):
+                res['pocket_score'] = 10.0
+                res['pocket_pivot'] = True
+                res['pocket_vol_x'] = round(vol_x, 2)
+                res['pocket_taker'] = round(taker, 1)
+                res['tags'].append(f"Vol Mồi x{vol_x:.1f}/Taker {taker:.0f}%")
+                break
+
+        # 3. Động lượng RSI 1D & độ dốc (so với TB 3 nến trước)
+        rsi_s = _rsi_series(closes, 14).dropna()
+        if len(rsi_s) >= 4:
+            rsi_now = float(rsi_s.iloc[-1])
+            rsi_prev3 = float(rsi_s.iloc[-4:-1].mean())
+            res['rsi_1d'] = round(rsi_now, 1)
+            rsi_up = rsi_now > rsi_prev3
+            if 48.0 <= rsi_now <= 68.0 and rsi_up:
+                res['rsi_score'] = 10.0
+                res['tags'].append(f"RSI {rsi_now:.0f}↗")
+            elif 42.0 <= rsi_now < 48.0 and rsi_up:
+                res['rsi_score'] = 5.0
+                res['tags'].append(f"RSI {rsi_now:.0f}↗")
+
+        res['score'] = min(AWAKE_MAX_SCORE, res['ma_score'] + res['pocket_score'] + res['rsi_score'])
+    except Exception as e:
+        logging.debug(f"[Awakening] lỗi tính điểm: {e}")
+    return res
+
 def analyze_early(symbol, info):
     info = info or {}
     if not info:
@@ -837,10 +989,11 @@ def analyze_early(symbol, info):
     adv_drop = float(df_drop_phase['Quote_Volume'].mean())
     
     # Kiểm tra cạn cung (Khối lượng ADV 60 ngày < 85% ADV lúc rơi)
-    if adv_drop > 0:
-        vol_dry_up_ratio = adv_box / adv_drop
-        if vol_dry_up_ratio > 0.85:
-            return None
+    if adv_drop <= 0:
+        return None
+    vol_dry_up_ratio = adv_box / adv_drop
+    if vol_dry_up_ratio > 0.85:
+        return None
         
     vol_drop_pct = (1.0 - vol_dry_up_ratio) * 100
 
@@ -865,7 +1018,13 @@ def analyze_early(symbol, info):
     # Nến gom hàng: Mỗi nến 10đ (Max 20đ)
     score_spikes = min(20.0, accumulation_spikes * 10.0)
     
-    total_early_score = score_drop + score_box + score_vol + score_spikes
+    raw_static_score = score_drop + score_box + score_vol + score_spikes
+    # Nhóm Tĩnh co về trần 65đ: mã chỉ giảm sâu + cạn cung mà chưa có lực mua quay lại KHÔNG vượt 65
+    static_score = min(STATIC_MAX_SCORE, raw_static_score * 0.65)
+
+    # Nhóm Động — Awakening Bonus (tối đa +35đ): dòng tiền mồi + cấu trúc ngóc lên
+    awake = _calc_awakening_bonus(df_1d)
+    total_early_score = min(100.0, static_score + awake['score'])
 
     # Gọi Countdown Radar trên 4H
     df_4h = get_klines_live(symbol, "4h", limit=80)
@@ -876,6 +1035,14 @@ def analyze_early(symbol, info):
         '_raw_symbol': symbol,
         'Giá':         close_now,
         'Điểm':        round(total_early_score, 1),
+        'Đ.Tĩnh':      round(static_score, 1),
+        'Awakening':   round(awake['score'], 1),
+        'Awake_MA':    awake['ma_score'],
+        'Awake_Vol':   awake['pocket_score'],
+        'Awake_RSI':   awake['rsi_score'],
+        'Awake_Tags':  awake['tags'],
+        'Pocket_Pivot': awake['pocket_pivot'],
+        'RSI1D':       awake['rsi_1d'],
         'Chiết Khấu':  round(drop_180d, 1),
         'Nén Hộp':     round(box_amplitude, 1),
         'Cạn Cung':    round(vol_drop_pct, 1),
@@ -886,7 +1053,7 @@ def analyze_early(symbol, info):
         'Imm_Reasons': imminent_reasons
     }
 
-def _enrich_early_with_darvas(item: dict) -> dict:
+def _enrich_early_with_darvas(item: dict, sanitize_b3: bool = True) -> dict:
     """Gọi Darvas Hybrid Override cho 1 mã đã lọc top — chỉ chạy trên Top 5 sau sort."""
     symbol = item.get('_raw_symbol', item['Symbol'] + 'USDT')
     grid_4h_setup = item.get('grid_setup', {})
@@ -942,6 +1109,196 @@ def _enrich_early_with_darvas(item: dict) -> dict:
                 }
     except Exception as e:
         logging.debug(f"[Hybrid Override Bảng3] {symbol} lỗi Darvas: {e}")
+    return _sanitize_b3_grid(item) if sanitize_b3 else item
+
+
+# ── [BUGFIX] Chốt chặn lưới Bảng 3: chống SL âm / Upper +1700% / hàng nghìn lưới ──
+B3_MAX_ATR_PCT   = 0.12   # ATR 1D hiệu dụng ≤ 12% thị giá
+B3_SL_MIN_RATIO  = 0.78   # SL không sâu hơn -22% so với giá hiện tại
+B3_TP_MAX_RATIO  = 1.35   # TP tối đa +35%
+B3_MIN_GRIDS     = 10
+B3_MAX_GRIDS     = 35
+B3_GRID_STEP_PCT = 0.8    # % mỗi bước lưới (đồng bộ Darvas)
+B3_MIN_G1_WIDTH  = 0.03   # G1 (Gom Đáy) hẹp hơn 3% → bỏ G1, chỉ giữ tầng Hứng Breakout
+_B3_IND_ENGINE   = None
+
+
+def _b3_grid_count(lower: float, upper: float) -> int:
+    amp_pct = ((upper - lower) / lower * 100) if lower and lower > 0 else 0
+    return int(min(max(int(amp_pct / B3_GRID_STEP_PCT), B3_MIN_GRIDS), B3_MAX_GRIDS))
+
+
+def _b3_market_context(symbol: str, close: float) -> dict:
+    """ATR 1D, MA7 3D, Supertrend 3D, MA99 3D và trần kháng cự 3D (nếu giá đang bị đè)."""
+    global _B3_IND_ENGINE
+    ctx = {'atr_1d': None, 'ma7_3d': None, 'st_dir_3d': 0, 'st_val_3d': None,
+           'ma99_3d': None, 'overhead_cap_3d': None, 'overhead_src': ''}
+    try:
+        df_1d = get_klines_live(symbol, "1d", limit=30)
+        if df_1d is not None and len(df_1d) >= 15:
+            prev_c = df_1d['Close'].shift(1)
+            tr = pd.concat([df_1d['High'] - df_1d['Low'],
+                            (df_1d['High'] - prev_c).abs(),
+                            (df_1d['Low'] - prev_c).abs()], axis=1).max(axis=1)
+            ctx['atr_1d'] = float(tr.tail(14).mean())
+
+        df_3d = get_klines_live(symbol, "3d", limit=120)
+        if df_3d is not None and len(df_3d) >= 7:
+            ctx['ma7_3d'] = float(df_3d['Close'].tail(7).mean())
+            if len(df_3d) >= 12:
+                if _B3_IND_ENGINE is None:
+                    from core.indicator_engine import IndicatorEngine
+                    _B3_IND_ENGINE = IndicatorEngine()
+                df_lc = df_3d.rename(columns={'High': 'high', 'Low': 'low', 'Close': 'close'})
+                st = _B3_IND_ENGINE.get_supertrend(df_lc, period=10, multiplier=3.0)
+                ctx['st_dir_3d'] = int(st.get('direction', 0))
+                ctx['st_val_3d'] = float(st.get('current_value') or 0) or None
+            if len(df_3d) >= 99:
+                ctx['ma99_3d'] = float(df_3d['Close'].tail(99).mean())
+
+        caps = []
+        if ctx['st_dir_3d'] == -1 and ctx['st_val_3d'] and ctx['st_val_3d'] > close:
+            caps.append((ctx['st_val_3d'], 'ST 3D đỏ'))
+        if ctx['ma99_3d'] and ctx['ma99_3d'] > close:
+            caps.append((ctx['ma99_3d'], 'MA99 3D'))
+        if caps:
+            val, src = min(caps, key=lambda x: x[0])
+            ctx['overhead_cap_3d'], ctx['overhead_src'] = val, src
+    except Exception as e:
+        logging.debug(f"[B3 Guard] {symbol}: lỗi lấy context 1D/3D: {e}")
+    return ctx
+
+
+def _sanitize_b3_grid(item: dict) -> dict:
+    """
+    Chốt chặn cuối cho lưới Bảng 3 (Darvas 4H hoặc fallback Hộp 1D):
+      1. effective_atr_1d = min(atr_1d, close × 0.12)
+      2. SL = max(box_low × 0.92, close × 0.78, MA7_3D × 0.95) — luôn dương & dưới giá
+      3. TP ≤ close × 1.35; bị đè bởi Supertrend 3D đỏ / MA99 3D → TP ≤ overhead_cap_3d × 1.02
+      4. Số lưới mỗi tầng ∈ [10, 35]
+    """
+    try:
+        gs = dict(item.get('grid_setup') or {})
+        if gs.get('status') not in ("SUCCESS", "WARNING_VOLATILE"):
+            return item
+        close = float(item.get('Giá') or 0)
+        if close <= 0:
+            return item
+
+        symbol = item.get('_raw_symbol', str(item.get('Symbol', '')) + 'USDT')
+        ctx = _b3_market_context(symbol, close)
+        notes = []
+
+        # 1. ATR 1D hiệu dụng
+        atr_1d = ctx['atr_1d'] if ctx['atr_1d'] and ctx['atr_1d'] > 0 else close * 0.05
+        eff_atr = min(atr_1d, close * B3_MAX_ATR_PCT)
+        if atr_1d > eff_atr:
+            notes.append(f"ATR1D {atr_1d / close * 100:.0f}%→12%")
+
+        dual = bool(gs.get('is_dual_grid'))
+        box_low = item.get('Box_Floor') or (gs.get('g1_lower') if dual else gs.get('lower_bound')) or close * 0.85
+        box_low = float(box_low)
+
+        # 2. SL sàn dương & hợp lý
+        sl_cands = [box_low * 0.92, close * B3_SL_MIN_RATIO]
+        if ctx['ma7_3d'] and ctx['ma7_3d'] * 0.95 < close * 0.99:
+            sl_cands.append(ctx['ma7_3d'] * 0.95)
+        raw_sl = gs.get('hard_stop_loss')
+        if raw_sl and 0 < float(raw_sl) < close:
+            sl_cands.append(float(raw_sl))
+        if raw_sl is not None and float(raw_sl) < max(sl_cands):
+            notes.append(f"SL {smart_price(raw_sl)}→sàn")
+        sl = min(max(sl_cands), close * 0.99)
+
+        # 3. Biên trên theo ATR hiệu dụng + trần TP
+        if dual:
+            g1_l, g1_u = float(gs.get('g1_lower') or box_low), float(gs.get('g1_upper') or close)
+            g2_l, g2_u = float(gs.get('g2_lower') or g1_u), float(gs.get('g2_upper') or g1_u)
+            g2_u = min(g2_u, g2_l + 3.0 * eff_atr)
+            top = g2_u
+        else:
+            lo, up = float(gs.get('lower_bound') or box_low), float(gs.get('upper_bound') or close)
+            up = min(up, max(lo, close) + 3.0 * eff_atr)
+            top = up
+
+        raw_tp = float(gs.get('hard_take_profit') or top * 1.05)
+        tp = min(raw_tp, top + eff_atr, close * B3_TP_MAX_RATIO)
+        if ctx['overhead_cap_3d']:
+            cap = ctx['overhead_cap_3d'] * 1.02
+            if cap < tp:
+                notes.append(f"TP khóa {ctx['overhead_src']} {smart_price(ctx['overhead_cap_3d'])}")
+            tp = min(tp, cap)
+        elif raw_tp > close * B3_TP_MAX_RATIO:
+            notes.append("TP trần +35%")
+        tp = max(tp, close * 1.01)
+        upper_cap = tp / 1.02   # Biên trên lưới luôn thấp hơn TP ≥ 2%
+        lower_floor = sl * 1.01  # Biên dưới lưới luôn trên SL ≥ 1%
+
+        # 4. Kẹp biên + số lưới 10-35
+        if dual:
+            g1_l = max(g1_l, lower_floor)
+            g1_u = min(g1_u, upper_cap)
+            g2_l = min(max(g2_l, g1_u), upper_cap)
+            g2_u = min(g2_u, upper_cap)
+            g1_width = (g1_u - g1_l) / g1_l if g1_l > 0 else 0.0
+            g1_ok = g1_width >= B3_MIN_G1_WIDTH
+            g2_ok = g2_u > g2_l * 1.005
+            _dual_keys = ("g1_lower", "g1_upper", "g1_grids", "g1_capital_pct",
+                          "g2_lower", "g2_upper", "g2_grids", "g2_capital_pct")
+
+            if not g1_ok and not g2_ok:
+                gs.update({"status": "ERROR",
+                           "message": f"Không đủ room lưới (G1 {g1_width * 100:.1f}% < 3%, Breakout bị kháng cự ép)"})
+                item['grid_setup'] = gs
+                return item
+            if not g1_ok:
+                # G1 hẹp < 3% → bỏ Gom Đáy, chỉ giữ tầng Hứng Breakout (100% vốn)
+                for _k in _dual_keys:
+                    gs.pop(_k, None)
+                gs.update({
+                    "is_dual_grid": False,
+                    "breakout_only": True,
+                    "engine": "GRID Hứng Breakout (100%)",
+                    "lower_bound": round(g2_l, 10), "upper_bound": round(g2_u, 10),
+                    "trigger_price": round(g2_l, 10),
+                    "num_grids": _b3_grid_count(g2_l, g2_u),
+                })
+                notes.append(f"Bỏ G1 (hẹp {max(g1_width, 0) * 100:.1f}% < 3%)")
+            elif not g2_ok:
+                # Tầng Hứng Breakout bị kháng cự 3D ép mất → gộp về 1 lưới đơn
+                for _k in _dual_keys:
+                    gs.pop(_k, None)
+                gs.update({
+                    "is_dual_grid": False,
+                    "lower_bound": round(g1_l, 10), "upper_bound": round(g1_u, 10),
+                    "num_grids": _b3_grid_count(g1_l, g1_u),
+                })
+                notes.append("Gộp 1 lưới (hết room Breakout)")
+            else:
+                gs.update({
+                    "g1_lower": round(g1_l, 10), "g1_upper": round(g1_u, 10),
+                    "g1_grids": _b3_grid_count(g1_l, g1_u),
+                    "g2_lower": round(g2_l, 10), "g2_upper": round(g2_u, 10),
+                    "g2_grids": _b3_grid_count(g2_l, g2_u),
+                })
+        else:
+            lo, up = max(lo, lower_floor), min(up, upper_cap)
+            if up <= lo:
+                gs.update({"status": "ERROR", "message": "Biên lưới không hợp lệ sau chốt chặn SL/TP"})
+                item['grid_setup'] = gs
+                return item
+            gs.update({"lower_bound": round(lo, 10), "upper_bound": round(up, 10),
+                       "num_grids": _b3_grid_count(lo, up)})
+
+        gs.update({
+            "hard_stop_loss": round(sl, 10),
+            "hard_take_profit": round(tp, 10),
+            "tp_cap": round(tp, 10),
+            "b3_guard_note": " • ".join(notes),
+        })
+        item['grid_setup'] = gs
+    except Exception as e:
+        logging.debug(f"[B3 Guard] {item.get('Symbol')}: lỗi sanitize: {e}")
     return item
 
 def analyze_momentum(symbol, info):
@@ -1148,7 +1505,7 @@ def get_filtered_symbols(live_data_map):
         # ⚡ Gọi Darvas Hybrid Override cho Top 10 is_safe (pre-filtered)
         for idx in top10_indices:
             row_dict = df_summary.loc[idx].to_dict()
-            enriched = _enrich_early_with_darvas(row_dict)
+            enriched = _enrich_early_with_darvas(row_dict, sanitize_b3=False)
             df_summary.at[idx, 'grid_setup'] = enriched.get('grid_setup', {})
 
 
@@ -1359,6 +1716,51 @@ if __name__ == "__main__":
     symbols, safety_map = get_filtered_symbols(cache.get_live_data_map())
     print("\n[+] Danh sách lọc (Format CCXT):", symbols)
 
+def _print_b3_grid_tp2(sym, sym_ccxt, entry, grid_setup, box_floor, macro):
+    """In dòng `🎯 [GRID TP2 - {symbol}]` cho Bảng 3 — đồng bộ với Động cơ 2/3/4. Fail-safe."""
+    try:
+        from views.console_renderer import ConsoleRenderer
+        from models.market_state import SymbolState
+
+        grid_setup = grid_setup or {}
+        grid_ok = grid_setup.get('status') in ("SUCCESS", "WARNING_VOLATILE")
+
+        # SL ngắn: cạnh dưới hộp Darvas (4H g1_lower / lower_bound → hộp 1D) → fallback SL 4H × 1.03
+        sl_candidates = []
+        if grid_ok:
+            if grid_setup.get('breakout_only'):
+                # Chỉ còn tầng Breakout: biên dưới lưới sát giá → dùng SL cứng đã qua chốt chặn
+                sl_candidates.append(grid_setup.get('hard_stop_loss'))
+            else:
+                sl_candidates.append(grid_setup.get('g1_lower') if grid_setup.get('is_dual_grid') else grid_setup.get('lower_bound'))
+        sl_candidates.append(box_floor)
+        if macro and getattr(macro, 'sl_4h', 0):
+            sl_candidates.append(macro.sl_4h * 1.03)
+        sl_short = next((float(x) for x in sl_candidates if x and 0 < float(x) < entry), None)
+
+        # Trần lưới: max(TP Hứng Breakout 30%, TP 4H)
+        tp_candidates = []
+        if grid_ok and grid_setup.get('hard_take_profit'):
+            tp_candidates.append(float(grid_setup.get('hard_take_profit')))
+        if macro and getattr(macro, 'tp_4h', 0):
+            tp_candidates.append(float(macro.tp_4h))
+        tp2_target = max(tp_candidates) if tp_candidates else 0.0
+        # [BUGFIX] Khóa trần TP2 theo chốt chặn Bảng 3 (+35% / kháng cự 3D)
+        if grid_ok and grid_setup.get('tp_cap'):
+            tp2_target = min(tp2_target, float(grid_setup['tp_cap'])) if tp2_target else float(grid_setup['tp_cap'])
+
+        if not sl_short or tp2_target <= entry:
+            print(f"   ↳ 🎯 [GRID TP2 - {sym}] ⚠️ Chưa đủ mốc SL/TP hợp lệ để dựng lưới")
+            return
+
+        state = SymbolState(
+            symbol=sym_ccxt, current_price=entry, volume_24h=0.0, avg_vola_24h=0.0,
+            coin_vola_24h=0.0, safety_tag="", macro_levels=macro
+        )
+        ConsoleRenderer._print_grid_tp2(state, entry, sl_short, tp2_target, fallback_ratio=0.95)
+    except Exception as e:
+        print(f"   ↳ 🎯 [GRID TP2] Render Error: {e}")
+
 def print_final_tables(early_list, df_summary, current_time_str, macro_levels_map=None):
     if df_summary is None or df_summary.empty:
         summary_list = []
@@ -1383,10 +1785,12 @@ def print_final_tables(early_list, df_summary, current_time_str, macro_levels_ma
             is_imminent = r.get('Imminent', False)
             imm_reasons = r.get('Imm_Reasons', [])
             
+            radar_parts = []
             if is_imminent:
-                radar_str = f"🔥 IMMINENT: {' • '.join(imm_reasons)}"
-            else:
-                radar_str = "-"
+                radar_parts.append(f"🔥 IMMINENT: {' • '.join(imm_reasons)}")
+            if r.get('Pocket_Pivot'):
+                radar_parts.append("🟢 Nổ Vol Mồi")
+            radar_str = " | ".join(radar_parts) if radar_parts else "-"
                 
             print(fmt_row3([
                 sym_display,
@@ -1398,6 +1802,12 @@ def print_final_tables(early_list, df_summary, current_time_str, macro_levels_ma
                 f"{r['Nến Gom']} nến",
                 radar_str
             ]))
+
+            # Breakdown thang điểm: Tĩnh (≤65) + Awakening (≤35)
+            _awk_tags = r.get('Awake_Tags') or []
+            print(f"    ↳ [Điểm] Tĩnh: {r.get('Đ.Tĩnh', 0)}/65 | ⏰ Awakening: +{r.get('Awakening', 0)}/35 "
+                  f"(MA {r.get('Awake_MA', 0):.0f} • Vol {r.get('Awake_Vol', 0):.0f} • RSI {r.get('Awake_RSI', 0):.0f})"
+                  f"{' | ' + ' • '.join(_awk_tags) if _awk_tags else ' | 💤 Chưa thức giấc'}")
             
             # Tính toán gợi ý Scale Order cho 1000 USDT (10 lệnh -> 100 USDT/lệnh)
             sym = r['Symbol']
@@ -1420,13 +1830,19 @@ def print_final_tables(early_list, df_summary, current_time_str, macro_levels_ma
                     engine = grid_setup.get('engine', 'GRID 4H')
                     
                     trigger_buffer_4h = 0.005
-                    trig = upper * (1 + trigger_buffer_4h) if upper is not None else None
+                    if grid_setup.get('trigger_price'):
+                        trig, trig_lbl = grid_setup['trigger_price'], "Breakout xác nhận"
+                    else:
+                        trig = upper * (1 + trigger_buffer_4h) if upper is not None else None
+                        trig_lbl = "Đón lõng hộp"
                     sl = grid_setup.get('hard_stop_loss', lower * 0.97 if lower is not None else None)
                     tp = grid_setup.get('hard_take_profit', upper * 1.05 if upper is not None else None)
                     tp_buf = grid_setup.get('tp_buffer_pct', 0.05)
                     tp_buf_str = f"+{tp_buf*100:.1f}%" if tp_buf is not None else "N/A"
                     
-                    print(f"  ↳ ⚙️ {engine} {warning_tag}: [{sym}] | Trig: {smart_price(trig)} (Đón lõng hộp) | Lưới: {smart_price(lower)} - {smart_price(upper)} ({num_grids}L) | SL: {smart_price(sl)} (SL Cứng) | TP: {smart_price(tp)} ({tp_buf_str})")
+                    print(f"  ↳ ⚙️ {engine} {warning_tag}: [{sym}] | Trig: {smart_price(trig)} ({trig_lbl}) | Lưới: {smart_price(lower)} - {smart_price(upper)} ({num_grids}L) | SL: {smart_price(sl)} (SL Cứng) | TP: {smart_price(tp)} ({tp_buf_str})")
+                if grid_setup.get('b3_guard_note'):
+                    print(f"    ↳ 🛡️ [Chốt chặn] {grid_setup['b3_guard_note']}")
             else:
                 error_msg = grid_setup.get('message', 'Không rõ lỗi')
                 engine = grid_setup.get('engine', 'GRID 4H')
@@ -1449,21 +1865,34 @@ def print_final_tables(early_list, df_summary, current_time_str, macro_levels_ma
                     if df_1h is not None and df_4h is not None and df_15m is not None and len(df_1h) >= 24 and len(df_4h) >= 30:
                         cache = ExchangeInfoCache()
                         tick_size = cache.get_tick_size(sym_api)
-                        m_dict = calculate_universal_macro_levels(df_4h, df_1h, tick_size, klines_15m_df=df_15m)
+                        m_dict = calculate_universal_macro_levels(df_4h, df_1h, tick_size, klines_15m_df=df_15m, symbol=sym_api)
                         if m_dict['status'] == 'SUCCESS':
                             macro = MacroLevels(
                                 entry_4h=m_dict['entry_4h'],
                                 sl_4h=m_dict['sl_4h'],
                                 tp_1h=m_dict['tp_1h'],
-                                tp_4h=m_dict['tp_4h']
+                                tp_4h=m_dict['tp_4h'],
+                                d3=m_dict.get('d3'),
                             )
                 except Exception:
                     pass
 
+            # Hồ sơ Khung 3D (ưu tiên lấy từ macro, thiếu thì tính từ cache — 0 API call)
+            try:
+                from core.macro_levels import get_3d_profile, format_3d_summary
+                _d3_b3 = (macro.d3 if macro is not None else None) or get_3d_profile(sym)
+                _d3_str = format_3d_summary(_d3_b3, smart_price)
+            except Exception:
+                _d3_str = ""
+
             if macro:
-                print(f"    ↳ [Macro 4H] Entry: {smart_price(macro.entry_4h):<10} | SL Cứng: {smart_price(macro.sl_4h):<10} | TP 1H: {smart_price(macro.tp_1h):<10} | TP 4H: {smart_price(macro.tp_4h):<10}")
+                print(f"    ↳ [Macro 4H] Entry: {smart_price(macro.entry_4h):<10} | SL Cứng: {smart_price(macro.sl_4h):<10} | TP 1H: {smart_price(macro.tp_1h):<10} | TP 4H: {smart_price(macro.tp_4h):<10}{_d3_str}")
             else:
-                print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới)")
+                print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới){_d3_str}")
+
+            # 🎯 GRID TP2 (Bảng 3): Trig=Giá Live | SL ngắn=Đáy hộp Darvas (không hợp lệ → SL 4H×1.03)
+            #                     Trần=max(TP Hứng Breakout 30%, TP 4H) | Fallback 0.95
+            _print_b3_grid_tp2(sym, sym_ccxt, gia, grid_setup, r.get('Box_Floor'), macro)
 
     print("=" * _TW3 + "\n")
     # ── 8. 🏆 BẢNG CHẤM ĐIỂM REBALANCE (in sau cùng) ──────────────────
@@ -1478,7 +1907,11 @@ def print_final_tables(early_list, df_summary, current_time_str, macro_levels_ma
                        "Đ.RSI", "RSI1H", "Giá Live", "Giá Limit", "Cần Giảm",
                        "Vol24H(M)", "Vola24H%"]))
         print("-" * _TW)
-        for rank, row in enumerate(df_summary.head(30).to_dict(orient='records'), 1):
+        # Sort SAU CÙNG — sau khi đã cộng/trừ toàn bộ điểm 3D (an toàn↓ → TỔNG↓ → Cần Giảm↑)
+        _df_rank = df_summary.sort_values(
+            by=["is_safe", "TỔNG", "Cần Giảm"], ascending=[False, False, True]
+        )
+        for rank, row in enumerate(_df_rank.head(30).to_dict(orient='records'), 1):
             print(fmt_row([
                 "#" + str(rank),
                 row["Symbol"],

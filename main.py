@@ -34,7 +34,7 @@ from engines.dc3_breakout_engine import DC3BreakoutEngine
 from engines.dc4_hot_trend_engine import DC4HotTrendEngine
 from core.grid_calculator import GridCalculator
 from core.exchange_info_cache import ExchangeInfoCache
-from core.macro_levels import calculate_universal_macro_levels
+from core.macro_levels import calculate_universal_macro_levels, get_3d_profile
 
 # Thiết lập logging
 logging.basicConfig(
@@ -194,13 +194,17 @@ def main():
                         df_1d = repo.get_klines_df(sym_api, '1d', 50)
                         df_15m = repo.get_klines_df(sym_api, '15m', 250)
 
-                        res = early_warning.check_warning_level(df_1h, df_4h, df_1d)
+                        # ── Hồ sơ Khung 3D (gộp từ 300 nến 1D trong RAM — 0 API call khi cache ấm) ──
+                        tick_size = exc_info.get_tick_size(sym_api)
+                        d3 = get_3d_profile(sym_api, tick_size)
+
+                        res = early_warning.check_warning_level(df_1h, df_4h, df_1d, d3=d3)
                         res['symbol'] = sym
+                        res['d3'] = d3
 
                         # ── Tính Macro Levels ngay trong luồng EW ──────────
                         # df_4h & df_1h đã có sẵn trong RAM (klines_cache hit)
                         # → Zero extra API calls
-                        tick_size = exc_info.get_tick_size(sym_api)
                         ml_result = calculate_universal_macro_levels(
                             klines_4h_df=df_4h,
                             klines_1h_df=df_1h,
@@ -215,6 +219,7 @@ def main():
                                 tp_1h   =ml_result['tp_1h'],
                                 tp_4h   =ml_result['tp_4h'],
                                 sl_4h   =ml_result['sl_4h'],
+                                d3      =d3,
                             )
                         else:
                             res['macro_levels'] = None
@@ -327,7 +332,7 @@ def main():
                         setup1 = state.scores["DC2"].entry_setup1
                         setup2 = state.scores["DC2"].entry_setup2
                         
-                        if setup1 and setup2:
+                        if setup1 and setup2 and "GÃY MA7 3D" not in (state.scores["DC2"].action_label or ""):
                             logger.warning(f"[TIN HIEU DC2] {symbol} APPROVED | "
                                            f"Entry={fmt_price(setup1.entry_price)} "
                                            f"| OCO-1 SL={fmt_price(setup1.sl_price)} TP={fmt_price(setup1.tp1_price)} "
@@ -382,7 +387,7 @@ def main():
                     score = state.scores["DC2"].total_score
                     if score >= 70:
                         setup = state.scores["DC2"].entry_setup1
-                        if setup:
+                        if setup and "GÃY MA7 3D" not in (state.scores["DC2"].action_label or ""):
                             executor.execute_entry_setup(symbol=state.symbol, amount=0.01, setup=setup)
 
                 # Dò tìm lệnh Grid

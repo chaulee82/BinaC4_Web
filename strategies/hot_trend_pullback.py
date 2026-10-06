@@ -398,6 +398,22 @@ class HotTrendPullback:
             ema_ok = (ema20_1h > ema50_1h) and (close_live > ema20_1h)
             score_c1_rsi, label_rsi = _score_rsi_c1(rsi_1h)
 
+            # ── [3D ROUTER] Hồ sơ Khung 3D (0 API call — gộp từ nến 1D trong cache) ──
+            try:
+                from core.macro_levels import get_3d_profile
+                d3 = get_3d_profile(symbol)
+            except Exception:
+                d3 = None
+            is_breakout_3d = bool(d3 and d3.get('is_3d_breakout_wave'))
+            is_broken_3d   = bool(d3 and d3.get('is_3d_broken_ma7'))
+            expl           = (d3 or {}).get('explosive') or {}
+            is_explosive   = bool(expl.get('is_explosive'))
+
+            # Chiến thuật 2: Miễn phạt RSI 1H > 75 cho Siêu Sóng 3D
+            if is_breakout_3d and rsi_1h > 75:
+                score_c1_rsi = 20
+                label_rsi = f"RSI Nóng ({rsi_1h:.1f}) — 🚀 Miễn Phạt (Siêu Sóng 3D)"
+
             if ema_ok:
                 score_c1   = score_c1_rsi
                 status_c1  = f"EMA20({ema20_1h:.4f}) > EMA50({ema50_1h:.4f}) ✅ | {label_rsi}"
@@ -448,6 +464,10 @@ class HotTrendPullback:
                     c_body = abs(c_o - c_c)
                     c_wick_pct = c_upper / max(c_o, c_c) * 100
                     if c_wick_pct > 3.0 and c_upper > c_body * 2:
+                        if is_breakout_3d:
+                            # Chiến thuật 2: Râu trên 1H trong Siêu Sóng 3D = rung lắc, không phạt
+                            status_c2 += f" | 🚀 Miễn phạt Râu 1H ({c_wick_pct:.1f}%)"
+                            break
                         score_c2 = 0
                         status_c2 = f"🔴 Bơm xả (Râu trên {c_wick_pct:.1f}%) — TỪ CHỐI"
                         break
@@ -548,6 +568,37 @@ class HotTrendPullback:
             # Gọi sau khi đã qua các hard-gate 1H để giảm số lần gọi df_1d
             c0 = _check_c0_cycle(df_1d)
 
+            # ── [3D ROUTER] Điều chỉnh C0 theo Khung 3D & Dòng Tiền Bạo Phát ──
+            c0_score = c0['score']
+            tags_3d  = []
+            if is_broken_3d:
+                # Chiến thuật 4: −40 vào C0 (thay vì cộng điểm Macro)
+                c0_score = min(c0_score, 0) - 40
+                tags_3d.append(f"🔴 GÃY MA7 3D ({d3['ma7_3d']}) −40")
+            else:
+                bonus_combo = 0
+                if is_breakout_3d and d3.get('score_bonus_3d', 0) > 0:
+                    bonus_combo += d3['score_bonus_3d']
+                    tags_3d.append(f"🚀 {d3.get('breakout_state', 'SIÊU SÓNG 3D')} +{d3['score_bonus_3d']}")
+                if is_explosive:
+                    bonus_combo += expl.get('bonus', 0)
+                    tags_3d.append(f"{expl['tag']} +{expl.get('bonus', 0)}")
+                # Trần thưởng kết hợp (Chân Sóng 3D + Bạo Phát) ≤ +30 — chống lạm phát điểm
+                from core.macro_levels import COMBINED_BONUS_CAP
+                if bonus_combo > COMBINED_BONUS_CAP:
+                    bonus_combo = COMBINED_BONUS_CAP
+                    tags_3d.append(f"Trần thưởng +{COMBINED_BONUS_CAP}")
+                c0_score += bonus_combo
+            # Trần tổng C0 (Macro gốc + 3D Bonus + Bạo Phát) ≤ +30 — chống vọt điểm DC4
+            C0_TOTAL_CAP = 30
+            if c0_score > C0_TOTAL_CAP:
+                c0_score = C0_TOTAL_CAP
+                tags_3d.append(f"Trần C0 +{C0_TOTAL_CAP}")
+            if tags_3d:
+                c0 = dict(c0)
+                c0['label'] = f"{c0['label']} | " + " | ".join(tags_3d) + f" ⇒ C0={c0_score:+d}đ"
+            c0['score'] = c0_score
+
             # Tổng Điểm & Tính Setup ────────────────────────────────────
             # C0 cộng/trừ điều chỉnh vào tổng (có thể âm nếu rủi ro phân phối)
             score_c1c5  = score_c1 + score_c2 + score_c3 + score_c4 + score_c5
@@ -564,21 +615,39 @@ class HotTrendPullback:
             max_sl_pct = 0.07
             if (close_live - sl_price) / close_live > max_sl_pct:
                 sl_price = close_live * (1.0 - max_sl_pct)
+
+            # [Dòng Tiền Bạo Phát] Trigger đón nhịp nhúng (−2.5% → −4.5%) thay vì mua đuổi đỉnh nến 1H
+            entry_price = close_live
+            if is_explosive and not is_broken_3d:
+                from core.macro_levels import explosive_trigger_price
+                entry_price = explosive_trigger_price(close_live, ema20_1h, d3.get('boll_up_3d', 0.0), d3.get('tick_size', 0.0))
+                if sl_price >= entry_price * 0.99:
+                    sl_price = entry_price * (1.0 - max(atr_pct * 1.5, 0.025))
+
+            # [Chiến thuật 2] SL Cứng bám sát dưới MA7 3D × 0.96 (không nới lỏng hơn SL hiện tại)
+            if is_breakout_3d and d3.get('hard_sl_3d') and d3['hard_sl_3d'] < entry_price:
+                sl_price = max(sl_price, d3['hard_sl_3d'])
             
             # TP: dùng Swing High 24H gần nhất làm mục tiêu thực tế
             sh_24       = _swing_high(df_1h, lookback=24)
             tp1_price   = sh_24 if sh_24 > close_live * 1.01 else close_live + atr_14 * 2.5
-            sl_dist     = max(close_live - sl_price, 1e-9)
-            tp_dist     = max(tp1_price - close_live, 0.0)
+            if is_breakout_3d:
+                # Chiến thuật 2: mở rộng mục tiêu theo Khung 3D → giải phóng lỗi R/R < 2.0
+                from core.macro_levels import breakout_tp_target
+                tp1_price = breakout_tp_target(entry_price, sl_price, tp1_price, d3)
+            sl_dist     = max(entry_price - sl_price, 1e-9)
+            tp_dist     = max(tp1_price - entry_price, 0.0)
             rr_ratio    = round(tp_dist / sl_dist, 2)
-            sl_pct      = round(sl_dist / close_live * 100, 2)
-            tp1_pct     = round(tp_dist / close_live * 100, 2)
+            sl_pct      = round(sl_dist / entry_price * 100, 2)
+            tp1_pct     = round(tp_dist / entry_price * 100, 2)
 
             # ── Phán Quyết Hành Động ──────────────────────────────────────
             # Ngưỡng giữ nguyên: C0 là bộ khuếch đại/triệt tiêu, không thay đổi ngưỡng
             # Mã Chân Sóng (+35 C0) + C1-C5 tốt = tổng cao → dễ đạt ngưỡng vào lệnh
             # Mã Đu Đỉnh (-20 C0) + C1-C5 cao   = tổng bị kéo xuống → từ chối tự nhiên
-            if score_c1_rsi == 0:
+            if is_broken_3d:
+                action = f"🔴 TỪ CHỐI (GÃY MA7 3D {d3['ma7_3d']})"
+            elif score_c1_rsi == 0:
                 action = "🔴 TỪ CHỐI (RSI Climax/Yếu)"
             elif st_dir_1h == -1:
                 action = "🔴 TỪ CHỐI (Dưới Supertrend 1H - Dao Rơi)"
@@ -626,7 +695,7 @@ class HotTrendPullback:
                 'C5 Taker':    status_c5,
                 'Hành Động':   action,
                 'trade_setup': {
-                    'entry':       close_live,
+                    'entry':       round(entry_price, 8),
                     'stop_loss':   round(sl_price, 8),
                     'take_profit': round(tp1_price, 8),
                     'sl_pct':      sl_pct,
@@ -634,7 +703,10 @@ class HotTrendPullback:
                     'rr_ratio':    rr_ratio,
                     'ema20':       round(ema20_1h, 8),
                     'ema50':       round(ema50_1h, 8),
-                }
+                    'is_trigger':  entry_price != close_live,
+                },
+                'explosive_tag': expl.get('tag', '') if (is_explosive and not is_broken_3d) else '',
+                'strategy_3d':   (d3 or {}).get('strategy_3d', ''),
             }
 
         except Exception:

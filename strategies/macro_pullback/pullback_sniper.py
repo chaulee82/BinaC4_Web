@@ -38,7 +38,7 @@ class PullbackSniper:
           - Giá close 1D trên MA25 1D (uptrend hoặc tích lũy trên nền tảng)
         """
         try:
-            candles_1d = self.exchange.fetch_ohlcv(symbol, '1d', limit=30)
+            candles_1d = self.exchange.fetch_ohlcv(symbol, '1d', limit=31)
             df_1d = pd.DataFrame(candles_1d, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
 
             ma25_1d = df_1d['close'].rolling(window=25).mean().iloc[-1]
@@ -46,17 +46,27 @@ class PullbackSniper:
 
             trend_pct = ((close_1d - ma25_1d) / ma25_1d) * 100
 
+            # Đà tăng 7D / 30D (phục vụ Macro Momentum Bonus C0)
+            close_7d_ago = df_1d['close'].iloc[-8] if len(df_1d) >= 8 else df_1d['close'].iloc[0]
+            close_30d_ago = df_1d['close'].iloc[-31] if len(df_1d) >= 31 else df_1d['close'].iloc[0]
+            change_7d = ((close_1d - close_7d_ago) / close_7d_ago * 100) if close_7d_ago > 0 else 0.0
+            change_30d = ((close_1d - close_30d_ago) / close_30d_ago * 100) if close_30d_ago > 0 else 0.0
+
             if close_1d >= ma25_1d:
                 return {
                     "ok": True,
                     "reason": f"✅ Macro 1D OK (Giá trên MA25 1D, +{trend_pct:.1f}%)",
-                    "trend_pct": round(trend_pct, 2)
+                    "trend_pct": round(trend_pct, 2),
+                    "change_7d": round(float(change_7d), 2),
+                    "change_30d": round(float(change_30d), 2)
                 }
             else:
                 return {
                     "ok": False,
                     "reason": f"❌ Macro 1D Downtrend (Giá dưới MA25 1D, {trend_pct:.1f}%) — Dead Cat Risk",
-                    "trend_pct": round(trend_pct, 2)
+                    "trend_pct": round(trend_pct, 2),
+                    "change_7d": round(float(change_7d), 2),
+                    "change_30d": round(float(change_30d), 2)
                 }
         except Exception as e:
             # Lỗi API → cho qua để không chặn toàn bộ hệ thống
@@ -65,6 +75,58 @@ class PullbackSniper:
                 "reason": f"⚠️ Macro 1D gate lỗi API (bỏ qua): {str(e)[:60]}",
                 "trend_pct": 0.0
             }
+
+    # =========================================================================
+    # C0: MACRO MOMENTUM BONUS (+0 → +15 ĐIỂM) — Tie-breaker ưu tiên mã khỏe
+    # Tương tự C0 của Động cơ 4: cộng vào tổng điểm C1-C4 (clamp 100)
+    # =========================================================================
+    BARS_PER_24H = {'15m': 96, '30m': 48, '1h': 24, '2h': 12, '4h': 6, '6h': 4, '12h': 2, '1d': 1}
+    MACRO_BONUS_MAX = 15
+
+    def calc_macro_momentum_bonus(self, df: pd.DataFrame, timeframe: str, macro_gate: dict = None) -> dict:
+        """
+        C0.1 MA99 Slope 24h ≥ +1.0%            : +5
+        C0.2 Đà tăng 7D  > +5%  (và ≤ +35%)    : +5   (>35% = FOMO, không thưởng)
+        C0.3 Đà tăng 30D > +10% (7D chưa FOMO)  : +5
+        Tổng tối đa +15.
+        """
+        macro_gate = macro_gate or {}
+        score = 0
+        tags = []
+        slope_pct = 0.0
+        try:
+            bars = self.BARS_PER_24H.get(timeframe, 6)
+            closes = df['close']
+            if len(closes) >= 99 + bars:
+                ma99_now = float(closes.iloc[-99:].mean())
+                ma99_prev = float(closes.iloc[-99 - bars:-bars].mean())
+                slope_pct = ((ma99_now - ma99_prev) / ma99_prev * 100) if ma99_prev > 0 else 0.0
+                if slope_pct >= 1.0:
+                    score += 5
+                    tags.append(f"MA99↗{slope_pct:+.1f}%")
+        except Exception:
+            slope_pct = 0.0
+
+        change_7d = float(macro_gate.get("change_7d", 0.0) or 0.0)
+        change_30d = float(macro_gate.get("change_30d", 0.0) or 0.0)
+        is_fomo_7d = change_7d > 35.0
+
+        if 5.0 < change_7d and not is_fomo_7d:
+            score += 5
+            tags.append(f"7D {change_7d:+.1f}%")
+        if change_30d > 10.0 and not is_fomo_7d:
+            score += 5
+            tags.append(f"30D {change_30d:+.1f}%")
+
+        score = min(self.MACRO_BONUS_MAX, score)
+        status = ("🚀 Đà tăng vĩ mô: " + " • ".join(tags)) if tags else "— Chưa có đà tăng vĩ mô nổi bật"
+        return {
+            "score": score,
+            "ma99_slope_pct": round(slope_pct, 2),
+            "change_7d": round(change_7d, 2),
+            "change_30d": round(change_30d, 2),
+            "status": status
+        }
 
     # =========================================================================
     # CỬA 1: ĐỊNH VỊ VÙNG HẠ CÁNH / HỢP LƯU (TỐI ĐA 30 ĐIỂM)
@@ -289,7 +351,7 @@ class PullbackSniper:
                 }
 
             # 1. Kéo dữ liệu nến OHLCV
-            candles = self.exchange.fetch_ohlcv(symbol, timeframe, limit=100)
+            candles = self.exchange.fetch_ohlcv(symbol, timeframe, limit=120)
             df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
 
             # 2. Tính toán các chỉ báo cốt lõi
@@ -336,10 +398,26 @@ class PullbackSniper:
                 c1 = {"score": 30, "confluence_count": 0, "status": "🔥 KÍCH HOẠT DEEP PANIC SNIPER (Ghi đè hội tụ)"}
                 c2 = {"score": 25, "vol_ratio": 0, "status": panic_check["status"]}
 
-            total_score = c1['score'] + c2['score'] + c3['score'] + c4['score']
+            base_score = c1['score'] + c2['score'] + c3['score'] + c4['score']
+
+            # 4.6 C0 — Macro Momentum Bonus (ưu tiên mã có xu hướng nền khỏe)
+            c0 = self.calc_macro_momentum_bonus(df, timeframe, macro_gate)
+
+            # 4.7 [3D ROUTER] Chiến thuật 4 — Gãy đường ray MA7 3D: −30đ vào C0 & CẤM APPROVED
+            d3 = None
+            try:
+                from core.macro_levels import get_3d_profile
+                d3 = get_3d_profile(symbol)
+            except Exception:
+                d3 = None
+            is_broken_3d = bool(d3 and d3.get("is_3d_broken_ma7"))
+            macro_bonus = c0['score'] - 30 if is_broken_3d else c0['score']
+            total_score = min(100, base_score + macro_bonus)
 
             # 5. Phân tầng hành động
-            if total_score >= 85:
+            if is_broken_3d:
+                action = f"⛔ GÃY MA7 3D ({d3['ma7_3d']}) — TỪ CHỐI"
+            elif total_score >= 85:
                 action = "🟢 LOẠI A: Kích hoạt 100% Volume (Full Limit OCO)"
             elif total_score >= 70:
                 action = "🟡 LOẠI B: Kích hoạt 50% Volume (Thăm dò)"
@@ -350,9 +428,12 @@ class PullbackSniper:
                 "symbol": symbol,
                 "price": current_price,
                 "total_score": total_score,
+                "base_score": base_score,
+                "macro_bonus": macro_bonus,
                 "action": action,
                 "details": {
                     "Gate_0_Macro1D": macro_gate,
+                    "Gate_0_MacroBonus": c0,
                     "Gate_1_Confluence": c1,
                     "Gate_2_Volume": c2,
                     "Gate_3_OrderBook": c3,

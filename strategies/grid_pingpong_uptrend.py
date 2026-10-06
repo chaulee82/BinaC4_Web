@@ -243,6 +243,17 @@ class GridPingpongUptrendScorer:
                 score_accel += (5.0 - dist_to_ema50) * 0.5
             
             pingpong_score = score_freq + score_accel + score_box_range + score_rsi + score_range + (quote_vol / 10_000_000_000.0)
+
+            # [3D ROUTER] Chiến thuật 1 — Cột Cờ Cao 3D (QNT/ZRO/AAVE/NIL): +15 điểm Grid PingPong
+            tag_3d = ""
+            try:
+                from core.macro_levels import get_3d_profile
+                _d3 = get_3d_profile(symbol)
+                if _d3 and _d3.get('is_3d_high_flag_wide_grid'):
+                    pingpong_score += 15.0
+                    tag_3d = " | 🦅 CỘT CỜ 3D +15"
+            except Exception:
+                pass
             
             if pingpong_score >= 30:
                 rank = "Hạng S - Siêu phẩm"
@@ -250,6 +261,7 @@ class GridPingpongUptrendScorer:
                 rank = "Hạng A - Đạt chuẩn"
             else:
                 rank = "Hạng B - Đạt chuẩn (Thấp)"
+            rank += tag_3d
 
             calc = GridCalculator()
             grid_params = calc.calculate_grid_pingpong_uptrend(
