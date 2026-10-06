@@ -7,7 +7,10 @@ import logging
 from dotenv import load_dotenv
 
 if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+    # line_buffering=True: flush từng dòng → print() và logging (stderr) không bị đảo thứ tự / rơi dòng tiêu đề
+    sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', line_buffering=True)
 
 from strategies.macro_pullback.pullback_sniper import PullbackSniper
 from strategies.macro_pullback.entry_calculator_service import (

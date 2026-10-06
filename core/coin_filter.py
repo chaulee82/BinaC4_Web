@@ -1911,7 +1911,14 @@ def print_final_tables(early_list, df_summary, current_time_str, macro_levels_ma
         _df_rank = df_summary.sort_values(
             by=["is_safe", "TỔNG", "Cần Giảm"], ascending=[False, False, True]
         )
+        _printed_sub_hdr = False
         for rank, row in enumerate(_df_rank.head(30).to_dict(orient='records'), 1):
+            if not row.get("is_safe") and not _printed_sub_hdr:
+                _printed_sub_hdr = True
+                if rank > 1:
+                    print("-" * _TW)
+                print("⚠️ NHÓM PHỤ — Chưa đạt chuẩn An Toàn (RSI 1H ≥ 70 / FOMO 24H / Né Grid / Gãy Trend...) → xếp sau nhóm chính dù điểm cao hơn")
+                print("-" * _TW)
             print(fmt_row([
                 "#" + str(rank),
                 row["Symbol"],
