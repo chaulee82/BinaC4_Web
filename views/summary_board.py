@@ -15,6 +15,9 @@ Cơ chế MÃ DỰ PHÒNG (Fallback): mỗi bảng chia 2 danh sách song song
     primary rỗng → lấy Top 2 từ backup, gắn thẻ [⚠️ DỰ PHÒNG]. Cả 2 rỗng → báo không có setup.
     Chốt chặn sinh tử (CẤP 3 KHẨN CẤP, GÃY MA7 3D) và Công tắc BTC vẫn áp dụng cho cả mã dự phòng.
 
+Điểm Strict 3D (0–100, đọc từ tag cuối dòng lưới): ✅ ≥75đ → primary | 🟡 50–74đ → chỉ backup | ⛔ <50đ → loại.
+    Bảng Grid TP2 / Wide Grid xếp hạng ưu tiên số 1 theo Điểm Strict 3D.
+
 Thiết kế: Pure logic (không gọi API) — mọi dữ liệu ngữ cảnh truyền vào qua tham số. Fail-safe.
 """
 
@@ -42,6 +45,7 @@ TAG_SETUP             = "⚙️ SETUP"
 WIDE_GRID_3D_SIGNALS  = ("🚀 [3D: CHÂN SÓNG", "CỘT CỜ CAO")
 BACKUP_TAG            = "[⚠️ DỰ PHÒNG]"
 TAG_STRICT_OK         = "🛡️ [3D STRICT ✅]"
+TAG_STRICT_WATCH      = "🟡 [3D STRICT ⚠️]"       # 50–74đ: Sát chuẩn → chỉ vào danh sách DỰ PHÒNG
 TAG_STRICT_FAIL       = "⛔ [3D STRICT]"
 GRID_KINDS            = ("GRID_TP2", "WIDE_GRID_3D")
 
@@ -61,6 +65,17 @@ _RE_RR         = re.compile(r"R/R=1:(\d+(?:\.\d+)?)")
 _RE_SL_PCT     = re.compile(r"SL=[^|(]*\((-?\d+(?:\.\d+)?)%\)")
 _RE_TRIG       = re.compile(r"Trig:\s*([\d.]+)")
 _RE_BOUNCES    = re.compile(r"B:(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)%")
+_RE_STRICT_SCORE = re.compile(r"\[3D STRICT[^\]]*\]\s*(\d+)đ")
+_RE_STRICT_SEG   = re.compile(r"(?:🛡️ \[3D STRICT ✅\]|🟡 \[3D STRICT ⚠️\])[^|]*")
+
+
+def strict_score_of(line: Optional[str]) -> float:
+    """Điểm Strict 3D (0–100) đọc từ tag cuối dòng lưới. Tag cũ không có điểm: ✅ = 100, còn lại = 0."""
+    s = line or ""
+    m = _RE_STRICT_SCORE.search(s)
+    if m:
+        return float(m.group(1))
+    return 100.0 if TAG_STRICT_OK in s else 0.0
 
 
 @dataclass
@@ -258,18 +273,20 @@ def classify_pool(pool: List[SignalRecord], spot_enabled: bool = True) -> Dict[s
     for s in pool:
         if is_fatal_error(s):
             continue
-        # 1. Grid TP2 — lưới trượt cổng Strict 3D (⛔) bị loại hẳn, kể cả dự phòng
+        # 1. Grid TP2 — ⛔ (<50đ) loại hẳn; 🟡 Sát chuẩn (50–74đ) chỉ vào dự phòng
         if _has_grid_tp2(s) and TAG_STRICT_FAIL not in s.grid_tp2_line:
-            (b["tp2_backup"] if "NÉ GRID" in s.grid_warning else b["tp2_primary"]).append(s)
+            is_bk = "NÉ GRID" in s.grid_warning or TAG_STRICT_WATCH in s.grid_tp2_line
+            (b["tp2_backup"] if is_bk else b["tp2_primary"]).append(s)
         # 2. Spot
         if spot_enabled:
             if _is_spot_primary(s):
                 b["spot_primary"].append(s)
             elif _is_spot_backup(s):
                 b["spot_backup"].append(s)
-        # 3. Wide Grid 3D — lưới trượt cổng Strict 3D (⛔) bị loại hẳn
+        # 3. Wide Grid 3D — ⛔ loại hẳn; 🟡 Sát chuẩn chỉ vào dự phòng
         if TAG_WIDE_GRID in s.wide_grid_line and TAG_STRICT_FAIL not in s.wide_grid_line:
-            (b["wide_primary"] if _is_wide_primary(s) else b["wide_backup"]).append(s)
+            is_pr = _is_wide_primary(s) and TAG_STRICT_WATCH not in s.wide_grid_line
+            (b["wide_primary"] if is_pr else b["wide_backup"]).append(s)
     return b
 
 
@@ -285,20 +302,23 @@ def sort_by_score(lst):      return sorted(lst, key=lambda s: s.target_score, re
 
 
 def sort_grid_tp2(lst):
-    """Bảng 2: thang điểm DC2 / DC3 / DC4 khác hệ quy chiếu (DC4 dễ 95–115đ, DC3 ~60–85đ)
-    → ưu tiên 1 = 💥 Tiền Bạo Phát (đã chuẩn hóa, cùng ý nghĩa mọi Động cơ), ưu tiên 2 = Điểm."""
-    return sorted(lst, key=lambda s: (_num(s.money_flow), _num(s.target_score)), reverse=True)
+    """Bảng 2: ưu tiên 1 = Điểm Strict 3D (cấu trúc vĩ mô — siêu phẩm 100đ lên đầu),
+    ưu tiên 2 = 💥 Tiền Bạo Phát (đã chuẩn hóa, cùng ý nghĩa mọi Động cơ), ưu tiên 3 = Điểm Động cơ
+    (thang điểm DC2 / DC3 / DC4 khác hệ quy chiếu: DC4 dễ 95–115đ, DC3 ~60–85đ)."""
+    return sorted(lst, key=lambda s: (strict_score_of(s.grid_tp2_line), _num(s.money_flow), _num(s.target_score)),
+                  reverse=True)
 
 
 def sort_wide_primary(lst):
-    return sorted(lst, key=lambda s: (s.bounces, s.bounce_range,
+    return sorted(lst, key=lambda s: (strict_score_of(s.wide_grid_line), s.bounces, s.bounce_range,
                                       WIDE_GRID_ENGINE_PRIO.get(s.engine_source, 1), s.target_score),
                   reverse=True)
 
 
 def sort_wide_backup(lst):
-    # Điểm Rebalance (cột TỔNG) cao nhất → ưu tiên tín hiệu DC1 → điểm Động cơ
-    return sorted(lst, key=lambda s: (s.rebalance_score, s.engine_source == "DC1", s.target_score),
+    # Điểm Strict 3D → Điểm Rebalance (cột TỔNG) → ưu tiên tín hiệu DC1 → điểm Động cơ
+    return sorted(lst, key=lambda s: (strict_score_of(s.wide_grid_line), s.rebalance_score,
+                                      s.engine_source == "DC1", s.target_score),
                   reverse=True)
 
 
@@ -397,14 +417,20 @@ def print_formatted_table(signals_list: List[SignalRecord], kind: str, backup_sy
             components.append(macro_3d)
 
         setup_str = getattr(signal, _LINE_BY_KIND.get(kind, ""), "") or ""
-        # 🛡️ Tag kiểm dịch Strict 3D — đưa lên dòng tiêu đề, bỏ khỏi dòng setup để không lặp
-        if kind in GRID_KINDS and TAG_STRICT_OK in setup_str:
-            components.insert(1 if engine else 0, TAG_STRICT_OK)
-            setup_str = setup_str.replace(f" | {TAG_STRICT_OK}", "").replace(TAG_STRICT_OK, "").rstrip(" |")
+        # 🛡️ Tag Điểm Strict 3D (✅ / 🟡) — đưa lên dòng tiêu đề, bỏ khỏi dòng setup để không lặp
+        m_strict = _RE_STRICT_SEG.search(setup_str) if kind in GRID_KINDS else None
+        if m_strict:
+            components.insert(1 if engine else 0, m_strict.group(0).strip())
+            setup_str = (setup_str[:m_strict.start()] + setup_str[m_strict.end():]).replace("|  |", "|").strip().rstrip(" |")
 
         print(f"  #{i} {prefix}{signal.symbol:<8} | " + " | ".join(c for c in components if c))
         if setup_str:
             print(f"     ↳ {setup_str}")
+        # SPOT: bổ sung các dòng setup Grid (TP2 / Wide 3D) mà chính Động cơ đó đã in — giữ nguyên tag Strict 3D
+        if kind == "SPOT":
+            for extra in (getattr(signal, "grid_tp2_line", ""), getattr(signal, "wide_grid_line", "")):
+                if extra:
+                    print(f"     ↳ {extra}")
 
 
 _RE_PAREN = re.compile(r"\s*\([^)]*\)")
@@ -416,13 +442,27 @@ def _strict_group_key(reason: str) -> str:
     return _RE_PAREN.sub("", reason or "").replace("Vi phạm ", "").strip() or "Không rõ"
 
 
+def _rec_score(rec: Dict[str, Any]) -> int:
+    """Điểm Strict 3D của bản ghi. Fallback sổ cũ (không có điểm): 25đ × số tầng đạt, trần 74đ
+    (đã vào sổ = dưới chuẩn); không có tầng trượt = thiếu dữ liệu → 0đ."""
+    if rec.get("score") is not None:
+        return int(rec.get("score") or 0)
+    failed = rec.get("failed_layers") or []
+    return min(74, 25 * (4 - len(failed))) if failed else 0
+
+
 def print_strict_3d_rejections(rejections: Optional[Dict[str, Dict[str, Any]]]) -> None:
-    """Mục thống kê (dạng gọn): gom mã bị loại theo LÝ DO CHÍNH (tầng thấp nhất bị vi phạm), mỗi nhóm 1 dòng.
-    Ký hiệu `MÃ×N` = trượt N tầng. Nhóm 🟡 Sát chuẩn = chỉ trượt đúng 1 tầng (đáng theo dõi).
-    rejections: {sym: {"engines": set, "kinds": set, "reasons": [...], "failed_layers": [...]}}"""
-    print(f"\n### ⛔ 4. DANH SÁCH MÃ BỊ LOẠI DO TRƯỢT CỔNG STRICT 3D — {len(rejections or {})} mã")
+    """Mục thống kê theo ĐIỂM STRICT 3D (chỉ chứa mã < 75đ — mã ≥ 75đ đã được cấp phép dựng lưới):
+       🟡 Sát chuẩn 50–74đ → Watchlist / thăm dò tỷ trọng thấp (xếp theo điểm↓)
+       ⛔ Loại hẳn < 50đ   → gom theo LÝ DO CHÍNH (tầng thấp nhất bị vi phạm), mỗi nhóm 1 dòng
+    rejections: {sym: {"engines", "kinds", "reasons", "failed_layers", "score", "tier"}}"""
+    rejections = rejections or {}
+    watch = {s: r for s, r in rejections.items() if _rec_score(r) >= 50}
+    reject = {s: r for s, r in rejections.items() if s not in watch}
+    print(f"\n### ⛔ 4. MÃ DƯỚI CHUẨN STRICT 3D (< 75đ) — {len(rejections)} mã "
+          f"(🟡 Watchlist {len(watch)} | ⛔ Loại {len(reject)})")
     if not rejections:
-        print("   Không có mã nào bị loại (hoặc chưa có mã nào được đề xuất lưới).")
+        print("   Không có mã nào dưới chuẩn (hoặc chưa có mã nào được đề xuất lưới).")
         return
 
     # 📊 Thống kê theo tầng (1 mã có thể trượt nhiều tầng)
@@ -434,16 +474,18 @@ def print_strict_3d_rejections(rejections: Optional[Dict[str, Dict[str, Any]]]) 
         print("   📊 " + " | ".join(f"T{lv} {_STRICT_LAYER_NAMES.get(lv, '?')}: {n}"
                                  for lv, n in sorted(layer_count.items())))
 
-    def _n_fail(sym: str) -> int:
-        return len(rejections[sym].get("failed_layers") or [])
+    # 🟡 Sát chuẩn — Watchlist (điểm cao trước)
+    if watch:
+        def _w_label(sym: str) -> str:
+            fl = watch[sym].get("failed_layers") or []
+            miss = f"(✗T{',T'.join(str(x) for x in fl)})" if fl else ""
+            return f"{sym} {_rec_score(watch[sym])}đ{miss}"
+        syms = sorted(watch, key=lambda s: (-_rec_score(watch[s]), s))
+        print(f"   🟡 Sát chuẩn 50–74đ — Watchlist ({len(watch)}): " + ", ".join(_w_label(s) for s in syms))
 
-    def _label(sym: str) -> str:
-        n = _n_fail(sym)
-        return f"{sym}×{n}" if n > 1 else sym
-
-    # Gom theo lý do chính = lý do đầu tiên (tầng thấp nhất)
+    # ⛔ Loại hẳn — gom theo lý do chính = lý do đầu tiên (tầng thấp nhất)
     groups: Dict[str, List[str]] = {}
-    for sym, rec in rejections.items():
+    for sym, rec in reject.items():
         reasons = rec.get("reasons") or ["Thiếu dữ liệu nến 3D"]
         groups.setdefault(_strict_group_key(reasons[0]), []).append(sym)
 
@@ -452,14 +494,9 @@ def print_strict_3d_rejections(rejections: Optional[Dict[str, Dict[str, Any]]]) 
         return int(m.group(1)) if m else 9
 
     for key in sorted(groups, key=lambda k: (_layer_of(k), -len(groups[k]), k)):
-        syms = sorted(groups[key], key=lambda s: (_n_fail(s), s))      # Mã gần đạt chuẩn đứng trước
-        print(f"   ⛔ {key} ({len(syms)}): " + ", ".join(_label(s) for s in syms))
-
-    near = sorted(s for s in rejections if _n_fail(s) == 1)
-    if near:
-        print(f"   🟡 Sát chuẩn — chỉ trượt 1 tầng ({len(near)}): "
-              + ", ".join(f"{s}(T{rejections[s]['failed_layers'][0]})" for s in near))
-    print("   ℹ️ MÃ×N = trượt N/4 tầng | nhóm theo tầng thấp nhất bị vi phạm")
+        syms = sorted(groups[key], key=lambda s: (-_rec_score(reject[s]), s))      # Mã điểm cao đứng trước
+        print(f"   ⛔ {key} ({len(syms)}): " + ", ".join(f"{s} {_rec_score(reject[s])}đ" for s in syms))
+    print("   ℹ️ Điểm Strict 3D = 25đ/tầng đạt (+ tối đa 8đ an ủi/tầng trượt) | ≥75 ✅ cấp phép | 50–74 🟡 | <50 ⛔")
 
 
 _print_table = print_formatted_table   # tương thích tên cũ

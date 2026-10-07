@@ -95,12 +95,12 @@ class ConsoleRenderer:
 
     @staticmethod
     def _strict_tag(state: SymbolState, engine: str, kind: str) -> str:
-        """🛡️ Cổng kiểm dịch Strict 3D: trả về tag gắn cuối dòng lưới (✅ / ⛔) + tự ghi sổ nếu trượt.
-        Không in lý do — chi tiết xem ở BẢNG TỔNG KẾT TỐI ƯU (mục 4)."""
+        """🛡️ Cổng kiểm dịch Strict 3D: trả về tag điểm gắn cuối dòng lưới + tự ghi sổ nếu < 75đ.
+        ✅ ≥75đ (cấp phép) | 🟡 50–74đ (Watchlist) | ⛔ <50đ (loại). Lý do chi tiết → BẢNG TỔNG KẾT TỐI ƯU (mục 4)."""
         try:
-            from core.macro_levels import strict_3d_gate, STRICT_3D_TAG_OK, STRICT_3D_TAG_FAIL
+            from core.macro_levels import strict_3d_gate, strict_3d_short_tag
             res = strict_3d_gate(state.symbol, engine=engine or "?", kind=kind, d3=ConsoleRenderer._get_d3(state))
-            return STRICT_3D_TAG_OK if res.get("is_valid") else STRICT_3D_TAG_FAIL
+            return strict_3d_short_tag(res)
         except Exception:
             return "⛔ [3D STRICT]"
 

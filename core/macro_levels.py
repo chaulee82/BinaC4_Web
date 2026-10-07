@@ -531,11 +531,24 @@ def route_3d_strategy(ind: dict, flow: dict, tick_size: float = 0.0) -> dict:
 # ═════════════════════════════════════════════════════════════════════════════
 # BỘ LỌC CỨNG "SIÊU SÓNG 3D" — CỔNG KIỂM DỊCH CHUNG (Universal Gatekeeper)
 # Áp dụng cho MỌI lưới: DC1 Darvas / Wide Grid 3D, Grid TP2 (DC2/DC3/DC4), DC5 PingPong.
-# Chặn các mã pump & dump: bắt buộc qua đủ 4 tầng mới được cấp phép dựng lưới.
+# Chặn các mã pump & dump bằng Điểm Strict 3D (0–100, 25đ/tầng): ≥ 75đ mới được cấp phép dựng lưới,
+# 50–74đ = Sát chuẩn (Watchlist), < 50đ = Loại hẳn.
 # ═════════════════════════════════════════════════════════════════════════════
 STRICT_3D_TAG_OK       = "🛡️ [3D STRICT ✅]"
+STRICT_3D_TAG_WATCH    = "🟡 [3D STRICT ⚠️]"       # Sát chuẩn (50–74đ): Watchlist / thăm dò tỷ trọng thấp
 STRICT_3D_TAG_REJECT   = "⛔ [3D STRICT] - NÉ GRID"
 STRICT_3D_TAG_FAIL     = "⛔ [3D STRICT]"          # Tag ngắn gắn vào dòng lưới ở từng Động cơ (chi tiết → Bảng Tổng Kết)
+
+# ── Hệ thống Điểm Strict 3D (0–100) ─────────────────────────────────────────
+# Mỗi tầng đạt = 25đ. Tầng trượt được "điểm an ủi" tối đa STRICT_3D_PARTIAL_MAX theo tỷ lệ điều kiện con đạt
+# → phân hạng trong cùng bậc. Giữ PARTIAL_MAX ≤ 8 để bậc luôn khớp số tầng đạt:
+#   4 tầng = 100 | 3 tầng = 75–83 (PASS) | 2 tầng = 50–66 (WATCH) | ≤1 tầng ≤ 49 (REJECT). Đặt 0 → 25đ/tầng thuần.
+STRICT_3D_LAYER_PTS     = 25
+STRICT_3D_PARTIAL_MAX   = 8
+STRICT_3D_PASS_SCORE    = 75     # ≥ 75: Đạt chuẩn → cấp phép tự động dựng lưới mọi Động cơ
+STRICT_3D_WATCH_SCORE   = 50     # 50–74: Sát chuẩn → Watchlist / Mã dự phòng; < 50: Loại hẳn
+STRICT_3D_VETO_CAP      = 74     # Quyền phủ quyết: nến xả phân phối / Vol vượt thân cờ → khóa trần (tối đa 🟡)
+STRICT_3D_TIER_PASS, STRICT_3D_TIER_WATCH, STRICT_3D_TIER_REJECT = "PASS", "WATCH", "REJECT"
 STRICT_3D_POLE_LOOKBACK = 10     # Tìm cột cờ trong 10 nến 3D gần nhất (~30 ngày, không tính nến hiện tại)
 STRICT_3D_POLE_BASE_N   = 10     # Nền so sánh Vol cột cờ: TB 10 nến 3D trước nó
 STRICT_3D_POLE_MIN_VR   = 1.5    # Cột cờ: nến 3D tăng có Vol ≥ 1.5× nền
@@ -554,9 +567,30 @@ def _strict_ma_series(c: pd.Series):
     return ma7, ma25, ma99
 
 
+def strict_3d_tier(score: float) -> str:
+    """Quy đổi Điểm Strict 3D → bậc cấp phép."""
+    if score >= STRICT_3D_PASS_SCORE:
+        return STRICT_3D_TIER_PASS
+    if score >= STRICT_3D_WATCH_SCORE:
+        return STRICT_3D_TIER_WATCH
+    return STRICT_3D_TIER_REJECT
+
+
+def strict_3d_short_tag(res: dict) -> str:
+    """Tag ngắn gắn cuối dòng lưới: `🛡️ [3D STRICT ✅] 81đ (✗T3)` | `🟡 [3D STRICT ⚠️] 58đ (✗T3,T4)` | `⛔ [3D STRICT] 25đ`."""
+    res = res or {}
+    score = int(res.get("score", 0) or 0)
+    tier = res.get("tier") or strict_3d_tier(score)
+    head = {STRICT_3D_TIER_PASS: STRICT_3D_TAG_OK, STRICT_3D_TIER_WATCH: STRICT_3D_TAG_WATCH}.get(tier, STRICT_3D_TAG_FAIL)
+    failed = res.get("failed_layers") or []
+    miss = f" (✗T{',T'.join(str(x) for x in failed)})" if failed and tier != STRICT_3D_TIER_REJECT else ""
+    return f"{head} {score}đ{miss}"
+
+
 def _strict_fail(reason: str) -> dict:
     """Kết quả trượt cổng do thiếu dữ liệu / lỗi (fail-safe = loại)."""
-    return {"is_valid": False, "passed": False, "score": 0, "checks": {}, "failed_layers": [],
+    return {"is_valid": False, "passed": False, "full_pass": False, "score": 0, "tier": STRICT_3D_TIER_REJECT,
+            "layer_scores": [0, 0, 0, 0], "checks": {}, "failed_layers": [],
             "reasons": [reason], "tag": f"{STRICT_3D_TAG_REJECT} | {reason}"}
 
 
@@ -583,7 +617,9 @@ def _evaluate_strict_3d(df_3d: pd.DataFrame, ind: dict) -> dict:
         L1, L2, L3, L4 = (f"Vi phạm Tầng {i} - " for i in range(1, 5))
 
         # ── Tầng 1: Supertrend 3D xanh, giá nằm trên ST ─────────────────────
-        st_ok = ind["st_dir_3d"] == 1 and close > ind["st_val_3d"] > 0
+        st_green, st_above = ind["st_dir_3d"] == 1, close > ind["st_val_3d"] > 0
+        st_ok = st_green and st_above
+        st_frac = (st_green + st_above) / 2.0
         if not st_ok:
             reasons.append(L1 + ("Mất Supertrend 3D (đỏ)" if ind["st_dir_3d"] != 1 else "Giá dưới Supertrend 3D"))
 
@@ -599,6 +635,7 @@ def _evaluate_strict_3d(df_3d: pd.DataFrame, ind: dict) -> dict:
         if not slope_ok:
             reasons.append(L2 + "MA 3D dốc xuống (" + ",".join(k for k, ok in slopes.items() if not ok) + ")")
         ma_ok = stack_ok and slope_ok
+        ma_frac = (stack_ok + sum(slopes.values())) / 4.0
 
         # ── Tầng 3: Kiệt cung sau Cột cờ (Volume Profile) ───────────────────
         pole = None
@@ -612,6 +649,8 @@ def _evaluate_strict_3d(df_3d: pd.DataFrame, ind: dict) -> dict:
                 pole = i
 
         vol_ok = False
+        vol_frac = 0.0                       # Không có cột cờ → 0 điểm an ủi
+        veto = False                         # Dấu hiệu pump & dump → phủ quyết cấp phép
         dryup_ratio = None
         pole_age = None
         if pole is None:
@@ -635,6 +674,8 @@ def _evaluate_strict_3d(df_3d: pd.DataFrame, ind: dict) -> dict:
             if not hold_ok:
                 reasons.append(L3 + f"Lùi quá {STRICT_3D_MAX_RETRACE:.0%} thân cờ")
             vol_ok = dry_ok and not exceed and not dump and hold_ok
+            vol_frac = (dry_ok + (not exceed) + (not dump) + hold_ok) / 4.0
+            veto = bool(exceed or dump)
 
         # ── Tầng 4: Nửa trên dải BOLL 3D ────────────────────────────────────
         up, mid, dn = ind["boll_up_3d"], ind["boll_mid_3d"], ind["boll_dn_3d"]
@@ -643,13 +684,28 @@ def _evaluate_strict_3d(df_3d: pd.DataFrame, ind: dict) -> dict:
         if not boll_ok:
             reasons.append(L4 + f"Dưới nửa trên BOLL 3D (%B {pct_b:.2f})")
 
+        boll_frac = min(1.0, max(0.0, pct_b / STRICT_3D_MIN_PCT_B)) if STRICT_3D_MIN_PCT_B > 0 else 0.0
+
         checks = {"supertrend": st_ok, "ma_stack": ma_ok, "volume_dryup": vol_ok, "boll_upper_half": boll_ok}
         layer_ok = [st_ok, ma_ok, vol_ok, boll_ok]
-        passed = all(layer_ok)
+        fracs = [st_frac, ma_frac, vol_frac, boll_frac]
+        layer_scores = [STRICT_3D_LAYER_PTS if ok else int(round(STRICT_3D_PARTIAL_MAX * f))
+                        for ok, f in zip(layer_ok, fracs)]
+        score = int(sum(layer_scores))
+        if veto and score > STRICT_3D_VETO_CAP:
+            score = STRICT_3D_VETO_CAP
+            reasons.append(f"⛔ Phủ quyết: dấu hiệu phân phối → khóa trần {STRICT_3D_VETO_CAP}đ")
+        tier = strict_3d_tier(score)
+        full_pass = all(layer_ok)
+        passed = tier == STRICT_3D_TIER_PASS                    # ≥ 75đ → cấp phép dựng lưới
         out = {
             "is_valid": passed,
             "passed": passed,                                   # alias tương thích cũ
-            "score": 25 * sum(layer_ok),                        # 0–100: 25 điểm / tầng đạt
+            "full_pass": full_pass,                             # Đạt đủ cả 4 tầng (100đ)
+            "score": score,                                     # 0–100
+            "tier": tier,                                       # PASS | WATCH | REJECT
+            "veto": veto,                                       # True = bị khóa trần do phân phối
+            "layer_scores": layer_scores,
             "checks": checks,
             "failed_layers": [i + 1 for i, ok in enumerate(layer_ok) if not ok],
             "reasons": reasons,
@@ -657,11 +713,15 @@ def _evaluate_strict_3d(df_3d: pd.DataFrame, ind: dict) -> dict:
             "pole_age": pole_age,
             "pct_b": pct_b,
         }
-        if passed:
-            out["tag"] = (f"{STRICT_3D_TAG_OK} ST🟢 | MA7>25>99↗ | Vol cạn {dryup_ratio:.2f}x thân cờ "
+        if full_pass:
+            out["tag"] = (f"{STRICT_3D_TAG_OK} {score}đ ST🟢 | MA7>25>99↗ | Vol cạn {dryup_ratio:.2f}x thân cờ "
                           f"({pole_age} nến 3D trước) | %B {pct_b:.2f}")
+        elif tier == STRICT_3D_TIER_PASS:
+            out["tag"] = f"{STRICT_3D_TAG_OK} {score}đ | " + "; ".join(reasons)
+        elif tier == STRICT_3D_TIER_WATCH:
+            out["tag"] = f"{STRICT_3D_TAG_WATCH} {score}đ - WATCHLIST | " + "; ".join(reasons)
         else:
-            out["tag"] = f"{STRICT_3D_TAG_REJECT} | " + "; ".join(reasons)
+            out["tag"] = f"{STRICT_3D_TAG_REJECT} {score}đ | " + "; ".join(reasons)
         return out
     except Exception as e:
         return _strict_fail(f"Lỗi kiểm định 3D: {e}")
@@ -716,11 +776,14 @@ def record_strict_3d_rejection(symbol: str, engine: str, result: dict, kind: str
     if not sym:
         return
     with _strict_rej_lock:
-        rec = _strict_rejections.setdefault(sym, {"engines": set(), "kinds": set(), "reasons": [], "failed_layers": []})
+        rec = _strict_rejections.setdefault(sym, {"engines": set(), "kinds": set(), "reasons": [], "failed_layers": [],
+                                                  "score": 0, "tier": STRICT_3D_TIER_REJECT})
         rec["engines"].add(engine)
         rec["kinds"].add(kind)
         rec["reasons"] = list((result or {}).get("reasons") or ["Thiếu dữ liệu nến 3D"])
         rec["failed_layers"] = list((result or {}).get("failed_layers") or [])
+        rec["score"] = int((result or {}).get("score", 0) or 0)
+        rec["tier"] = (result or {}).get("tier") or strict_3d_tier(rec["score"])
 
 
 def get_strict_3d_rejections() -> dict:
@@ -734,7 +797,7 @@ def reset_strict_3d_rejections() -> None:
 
 
 def strict_3d_gate(symbol: str, engine: str, kind: str = "GRID", d3: dict = None) -> dict:
-    """Kiểm dịch + tự ghi sổ nếu trượt. Dùng trước khi dựng bất kỳ lưới nào."""
+    """Kiểm dịch + tự ghi sổ nếu < 75đ (WATCH / REJECT). Dùng trước khi dựng bất kỳ lưới nào."""
     res = validate_strict_3d_wave(d3 if d3 else symbol)
     if not res.get("is_valid"):
         record_strict_3d_rejection(symbol, engine, res, kind)
