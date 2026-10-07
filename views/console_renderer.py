@@ -2,12 +2,57 @@ import pandas as pd
 from typing import List, Dict, Any
 from models.market_state import SymbolState, ScoreContext, GridContext, EarlyWarningContext, EntrySetupContext, MacroState
 from core.grid_tp2_builder import build_macro_grid_payload
+from views.summary_board import (
+    SignalRecord, clean_line, classify_action, extract_money_flow, extract_bounces,
+)
 
 class ConsoleRenderer:
     """
     Lớp chuyên trách xử lý hiển thị ra màn hình Console.
     Đảm bảo Fail-Safe bằng cách bọc toàn bộ trong try-except.
     """
+
+    def __init__(self):
+        # global_signals_pool — thu thập trong lúc in bảng, dùng cho BẢNG TỔNG KẾT TỐI ƯU
+        self.signals_pool: list = []
+
+    def _collect(self, state: SymbolState, engine: str, score_ctx: ScoreContext,
+                 setup=None, setup_line: str = "", grid_tp2_line: str = "", wide_grid_line: str = ""):
+        """Đưa 1 tín hiệu (mã × Động cơ) vào signals_pool. Fail-safe: lỗi không làm vỡ bảng."""
+        try:
+            from core.grid_tp2_builder import _clean_symbol
+            d3 = self._get_d3(state) or {}
+            gates = (score_ctx.c1_score, score_ctx.c2_score, score_ctx.c3_score,
+                     score_ctx.c4_score, score_ctx.bonus_score)
+            sl_pct = None
+            rr = 0.0
+            if setup is not None and setup.entry_price:
+                sl_pct = -(setup.entry_price - setup.sl_price) / setup.entry_price * 100
+                rr = float(setup.rr_ratio or 0.0)
+            expl = (d3.get("explosive") or {}).get("ratio", 0.0) or 0.0
+            bounces, b_range = extract_bounces(score_ctx.c1_score) if engine == "DC5" else (0.0, 0.0)
+            try:
+                score = float(score_ctx.total_score or 0)
+            except (TypeError, ValueError):
+                score = 0.0
+            self.signals_pool.append(SignalRecord(
+                symbol=_clean_symbol(state.symbol),
+                engine_source=engine,
+                action_status=classify_action(engine, score_ctx.action_label, gates),
+                action_label=score_ctx.action_label or "",
+                target_score=score,
+                money_flow=max(extract_money_flow(score_ctx.action_label, state.money_flow_tag), float(expl)),
+                rr_ratio=rr,
+                sl_percent=sl_pct,
+                macro_3d_signal=d3.get("strategy_tag_3d", "") or "",
+                setup_line=clean_line(setup_line),
+                grid_tp2_line=clean_line(grid_tp2_line),
+                wide_grid_line=clean_line(wide_grid_line),
+                bounces=bounces,
+                bounce_range=b_range,
+            ))
+        except Exception:
+            pass
     
     @staticmethod
     def fmt_price(price: float) -> str:
@@ -49,25 +94,30 @@ class ConsoleRenderer:
             return ""
 
     @staticmethod
-    def _print_wide_grid(state: SymbolState):
-        """In `🦅 [WIDE GRID 3D - {symbol}]` (28L, vốn 1.000 USDT) cho mã close > MA7 3D & vol 24h ≥ 12M."""
+    def _print_wide_grid(state: SymbolState) -> str:
+        """In `🦅 [WIDE GRID 3D - {symbol}]` (28L, vốn 1.000 USDT) cho mã close > MA7 3D & vol 24h ≥ 12M.
+        Trả về chuỗi đã in (rỗng nếu không in) để đưa vào signals_pool."""
         try:
             d3 = ConsoleRenderer._get_d3(state)
             wg = (d3 or {}).get("wide_grid")
             if not wg or not wg.get("valid"):
-                return
+                return ""
             from core.grid_tp2_builder import _make_formatter, _clean_symbol
             f = _make_formatter(d3.get("tick_size") or None)
             sym = _clean_symbol(state.symbol)
-            print(f"   ↳ 🦅 [WIDE GRID 3D - {sym}] {f(wg['wide_low'])} - {f(wg['wide_up'])} | {wg['wide_grids']}L | "
-                  f"Trig: {f(wg['wide_trig'])} | SL: {f(wg['wide_sl'])} | TP: {f(wg['wide_up'])} "
-                  f"(Vốn {wg['capital']:.0f}$ ≈ {wg['per_grid_usdt']}$/lưới)")
+            line = (f"   ↳ 🦅 [WIDE GRID 3D - {sym}] {f(wg['wide_low'])} - {f(wg['wide_up'])} | {wg['wide_grids']}L | "
+                    f"Trig: {f(wg['wide_trig'])} | SL: {f(wg['wide_sl'])} | TP: {f(wg['wide_up'])} "
+                    f"(Vốn {wg['capital']:.0f}$ ≈ {wg['per_grid_usdt']}$/lưới)")
+            print(line)
+            return line
         except Exception as e:
             print(f"   ↳ 🦅 [WIDE GRID 3D] Render Error: {e}")
+            return ""
 
     @staticmethod
-    def _print_grid_tp2(state: SymbolState, entry: float, sl_short: float, tp2_target: float, fallback_ratio: float):
-        """In dòng cài đặt nhanh Spot Grid `🎯 [GRID TP2 - {symbol}]`. Fail-safe: lỗi không làm vỡ bảng."""
+    def _print_grid_tp2(state: SymbolState, entry: float, sl_short: float, tp2_target: float, fallback_ratio: float) -> str:
+        """In dòng cài đặt nhanh Spot Grid `🎯 [GRID TP2 - {symbol}]`. Fail-safe: lỗi không làm vỡ bảng.
+        Trả về chuỗi đã in (rỗng nếu không dựng được lưới) để đưa vào signals_pool."""
         try:
             tick_size = None
             try:
@@ -101,11 +151,14 @@ class ConsoleRenderer:
                 fallback_ratio=fallback_ratio,
             )
             if payload:
-                print(payload["display_line"] + cap_note)
+                line = payload["display_line"] + cap_note
+                print(line)
+                return line
             elif cap_note:
                 print(f"   ↳ 🎯 [GRID TP2] ⚠️ Trần TP2 bị Cản 3D khóa ({ConsoleRenderer.fmt_price(tp2_target)}) ≤ Trig — KHÔNG dựng lưới")
         except Exception as e:
             print(f"   ↳ 🎯 [GRID TP2] Render Error: {e}")
+        return ""
 
     def render_early_warning_matrix(self, warning_results: List[Dict[str, Any]], total_scanned: int):
         """Render Bảng Cảnh Báo Sớm"""
@@ -169,7 +222,8 @@ class ConsoleRenderer:
                     print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}{self._d3_suffix(state)}")
 
                 # 🦅 WIDE GRID 3D (DC1)
-                self._print_wide_grid(state)
+                wide_line = self._print_wide_grid(state)
+                self._collect(state, "DC1", score_ctx, wide_grid_line=wide_line)
 
             print("=" * 80)
         except Exception as e:
@@ -231,11 +285,20 @@ class ConsoleRenderer:
                 # GRID TP2 (DC2): Trig=OCO-2 Buy | SL ngắn=OCO-2 SL | Trần=OCO-2 TP | Fallback 0.96
                 # OCO-2 bị ẩn → fallback OCO-1 để 100% mã có setup đều in GRID TP2
                 s_grid = score_ctx.entry_setup2 or score_ctx.entry_setup1
+                grid_line = ""
                 if s_grid:
-                    self._print_grid_tp2(state, s_grid.entry_price, s_grid.sl_price, s_grid.tp1_price, fallback_ratio=0.96)
+                    grid_line = self._print_grid_tp2(state, s_grid.entry_price, s_grid.sl_price, s_grid.tp1_price, fallback_ratio=0.96)
 
                 # 🦅 WIDE GRID 3D (DC2)
-                self._print_wide_grid(state)
+                wide_line = self._print_wide_grid(state)
+
+                # Summary Board: DC2 Spot dùng OCO-1 → chuẩn hóa về định dạng `⚙️ SETUP:`
+                setup_line = ""
+                if score_ctx.entry_setup1:
+                    s1 = score_ctx.entry_setup1
+                    setup_line = f"⚙️ SETUP: In={self.fmt_price(s1.entry_price)} | SL={self.fmt_price(s1.sl_price)}(-{sl1_pct:.1f}%) | TP={self.fmt_price(s1.tp1_price)}(+{tp1_pct:.1f}%) | R/R=1:{s1.rr_ratio:.1f}"
+                self._collect(state, "DC2", score_ctx, setup=score_ctx.entry_setup1, setup_line=setup_line,
+                              grid_tp2_line=grid_line, wide_grid_line=wide_line)
 
                 if score >= 70:
                     print("-" * 100)
@@ -270,18 +333,21 @@ class ConsoleRenderer:
                 print(f"{sym:<8}{flow} | {score:<5} | {c1:<10} | {c2:<10} | {c3:<10} | {c4:<10} | {bonus:<6} | {act}")
                 
                 # In Entry Setup
+                setup_line = ""
                 if score_ctx.entry_setup1:
                     setup = score_ctx.entry_setup1
                     if setup.setup_type == "MOCK_SCALE_OUT":
                         sl_pct = (setup.entry_price - setup.sl_price) / setup.entry_price * 100 if setup.entry_price else 0
                         tp1_pct = (setup.tp1_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
                         tp2_pct = (setup.tp2_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
-                        print(f"   ↳ ⚙️ SETUP: In={self.fmt_price(setup.entry_price)} | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}")
+                        setup_line = f"   ↳ ⚙️ SETUP: In={self.fmt_price(setup.entry_price)} | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}"
+                        print(setup_line)
                         print(f"       📄 [MOCK] TP1={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | TP2={self.fmt_price(setup.tp2_price)}(+{tp2_pct:.1f}%)")
                     else:
                         sl_pct = (setup.entry_price - setup.sl_price) / setup.entry_price * 100 if setup.entry_price else 0
                         tp1_pct = (setup.tp1_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
-                        print(f"   ↳ ⚙️ SETUP: In={self.fmt_price(setup.entry_price)} | TP1={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}")
+                        setup_line = f"   ↳ ⚙️ SETUP: In={self.fmt_price(setup.entry_price)} | TP1={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}"
+                        print(setup_line)
                 
                 if state.macro_levels:
                     macro = state.macro_levels
@@ -292,10 +358,13 @@ class ConsoleRenderer:
                         print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô 4H{_sfx}")
 
                 # GRID TP2 (DC3): Trig=In | SL ngắn=SL | Trần=TP2 (rỗng → TP1×1.05) | Fallback 0.95
+                grid_line = ""
                 if score_ctx.entry_setup1:
                     setup = score_ctx.entry_setup1
                     tp2_target = setup.tp2_price if setup.tp2_price and setup.tp2_price > 0 else setup.tp1_price * 1.05
-                    self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95)
+                    grid_line = self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95)
+
+                self._collect(state, "DC3", score_ctx, setup=score_ctx.entry_setup1, setup_line=setup_line, grid_tp2_line=grid_line)
 
                 if score > 0:
                     print("-" * 100)
@@ -335,12 +404,14 @@ class ConsoleRenderer:
                 if macro:
                     print(f"   ↳ 🌀 Macro: {macro.trend_label} | {macro.drop_180d_pct}% | {macro.ma_status}")
                 
+                setup_line = ""
                 if score_ctx.entry_setup1:
                     setup = score_ctx.entry_setup1
                     sl_pct = (setup.entry_price - setup.sl_price) / setup.entry_price * 100 if setup.entry_price else 0
                     tp1_pct = (setup.tp1_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
                     entry_lbl = "Trig" if setup.setup_type == "TRIGGER_DIP" else "In"
-                    print(f"   ↳ ⚙️ SETUP: {entry_lbl}={self.fmt_price(setup.entry_price)} | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | TP={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}")
+                    setup_line = f"   ↳ ⚙️ SETUP: {entry_lbl}={self.fmt_price(setup.entry_price)} | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | TP={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}"
+                    print(setup_line)
                 
                 if state.macro_levels:
                     macro = state.macro_levels
@@ -349,6 +420,7 @@ class ConsoleRenderer:
                     print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới){self._d3_suffix(state)}")
 
                 # GRID TP2 (DC4): Trig=In | SL ngắn=SL | Trần=max(TP, TP 4H) (khuyết 4H → TP×1.04) | Fallback 0.95
+                grid_line = ""
                 if score_ctx.entry_setup1:
                     setup = score_ctx.entry_setup1
                     macro_tp = state.macro_levels.tp_4h if state.macro_levels else None
@@ -356,10 +428,12 @@ class ConsoleRenderer:
                         tp2_target = max(setup.tp1_price, macro_tp)
                     else:
                         tp2_target = setup.tp1_price * 1.04
-                    self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95)
+                    grid_line = self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95)
 
                 # 🦅 WIDE GRID 3D (DC4)
-                self._print_wide_grid(state)
+                wide_line = self._print_wide_grid(state)
+                self._collect(state, "DC4", score_ctx, setup=score_ctx.entry_setup1, setup_line=setup_line,
+                              grid_tp2_line=grid_line, wide_grid_line=wide_line)
 
                 print("-" * 100)
                 
@@ -424,7 +498,8 @@ class ConsoleRenderer:
                     print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới){self._d3_suffix(state)}")
 
                 # 🦅 WIDE GRID 3D (DC5)
-                self._print_wide_grid(state)
+                wide_line = self._print_wide_grid(state)
+                self._collect(state, "DC5", score_ctx, wide_grid_line=wide_line)
 
             print("=" * 100)
         except Exception as e:

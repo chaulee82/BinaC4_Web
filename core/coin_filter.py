@@ -1761,7 +1761,7 @@ def _print_b3_grid_tp2(sym, sym_ccxt, entry, grid_setup, box_floor, macro):
     except Exception as e:
         print(f"   ↳ 🎯 [GRID TP2] Render Error: {e}")
 
-def print_final_tables(early_list, df_summary, current_time_str, macro_levels_map=None):
+def print_final_tables(early_list, df_summary, current_time_str, macro_levels_map=None, before_rebalance_hook=None):
     if df_summary is None or df_summary.empty:
         summary_list = []
     else:
@@ -1895,6 +1895,12 @@ def print_final_tables(early_list, df_summary, current_time_str, macro_levels_ma
             _print_b3_grid_tp2(sym, sym_ccxt, gia, grid_setup, r.get('Box_Floor'), macro)
 
     print("=" * _TW3 + "\n")
+    # ── 🏁 Hook in trước Bảng Rebalance (VD: BẢNG TỔNG KẾT TỐI ƯU) ──────────
+    if before_rebalance_hook is not None:
+        try:
+            before_rebalance_hook()
+        except Exception as e:
+            print(f"Render Error (before_rebalance_hook): {e}")
     # ── 8. 🏆 BẢNG CHẤM ĐIỂM REBALANCE (in sau cùng) ──────────────────
     if summary_list:
         print("=" * _TW)

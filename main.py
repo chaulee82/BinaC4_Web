@@ -400,8 +400,28 @@ def main():
                         setup = state.scores["DC1"].grid_setup
                         if setup:
                             executor.execute_grid_setup(symbol=state.symbol, amount_per_grid=0.01, setup=setup)
+            # =========================================================
+            # 🏁 BẢNG TỔNG KẾT TỐI ƯU (SUMMARY_BOARD) — in ngay TRƯỚC Bảng Rebalance / Spot Grid
+            # =========================================================
+            _renderer = locals().get('renderer')
+            _btc_status = locals().get('btc_gate_label', '') or ''
+            _warning_results = locals().get('warning_results')
+            _summary_hook = None
+            if _renderer is not None:
+                from views.summary_board import generate_summary_board
+                def _summary_hook():
+                    generate_summary_board(
+                        global_signals_pool=_renderer.signals_pool,
+                        btc_status=_btc_status,
+                        live_data_map=live_data_map,
+                        df_summary=df_summary,
+                        warning_results=_warning_results,
+                    )
+
             from core.coin_filter import print_final_tables
-            print_final_tables(early_list, df_summary, current_time_str, macro_levels_map=(macro_levels_map if 'macro_levels_map' in locals() else None))
+            print_final_tables(early_list, df_summary, current_time_str,
+                               macro_levels_map=(macro_levels_map if 'macro_levels_map' in locals() else None),
+                               before_rebalance_hook=_summary_hook)
             
             logger.info("Hoàn tất quét thị trường. Chương trình kết thúc.")
             

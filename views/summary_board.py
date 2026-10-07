@@ -1,0 +1,390 @@
+"""
+Module: views/summary_board.py
+Dự án: BinaC4
+Mục đích: BẢNG TỔNG KẾT TỐI ƯU (SUMMARY_BOARD) — chạy sau "Hoàn tất quét thị trường".
+
+Gom tín hiệu từ 5 Động cơ (global_signals_pool do ConsoleRenderer thu thập khi in bảng)
+rồi lọc / xếp hạng thành 3 bảng hành động:
+    1. 🎯 SPOT (Lướt sóng OCO)       — DC2/DC3/DC4 APPROVED, SL ≤ 6%, R/R↓ → Money Flow↓, Top 2
+    2. 🥅 GRID TP2 (Đón nhúng)        — dòng `🎯 [GRID TP2 -`, không NÉ GRID, Score↓, Top 2
+    3. 🦅 WIDE GRID 3D (Lưới vĩ mô)   — dòng `🦅 [WIDE GRID 3D -`, Vola24h ≥ 5%, 3D Chân sóng / Cột cờ,
+                                        Bounces↓ → Score↓, Top 2
+
+Cơ chế MÃ DỰ PHÒNG (Fallback): mỗi bảng chia 2 danh sách song song
+    primary_list (chuẩn cứng) | backup_list (chuẩn mềm).
+    primary rỗng → lấy Top 2 từ backup, gắn thẻ [⚠️ DỰ PHÒNG]. Cả 2 rỗng → báo không có setup.
+    Chốt chặn sinh tử (CẤP 3 KHẨN CẤP, GÃY MA7 3D) và Công tắc BTC vẫn áp dụng cho cả mã dự phòng.
+
+Thiết kế: Pure logic (không gọi API) — mọi dữ liệu ngữ cảnh truyền vào qua tham số. Fail-safe.
+"""
+
+import re
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Iterable, List, Optional
+
+# ── Hằng số đặc tả ───────────────────────────────────────────────────────────
+SPOT_ENGINES          = ("DC2", "DC3", "DC4")
+STATUS_APPROVED       = "APPROVED 🟢"
+STATUS_PULLBACK       = "🎯 🚀 VÀO LỆNH PULLBACK"
+STATUS_REJECTED       = "🔴 TỪ CHỐI"
+STATUS_WAIT           = "⏳ CHỜ"
+SPOT_ALLOWED_STATUS   = (STATUS_APPROVED, STATUS_PULLBACK)
+SPOT_MAX_SL_PCT       = -6.0          # SL_Percent < -6.0% → Loại (chuẩn cứng)
+SPOT_BACKUP_MAX_SL    = -10.0         # Nới lỏng cho mã dự phòng
+DC2_BACKUP_MIN_SCORE  = 70            # DC2 dính EW CẤP 1 vẫn phải có điểm Pullback cao (ngưỡng lệnh Sniper)
+WIDE_GRID_MIN_VOLA    = 5.0
+BTC_KILL_SWITCH_TEXT  = "Fakeout Risk Cao"
+TOP_N                 = 2
+
+TAG_GRID_TP2          = "🎯 [GRID TP2 -"
+TAG_WIDE_GRID         = "🦅 [WIDE GRID 3D -"
+TAG_SETUP             = "⚙️ SETUP"
+WIDE_GRID_3D_SIGNALS  = ("🚀 [3D: CHÂN SÓNG", "CỘT CỜ CAO")
+BACKUP_TAG            = "[⚠️ DỰ PHÒNG]"
+
+# Chốt chặn sinh tử — áp dụng cho CẢ primary lẫn backup
+FATAL_EW_LEVEL        = 3                                    # 💀 CẤP 3: KHẨN CẤP
+FATAL_TEXTS           = ("GÃY MA7 3D", "GÃY ĐƯỜNG RAY MA7 3D")
+
+# Phân tách loại cấu hình Wide Grid theo Động cơ nguồn
+WIDE_GRID_TAGS        = {"DC5": "Nén Vol Chờ Nổ", "DC1": "Chân Sóng Vĩ Mô",
+                         "DC2": "Pullback Sniper", "DC4": "Hot Trend"}
+# Ưu tiên khi đồng hạng Bounces: DC5 > DC1 > các động cơ khác
+WIDE_GRID_ENGINE_PRIO = {"DC5": 3, "DC1": 2}
+
+_RE_MONEY_FLOW = re.compile(r"TIỀN BẠO PHÁT \((\d+(?:\.\d+)?)x\)")
+_RE_FLOW_TAG   = re.compile(r"x(\d+(?:\.\d+)?)")
+_RE_RR         = re.compile(r"R/R=1:(\d+(?:\.\d+)?)")
+_RE_SL_PCT     = re.compile(r"SL=[^|(]*\((-?\d+(?:\.\d+)?)%\)")
+_RE_TRIG       = re.compile(r"Trig:\s*([\d.]+)")
+_RE_BOUNCES    = re.compile(r"B:(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)%")
+
+
+@dataclass
+class SignalRecord:
+    """1 tín hiệu (1 mã × 1 Động cơ) trong global_signals_pool."""
+    symbol: str                       # Mã sạch (VD: 'RESOLV')
+    engine_source: str                # DC1..DC5
+    action_status: str = STATUS_WAIT  # APPROVED 🟢 | 🎯 🚀 VÀO LỆNH PULLBACK | 🔴 TỪ CHỐI | ⏳ CHỜ
+    action_label: str = ""            # Nhãn hành động gốc của Động cơ
+    target_score: float = 0.0
+    money_flow: float = 0.0           # Hệ số tiền bạo phát (VD 3.6)
+    rr_ratio: float = 0.0
+    sl_percent: Optional[float] = None  # Âm (VD -4.0)
+    macro_3d_signal: str = ""         # VD '🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]'
+    vola_24h: float = 0.0             # Enrich từ live_data_map
+    grid_warning: str = ""            # Enrich từ coin_filter (Phân Loại Grid)
+    rebalance_score: float = 0.0      # Enrich từ coin_filter (cột TỔNG — Bảng Rebalance / Spot Grid)
+    ew_level: int = 0                 # Enrich từ Early Warning Matrix (3 = KHẨN CẤP)
+    setup_line: str = ""              # Chuỗi gốc `⚙️ SETUP...`
+    grid_tp2_line: str = ""           # Chuỗi gốc `🎯 [GRID TP2 - ...`
+    wide_grid_line: str = ""          # Chuỗi gốc `🦅 [WIDE GRID 3D - ...`
+    bounces: float = 0.0              # DC5: số lần nảy (B:{bounces}x{range}%)
+    bounce_range: float = 0.0         # DC5: biên độ nảy %
+
+    @property
+    def raw_setup_string(self) -> str:
+        return " || ".join(s for s in (self.setup_line, self.grid_tp2_line, self.wide_grid_line) if s)
+
+
+# ── Helpers trích xuất (dùng chung cho Collector) ────────────────────────────
+def clean_line(line: Optional[str]) -> str:
+    """Bỏ thụt lề & mũi tên '↳' để chuỗi bắt đầu đúng từ emoji gốc."""
+    if not line:
+        return ""
+    s = line.strip()
+    if s.startswith("↳"):
+        s = s[1:].strip()
+    return s
+
+
+def extract_money_flow(*texts: Any) -> float:
+    """Lấy hệ số lớn nhất từ `💥 TIỀN BẠO PHÁT (3.6x)` hoặc tag dòng tiền `💰x3.4`."""
+    best = 0.0
+    for t in texts:
+        if not t:
+            continue
+        t = str(t)
+        for m in _RE_MONEY_FLOW.findall(t):
+            best = max(best, float(m))
+        if "💰" in t:
+            for m in _RE_FLOW_TAG.findall(t):
+                best = max(best, float(m))
+    return best
+
+
+def extract_rr(text: str) -> float:
+    m = _RE_RR.search(text or "")
+    return float(m.group(1)) if m else 0.0
+
+
+def extract_sl_percent(text: str) -> Optional[float]:
+    m = _RE_SL_PCT.search(text or "")
+    return float(m.group(1)) if m else None
+
+
+def extract_bounces(text: Any) -> tuple:
+    m = _RE_BOUNCES.search(str(text or ""))
+    return (float(m.group(1)), float(m.group(2))) if m else (0.0, 0.0)
+
+
+def classify_action(engine: str, action_label: str, extra_texts: Iterable[Any] = ()) -> str:
+    """Chuẩn hóa nhãn hành động của từng Động cơ về action_status của Summary Board."""
+    act = action_label or ""
+    blob = " ".join(str(x) for x in (act, *extra_texts) if x is not None)
+    if "TỪ CHỐI" in blob or "HỦY SETUP" in blob or "GÃY MA7 3D" in act:
+        return STATUS_REJECTED
+    if engine == "DC4" and "VÀO LỆNH PULLBACK" in act:
+        return STATUS_PULLBACK
+    if engine in ("DC2", "DC3") and act.strip().startswith("🟢"):
+        return STATUS_APPROVED
+    return STATUS_WAIT
+
+
+# ── Enrich ngữ cảnh ──────────────────────────────────────────────────────────
+def _dedupe_keep_first(signals: List[SignalRecord]) -> List[SignalRecord]:
+    seen, out = set(), []
+    for s in signals:
+        if s.symbol not in seen:
+            seen.add(s.symbol)
+            out.append(s)
+    return out
+
+
+def _build_summary_maps(df_summary) -> tuple:
+    """(grid_warning_map, rebalance_score_map) từ df_summary của coin_filter."""
+    warn: Dict[str, str] = {}
+    score: Dict[str, float] = {}
+    try:
+        if df_summary is not None and not df_summary.empty:
+            for r in df_summary.to_dict(orient="records"):
+                sym = str(r.get("Symbol", "")).upper()
+                if not sym:
+                    continue
+                warn[sym] = str(r.get("Phân Loại Grid", "") or "")
+                try:
+                    score[sym] = float(r.get("TỔNG", 0) or 0)
+                except (TypeError, ValueError):
+                    score[sym] = 0.0
+    except Exception:
+        pass
+    return warn, score
+
+
+def _build_ew_level_map(warning_results) -> Dict[str, int]:
+    out: Dict[str, int] = {}
+    for r in warning_results or []:
+        sym = str(r.get("symbol", "")).upper().replace("/", "")
+        if sym.endswith("USDT") and len(sym) > 4:
+            sym = sym[:-4]
+        lvl = int(r.get("level", 0) or 0)
+        if "KHẨN CẤP" in str(r.get("label", "")):
+            lvl = max(lvl, FATAL_EW_LEVEL)
+        out[sym] = lvl
+    return out
+
+
+def _enrich(pool: List[SignalRecord], live_data_map: Optional[Dict[str, Any]],
+            df_summary, warning_results) -> None:
+    live_data_map = live_data_map or {}
+    warn_map, rebal_map = _build_summary_maps(df_summary)
+    ew_map = _build_ew_level_map(warning_results)
+    for s in pool:
+        info = live_data_map.get(f"{s.symbol}USDT") or {}
+        try:
+            s.vola_24h = float(info.get("daily_vola", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            s.vola_24h = 0.0
+        s.grid_warning = warn_map.get(s.symbol, "")
+        s.rebalance_score = rebal_map.get(s.symbol, 0.0)
+        s.ew_level = ew_map.get(s.symbol, 0)
+
+
+# ── Phân loại primary / backup ───────────────────────────────────────────────
+def is_fatal_error(s: SignalRecord) -> bool:
+    """Chốt chặn sinh tử: CẤP 3 KHẨN CẤP hoặc GÃY MA7 3D → loại khỏi MỌI bảng (kể cả dự phòng)."""
+    if s.ew_level >= FATAL_EW_LEVEL:
+        return True
+    blob = f"{s.action_label} {s.macro_3d_signal}"
+    return any(t in blob for t in FATAL_TEXTS)
+
+
+def _spot_sl(s: SignalRecord) -> Optional[float]:
+    return s.sl_percent if s.sl_percent is not None else extract_sl_percent(s.setup_line)
+
+
+def _is_spot_primary(s: SignalRecord) -> bool:
+    sl = _spot_sl(s)
+    return (s.engine_source in SPOT_ENGINES and TAG_SETUP in s.setup_line
+            and s.action_status in SPOT_ALLOWED_STATUS
+            and sl is not None and sl >= SPOT_MAX_SL_PCT)
+
+
+def _is_spot_backup(s: SignalRecord) -> bool:
+    """Chuẩn mềm: SL ≤ 10%, không bị TỪ CHỐI, và thuộc 1 trong các nhóm:
+       - Đã duyệt (APPROVED / VÀO LỆNH) nhưng SL sâu 6–10%
+       - DC4 `⏳ CHỜ XÁC NHẬN`
+       - DC2 điểm Pullback cao (≥ 70) nhưng tạm dính `⚠️ EW CẤP 1` (chưa bứt hẳn lên MA7)"""
+    sl = _spot_sl(s)
+    if s.engine_source not in SPOT_ENGINES or TAG_SETUP not in s.setup_line:
+        return False
+    if s.action_status == STATUS_REJECTED or sl is None or sl < SPOT_BACKUP_MAX_SL:
+        return False
+    if s.action_status in SPOT_ALLOWED_STATUS:
+        return True
+    if s.engine_source == "DC4" and "CHỜ XÁC NHẬN" in s.action_label:
+        return True
+    if s.engine_source == "DC2" and s.ew_level == 1 and s.target_score >= DC2_BACKUP_MIN_SCORE:
+        return True
+    return False
+
+
+def _has_grid_tp2(s: SignalRecord) -> bool:
+    return TAG_GRID_TP2 in s.grid_tp2_line and bool(_RE_TRIG.search(s.grid_tp2_line))
+
+
+def _is_wide_primary(s: SignalRecord) -> bool:
+    return (s.vola_24h >= WIDE_GRID_MIN_VOLA
+            and any(sig in s.macro_3d_signal for sig in WIDE_GRID_3D_SIGNALS))
+
+
+def classify_pool(pool: List[SignalRecord], spot_enabled: bool = True) -> Dict[str, List[SignalRecord]]:
+    """Vòng lặp phân loại duy nhất → 6 danh sách primary / backup."""
+    b = {k: [] for k in ("spot_primary", "spot_backup", "tp2_primary", "tp2_backup",
+                         "wide_primary", "wide_backup")}
+    for s in pool:
+        if is_fatal_error(s):
+            continue
+        # 1. Grid TP2
+        if _has_grid_tp2(s):
+            (b["tp2_backup"] if "NÉ GRID" in s.grid_warning else b["tp2_primary"]).append(s)
+        # 2. Spot
+        if spot_enabled:
+            if _is_spot_primary(s):
+                b["spot_primary"].append(s)
+            elif _is_spot_backup(s):
+                b["spot_backup"].append(s)
+        # 3. Wide Grid 3D
+        if TAG_WIDE_GRID in s.wide_grid_line:
+            (b["wide_primary"] if _is_wide_primary(s) else b["wide_backup"]).append(s)
+    return b
+
+
+# ── Hàm sắp xếp ──────────────────────────────────────────────────────────────
+def sort_spot_primary(lst):  return sorted(lst, key=lambda s: (s.rr_ratio, s.money_flow), reverse=True)
+def sort_spot_backup(lst):   return sorted(lst, key=lambda s: (s.target_score, s.rr_ratio), reverse=True)
+def sort_by_score(lst):      return sorted(lst, key=lambda s: s.target_score, reverse=True)
+
+
+def sort_wide_primary(lst):
+    return sorted(lst, key=lambda s: (s.bounces, s.bounce_range,
+                                      WIDE_GRID_ENGINE_PRIO.get(s.engine_source, 1), s.target_score),
+                  reverse=True)
+
+
+def sort_wide_backup(lst):
+    # Điểm Rebalance (cột TỔNG) cao nhất → ưu tiên tín hiệu DC1 → điểm Động cơ
+    return sorted(lst, key=lambda s: (s.rebalance_score, s.engine_source == "DC1", s.target_score),
+                  reverse=True)
+
+
+def pick_with_fallback(primary: List[SignalRecord], backup: List[SignalRecord],
+                       sort_primary: Callable, sort_backup: Callable,
+                       blacklist: Iterable[str] = ()) -> tuple:
+    """Top N từ primary; primary rỗng → Top N từ backup. Trả về (danh sách, is_backup)."""
+    bl = set(blacklist)
+    primary = [s for s in primary if s.symbol not in bl]
+    backup = [s for s in backup if s.symbol not in bl]
+    if primary:
+        return _dedupe_keep_first(sort_primary(primary))[:TOP_N], False
+    if backup:
+        return _dedupe_keep_first(sort_backup(backup))[:TOP_N], True
+    return [], False
+
+
+# ── Render ───────────────────────────────────────────────────────────────────
+def _fmt_score(v: float) -> str:
+    return f"{v:.0f}" if float(v).is_integer() else f"{v:.2f}"
+
+
+def _print_table(signals: List[SignalRecord], kind: str, is_backup: bool = False) -> None:
+    if not signals:
+        print("   Không có setup nào đạt chuẩn (kể cả dự phòng).")
+        return
+    if is_backup:
+        print("   💡 Không có mã đạt chuẩn vàng → hiển thị MÃ DỰ PHÒNG (hạng 2 — cân nhắc giảm khối lượng vốn)")
+    prefix = f"{BACKUP_TAG} " if is_backup else ""
+    for i, s in enumerate(signals, 1):
+        meta = [s.engine_source, f"{_fmt_score(s.target_score)}đ"]
+        if kind == "SPOT":
+            meta += [f"R/R 1:{s.rr_ratio:.1f}", s.action_status if s.action_status != STATUS_WAIT else s.action_label.strip()[:40]]
+            if s.money_flow:
+                meta.append(f"💥 {s.money_flow:.1f}x")
+            if is_backup and s.ew_level == 1:
+                meta.append("⚠️ EW CẤP 1")
+            line = s.setup_line
+        elif kind == "GRID_TP2":
+            if s.grid_warning:
+                meta.append(s.grid_warning)
+            line = s.grid_tp2_line
+        else:
+            meta.append(f"🏷️ {WIDE_GRID_TAGS.get(s.engine_source, s.engine_source)}")
+            if s.bounces:
+                meta.append(f"Bounces {s.bounces:g}x{s.bounce_range:g}%")
+            if is_backup and s.rebalance_score:
+                meta.append(f"Rebalance {s.rebalance_score:.1f}")
+            meta.append(f"Vola24H {s.vola_24h:.1f}%")
+            line = s.wide_grid_line
+        if s.macro_3d_signal:
+            meta.append(s.macro_3d_signal)
+        print(f"  {prefix}#{i} {s.symbol:<8} | " + " | ".join(meta))
+        print(f"     ↳ {line}")
+
+
+def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: str = "",
+                           live_data_map: Optional[Dict[str, Any]] = None, df_summary=None,
+                           warning_results: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """In BẢNG TỔNG KẾT TỐI ƯU (kèm Mã Dự Phòng). Trả về dict kết quả để tầng khác tái sử dụng."""
+    result: Dict[str, Any] = {"spot": [], "grid_tp2": [], "wide_grid": [],
+                              "spot_is_backup": False, "grid_tp2_is_backup": False, "wide_grid_is_backup": False}
+    try:
+        pool = list(global_signals_pool or [])
+        _enrich(pool, live_data_map, df_summary, warning_results)
+
+        btc_locked = bool(btc_status) and BTC_KILL_SWITCH_TEXT in btc_status
+        b = classify_pool(pool, spot_enabled=not btc_locked)
+
+        print("\n" + "=" * 100)
+        print("================ 🏁 BẢNG TỔNG KẾT TỐI ƯU ================")
+        print("=" * 100)
+
+        # Grid TP2 chọn trước → danh sách chống trùng cho Spot
+        tp2_list, tp2_bk = pick_with_fallback(b["tp2_primary"], b["tp2_backup"], sort_by_score, sort_by_score)
+        tp2_symbols = [s.symbol for s in tp2_list]
+
+        # 1. Spot (OCO) — BTC khóa thì khóa trắng, kể cả mã dự phòng
+        print("\n### 🎯 1. CHIẾN LƯỢC SPOT (Lướt sóng OCO / Bắn tỉa 1 điểm)")
+        if btc_locked:
+            print("   ⚠️ BTC RỦI RO CAO - TẠM KHÓA TÍN HIỆU SPOT")
+        else:
+            spot_list, spot_bk = pick_with_fallback(b["spot_primary"], b["spot_backup"],
+                                                    sort_spot_primary, sort_spot_backup, tp2_symbols)
+            result["spot"], result["spot_is_backup"] = spot_list, spot_bk
+            _print_table(spot_list, "SPOT", spot_bk)
+
+        # 2. Grid TP2
+        print("\n### 🥅 2. CHIẾN LƯỢC GRID TP2 (Lưới đón Pullback 2-5 ngày)")
+        result["grid_tp2"], result["grid_tp2_is_backup"] = tp2_list, tp2_bk
+        _print_table(tp2_list, "GRID_TP2", tp2_bk)
+
+        # 3. Wide Grid 3D
+        print("\n### 🦅 3. CHIẾN LƯỢC WIDE GRID 3D (Nuôi Cột cờ / Siêu sóng 1-3 tuần)")
+        wide_list, wide_bk = pick_with_fallback(b["wide_primary"], b["wide_backup"],
+                                                sort_wide_primary, sort_wide_backup)
+        result["wide_grid"], result["wide_grid_is_backup"] = wide_list, wide_bk
+        _print_table(wide_list, "WIDE_GRID_3D", wide_bk)
+
+        print("=" * 100)
+    except Exception as e:
+        print(f"Render Error (Summary Board): {e}")
+    return result
