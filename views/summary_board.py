@@ -307,38 +307,72 @@ def _fmt_score(v: float) -> str:
     return f"{v:.0f}" if float(v).is_integer() else f"{v:.2f}"
 
 
-def _print_table(signals: List[SignalRecord], kind: str, is_backup: bool = False) -> None:
-    if not signals:
+def _num(v: Any) -> float:
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+# Dòng setup gốc tương ứng từng bảng (raw_setup_string gộp cả 3 → không dùng để in)
+_LINE_BY_KIND = {"SPOT": "setup_line", "GRID_TP2": "grid_tp2_line", "WIDE_GRID_3D": "wide_grid_line"}
+
+
+def print_formatted_table(signals_list: List[SignalRecord], kind: str, is_backup: bool = False) -> None:
+    """In bảng theo cơ chế Lắp ráp mảng động: 4 thông số cốt lõi (Điểm, 💥 Tiền Bạo Phát, R:R, Sóng 3D)
+    đồng nhất cho mọi cách đánh — trường nào thiếu dữ liệu tự ẩn, không thừa dấu `|`."""
+    if not signals_list:
         print("   Không có setup nào đạt chuẩn (kể cả dự phòng).")
         return
     if is_backup:
         print("   💡 Không có mã đạt chuẩn vàng → hiển thị MÃ DỰ PHÒNG (hạng 2 — cân nhắc giảm khối lượng vốn)")
     prefix = f"{BACKUP_TAG} " if is_backup else ""
-    for i, s in enumerate(signals, 1):
-        meta = [s.engine_source, f"{_fmt_score(s.target_score)}đ"]
-        if kind == "SPOT":
-            meta += [f"R/R 1:{s.rr_ratio:.1f}", s.action_status if s.action_status != STATUS_WAIT else s.action_label.strip()[:40]]
-            if s.money_flow:
-                meta.append(f"💥 {s.money_flow:.1f}x")
-            if is_backup and s.ew_level == 1:
-                meta.append("⚠️ EW CẤP 1")
-            line = s.setup_line
-        elif kind == "GRID_TP2":
-            if s.grid_warning:
-                meta.append(s.grid_warning)
-            line = s.grid_tp2_line
-        else:
-            meta.append(f"🏷️ {WIDE_GRID_TAGS.get(s.engine_source, s.engine_source)}")
-            if s.bounces:
-                meta.append(f"Bounces {s.bounces:g}x{s.bounce_range:g}%")
-            if is_backup and s.rebalance_score:
-                meta.append(f"Rebalance {s.rebalance_score:.1f}")
-            meta.append(f"Vola24H {s.vola_24h:.1f}%")
-            line = s.wide_grid_line
-        if s.macro_3d_signal:
-            meta.append(s.macro_3d_signal)
-        print(f"  {prefix}#{i} {s.symbol:<8} | " + " | ".join(meta))
-        print(f"     ↳ {line}")
+
+    for i, signal in enumerate(signals_list, 1):
+        engine = getattr(signal, "engine_source", "") or ""
+        score = _num(getattr(signal, "target_score", 0))
+        mf = _num(getattr(signal, "money_flow", 0))
+        rr = _num(getattr(signal, "rr_ratio", 0))
+        vola = _num(getattr(signal, "vola_24h", 0))
+        bounces = _num(getattr(signal, "bounces", 0))
+        b_range = _num(getattr(signal, "bounce_range", 0))
+        macro_3d = getattr(signal, "macro_3d_signal", "") or ""
+
+        components: List[str] = []
+        if engine:
+            components.append(engine)
+        if score:
+            components.append(f"{_fmt_score(score)}đ")
+        if kind == "WIDE_GRID_3D":
+            if bounces:                                             # DC5 PingPong
+                components.append(f"Bounces {bounces:g}x{b_range:g}%")
+            if vola:
+                components.append(f"Vola24H {vola:.1f}%")
+            components.append(f"🏷️ {WIDE_GRID_TAGS.get(engine, engine)}")
+        if mf > 0:                                                  # DC2/DC3/DC4
+            components.append(f"💥 {mf:.1f}x")
+        if rr > 0:                                                  # DC2/DC3/DC4
+            components.append(f"R:R=1:{rr:.1f}")
+        # Lý do hạng 2 (chỉ hiện ở mã dự phòng)
+        if is_backup:
+            if kind == "SPOT" and getattr(signal, "ew_level", 0) == 1:
+                components.append("⚠️ EW CẤP 1")
+            if kind == "SPOT" and getattr(signal, "action_status", "") == STATUS_WAIT:
+                components.append(signal.action_label.strip()[:40])
+            if kind == "GRID_TP2" and "NÉ GRID" in (signal.grid_warning or ""):
+                components.append(signal.grid_warning)
+            if kind == "WIDE_GRID_3D" and getattr(signal, "rebalance_score", 0):
+                components.append(f"Rebalance {signal.rebalance_score:.1f}")
+        if macro_3d:
+            components.append(macro_3d)
+
+        print(f"  #{i} {prefix}{signal.symbol:<8} | " + " | ".join(c for c in components if c))
+        setup_str = getattr(signal, _LINE_BY_KIND.get(kind, ""), "") or ""
+        if setup_str:
+            print(f"     ↳ {setup_str}")
+
+
+_print_table = print_formatted_table   # tương thích tên cũ
 
 
 def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: str = "",
