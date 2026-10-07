@@ -425,13 +425,15 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
     result: Dict[str, Any] = {"spot": [], "grid_tp2": [], "wide_grid": [],
                               "spot_backup_symbols": set(), "grid_tp2_backup_symbols": set(),
                               "wide_grid_backup_symbols": set(),
-                              "spot_is_backup": False, "grid_tp2_is_backup": False, "wide_grid_is_backup": False}
+                              "spot_is_backup": False, "grid_tp2_is_backup": False, "wide_grid_is_backup": False,
+                              "spot_btc_locked": False}
     try:
         pool = list(global_signals_pool or [])
         _enrich(pool, live_data_map, df_summary, warning_results)
 
         btc_locked = bool(btc_status) and BTC_KILL_SWITCH_TEXT in btc_status
-        b = classify_pool(pool, spot_enabled=not btc_locked)
+        result["spot_btc_locked"] = btc_locked
+        b = classify_pool(pool, spot_enabled=True)
 
         print("\n" + "=" * 100)
         print("================ 🏁 BẢNG TỔNG KẾT TỐI ƯU ================")
@@ -442,16 +444,15 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
                                               top_n=cfg["top_grid_tp2"], fill_with_backup=fill)
         tp2_symbols = [s.symbol for s in tp2_list]
 
-        # 1. Spot (OCO) — BTC khóa thì khóa trắng, kể cả mã dự phòng
+        # 1. Spot (OCO) — BTC rủi ro cao: in cảnh báo khóa tín hiệu nhưng VẪN liệt kê ứng viên (Watchlist)
         print(f"\n### 🎯 1. CHIẾN LƯỢC SPOT (Lướt sóng OCO / Bắn tỉa 1 điểm) — Top {cfg['top_spot']}")
         if btc_locked:
             print("   ⚠️ BTC RỦI RO CAO - TẠM KHÓA TÍN HIỆU SPOT")
-        else:
-            spot_list, spot_bk = pick_with_fallback(b["spot_primary"], b["spot_backup"],
-                                                    sort_spot_primary, sort_spot_backup, tp2_symbols,
-                                                    top_n=cfg["top_spot"], fill_with_backup=fill)
-            result["spot"], result["spot_backup_symbols"] = spot_list, spot_bk
-            print_formatted_table(spot_list, "SPOT", spot_bk)
+        spot_list, spot_bk = pick_with_fallback(b["spot_primary"], b["spot_backup"],
+                                                sort_spot_primary, sort_spot_backup, tp2_symbols,
+                                                top_n=cfg["top_spot"], fill_with_backup=fill)
+        result["spot"], result["spot_backup_symbols"] = spot_list, spot_bk
+        print_formatted_table(spot_list, "SPOT", spot_bk)
 
         # 2. Grid TP2
         print(f"\n### 🥅 2. CHIẾN LƯỢC GRID TP2 (Lưới đón Pullback 2-5 ngày) — Top {cfg['top_grid_tp2']}")

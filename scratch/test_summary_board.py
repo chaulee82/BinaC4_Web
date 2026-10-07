@@ -57,7 +57,8 @@ assert [s.symbol for s in r["spot"]] == ["RAD", "ENA"], [s.symbol for s in r["sp
 assert [s.symbol for s in r["wide_grid"]] == ["QNT", "MUBARAK"], [s.symbol for s in r["wide_grid"]]
 
 r2 = generate_summary_board(pool, "⚠️ CẢNH BÁO: BTC gãy MA25 1H (RSI=41.1) — Fakeout Risk Cao", live, df, ew, config=LEGACY)
-assert r2["spot"] == [] and len(r2["grid_tp2"]) == 2
+assert r2["spot_btc_locked"] and [s.symbol for s in r2["spot"]] == ["RAD", "ENA"] and len(r2["grid_tp2"]) == 2
+assert r["spot_btc_locked"] is False
 assert r["spot_is_backup"] is False and r["grid_tp2_is_backup"] is False
 
 # ───────── FALLBACK: thị trường yếu, không mã nào đạt chuẩn vàng ─────────
@@ -106,7 +107,7 @@ assert r3["spot_is_backup"] and [s.symbol for s in r3["spot"]] == ["NEAR"], [s.s
 assert r3["wide_grid_is_backup"] and [s.symbol for s in r3["wide_grid"]] == ["AVAX", "XRP"], [s.symbol for s in r3["wide_grid"]]
 
 r4 = generate_summary_board(weak, "Fakeout Risk Cao", live2, df2, ew2)
-assert r4["spot"] == []
+assert r4["spot_btc_locked"] and [s.symbol for s in r4["spot"]] == ["NEAR"]
 r5 = generate_summary_board([], "", {}, None, [])
 assert r5["spot"] == [] and r5["grid_tp2"] == [] and r5["wide_grid"] == []
 
