@@ -268,19 +268,25 @@ def main():
                     if r.get('macro_levels') is not None
                 }
 
+                # 🛡️ Reset sổ mã trượt cổng Strict 3D cho lượt quét mới
+                from core.macro_levels import reset_strict_3d_rejections
+                reset_strict_3d_rejections()
+
                 # =========================================================
                 # 1. Chạy Động Cơ 1 (Macro Grid Darvas)
                 # =========================================================
                 dc1_states = dc1_engine.run(watchlist, live_data_map, timeframe=timeframe, safety_map=safety_map, macro_levels_map=macro_levels_map)
                 renderer.render_darvas_grid(dc1_states)
                 
-                # Kích hoạt GridManager
+                # Kích hoạt GridManager — CHỈ mã qua cổng Strict 3D (mã ⛔ [3D STRICT] vẫn hiển thị nhưng không mở bot)
+                from core.macro_levels import validate_strict_3d_wave
                 for state in dc1_states:
                     score = state.scores["DC1"].total_score
                     if score >= 80:
                         symbol = state.symbol
                         g_setup = state.scores["DC1"].grid_setup
                         if not g_setup: continue
+                        if not validate_strict_3d_wave(symbol).get("is_valid"): continue
                         
                         is_dual = g_setup.is_dual_grid
                         
@@ -393,12 +399,13 @@ def main():
                         if setup and "GÃY MA7 3D" not in (state.scores["DC2"].action_label or ""):
                             executor.execute_entry_setup(symbol=state.symbol, amount=0.01, setup=setup)
 
-                # Dò tìm lệnh Grid
+                # Dò tìm lệnh Grid — chỉ mã qua cổng Strict 3D (DC1 engine đã lọc, kiểm lại 1 lớp phòng thủ)
+                from core.macro_levels import validate_strict_3d_wave
                 for state in dc1_states:
                     score = state.scores["DC1"].total_score
                     if score >= 55:
                         setup = state.scores["DC1"].grid_setup
-                        if setup:
+                        if setup and validate_strict_3d_wave(state.symbol).get("is_valid"):
                             executor.execute_grid_setup(symbol=state.symbol, amount_per_grid=0.01, setup=setup)
             # =========================================================
             # 🏁 BẢNG TỔNG KẾT TỐI ƯU (SUMMARY_BOARD) — in ngay TRƯỚC Bảng Rebalance / Spot Grid
@@ -409,6 +416,7 @@ def main():
             _summary_hook = None
             if _renderer is not None:
                 from views.summary_board import generate_summary_board
+                from core.macro_levels import get_strict_3d_rejections
                 def _summary_hook():
                     generate_summary_board(
                         global_signals_pool=_renderer.signals_pool,
@@ -417,6 +425,7 @@ def main():
                         df_summary=df_summary,
                         warning_results=_warning_results,
                         config=settings.get("summary_board"),
+                        strict_3d_rejections=get_strict_3d_rejections(),
                     )
 
             from core.coin_filter import print_final_tables

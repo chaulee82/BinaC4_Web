@@ -94,20 +94,32 @@ class ConsoleRenderer:
             return ""
 
     @staticmethod
-    def _print_wide_grid(state: SymbolState) -> str:
-        """In `🦅 [WIDE GRID 3D - {symbol}]` (28L, vốn 1.000 USDT) cho mã close > MA7 3D & vol 24h ≥ 12M.
-        Trả về chuỗi đã in (rỗng nếu không in) để đưa vào signals_pool."""
+    def _strict_tag(state: SymbolState, engine: str, kind: str) -> str:
+        """🛡️ Cổng kiểm dịch Strict 3D: trả về tag gắn cuối dòng lưới (✅ / ⛔) + tự ghi sổ nếu trượt.
+        Không in lý do — chi tiết xem ở BẢNG TỔNG KẾT TỐI ƯU (mục 4)."""
+        try:
+            from core.macro_levels import strict_3d_gate, STRICT_3D_TAG_OK, STRICT_3D_TAG_FAIL
+            res = strict_3d_gate(state.symbol, engine=engine or "?", kind=kind, d3=ConsoleRenderer._get_d3(state))
+            return STRICT_3D_TAG_OK if res.get("is_valid") else STRICT_3D_TAG_FAIL
+        except Exception:
+            return "⛔ [3D STRICT]"
+
+    @staticmethod
+    def _print_wide_grid(state: SymbolState, engine: str = "") -> str:
+        """In `🦅 [WIDE GRID 3D - {symbol}]` (28L, vốn 1.000 USDT) cho mã close > MA7 3D & vol 24h ≥ 12M,
+        gắn tag Strict 3D (✅ / ⛔) cuối dòng. Trả về chuỗi đã in (rỗng nếu không in) để đưa vào signals_pool."""
         try:
             d3 = ConsoleRenderer._get_d3(state)
             wg = (d3 or {}).get("wide_grid")
             if not wg or not wg.get("valid"):
                 return ""
+            tag = ConsoleRenderer._strict_tag(state, engine, "WIDE GRID 3D")
             from core.grid_tp2_builder import _make_formatter, _clean_symbol
             f = _make_formatter(d3.get("tick_size") or None)
             sym = _clean_symbol(state.symbol)
             line = (f"   ↳ 🦅 [WIDE GRID 3D - {sym}] {f(wg['wide_low'])} - {f(wg['wide_up'])} | {wg['wide_grids']}L | "
                     f"Trig: {f(wg['wide_trig'])} | SL: {f(wg['wide_sl'])} | TP: {f(wg['wide_up'])} "
-                    f"(Vốn {wg['capital']:.0f}$ ≈ {wg['per_grid_usdt']}$/lưới)")
+                    f"(Vốn {wg['capital']:.0f}$ ≈ {wg['per_grid_usdt']}$/lưới) | {tag}")
             print(line)
             return line
         except Exception as e:
@@ -115,10 +127,13 @@ class ConsoleRenderer:
             return ""
 
     @staticmethod
-    def _print_grid_tp2(state: SymbolState, entry: float, sl_short: float, tp2_target: float, fallback_ratio: float) -> str:
+    def _print_grid_tp2(state: SymbolState, entry: float, sl_short: float, tp2_target: float, fallback_ratio: float,
+                        engine: str = "") -> str:
         """In dòng cài đặt nhanh Spot Grid `🎯 [GRID TP2 - {symbol}]`. Fail-safe: lỗi không làm vỡ bảng.
+        Gắn tag Strict 3D (✅ / ⛔) cuối dòng; mã ⛔ bị Bảng Tổng Kết loại khỏi danh sách dựng lưới.
         Trả về chuỗi đã in (rỗng nếu không dựng được lưới) để đưa vào signals_pool."""
         try:
+            strict_tag = ConsoleRenderer._strict_tag(state, engine, "GRID TP2")
             tick_size = None
             try:
                 from core.exchange_info_cache import ExchangeInfoCache
@@ -151,7 +166,7 @@ class ConsoleRenderer:
                 fallback_ratio=fallback_ratio,
             )
             if payload:
-                line = payload["display_line"] + cap_note
+                line = payload["display_line"] + cap_note + f" | {strict_tag}"
                 print(line)
                 return line
             elif cap_note:
@@ -212,17 +227,18 @@ class ConsoleRenderer:
                     g_setup = score_ctx.grid_setup
                     sl = g_setup.stop_loss
                     tp = g_setup.take_profit
+                    strict_tag = self._strict_tag(state, "DC1", "DARVAS")
                     if g_setup.is_dual_grid:
-                        print(f"  ↳ ⚙️ DUAL: SL={sl}|TP={tp} | G1:{g_setup.g1_lower}-{g_setup.g1_upper}({g_setup.g1_grids}L) | G2:{g_setup.g2_lower}-{g_setup.g2_upper}({g_setup.g2_grids}L)")
+                        print(f"  ↳ ⚙️ DUAL: SL={sl}|TP={tp} | G1:{g_setup.g1_lower}-{g_setup.g1_upper}({g_setup.g1_grids}L) | G2:{g_setup.g2_lower}-{g_setup.g2_upper}({g_setup.g2_grids}L) | {strict_tag}")
                     else:
-                        print(f"  ↳ ⚙️ SETUP: L={g_setup.lower_price}|U={g_setup.upper_price}|G={g_setup.grid_quantity}|SL={sl}|TP={tp}")
+                        print(f"  ↳ ⚙️ SETUP: L={g_setup.lower_price}|U={g_setup.upper_price}|G={g_setup.grid_quantity}|SL={sl}|TP={tp} | {strict_tag}")
                         
                 if state.macro_levels:
                     macro = state.macro_levels
                     print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}{self._d3_suffix(state)}")
 
                 # 🦅 WIDE GRID 3D (DC1)
-                wide_line = self._print_wide_grid(state)
+                wide_line = self._print_wide_grid(state, "DC1")
                 self._collect(state, "DC1", score_ctx, wide_grid_line=wide_line)
 
             print("=" * 80)
@@ -287,10 +303,10 @@ class ConsoleRenderer:
                 s_grid = score_ctx.entry_setup2 or score_ctx.entry_setup1
                 grid_line = ""
                 if s_grid:
-                    grid_line = self._print_grid_tp2(state, s_grid.entry_price, s_grid.sl_price, s_grid.tp1_price, fallback_ratio=0.96)
+                    grid_line = self._print_grid_tp2(state, s_grid.entry_price, s_grid.sl_price, s_grid.tp1_price, fallback_ratio=0.96, engine="DC2")
 
                 # 🦅 WIDE GRID 3D (DC2)
-                wide_line = self._print_wide_grid(state)
+                wide_line = self._print_wide_grid(state, "DC2")
 
                 # Summary Board: DC2 Spot dùng OCO-1 → chuẩn hóa về định dạng `⚙️ SETUP:`
                 setup_line = ""
@@ -362,7 +378,7 @@ class ConsoleRenderer:
                 if score_ctx.entry_setup1:
                     setup = score_ctx.entry_setup1
                     tp2_target = setup.tp2_price if setup.tp2_price and setup.tp2_price > 0 else setup.tp1_price * 1.05
-                    grid_line = self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95)
+                    grid_line = self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95, engine="DC3")
 
                 self._collect(state, "DC3", score_ctx, setup=score_ctx.entry_setup1, setup_line=setup_line, grid_tp2_line=grid_line)
 
@@ -428,10 +444,10 @@ class ConsoleRenderer:
                         tp2_target = max(setup.tp1_price, macro_tp)
                     else:
                         tp2_target = setup.tp1_price * 1.04
-                    grid_line = self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95)
+                    grid_line = self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95, engine="DC4")
 
                 # 🦅 WIDE GRID 3D (DC4)
-                wide_line = self._print_wide_grid(state)
+                wide_line = self._print_wide_grid(state, "DC4")
                 self._collect(state, "DC4", score_ctx, setup=score_ctx.entry_setup1, setup_line=setup_line,
                               grid_tp2_line=grid_line, wide_grid_line=wide_line)
 
@@ -485,11 +501,12 @@ class ConsoleRenderer:
                 info = f"{c2} | {c3} | {c4}"
                 print(f"{sym:<8} | {score:<8.4f} | {act:<15} | {c1:<20} | {info}")
                 
-                # In Grid Setup
+                # In Grid Setup (+ tag Strict 3D ✅ / ⛔)
                 g_setup = score_ctx.grid_setup
                 if g_setup:
                     grid_label = "GRID ⚡" if g_setup.grid_quantity == 2 else "GRID"
-                    print(f"  ↳ ⚙️ {grid_label}: Low={self.fmt_price(g_setup.lower_price)} | Up={self.fmt_price(g_setup.upper_price)} | Lưới={g_setup.grid_quantity} | SL Sell={self.fmt_price(g_setup.stop_loss)}")
+                    strict_tag = self._strict_tag(state, "DC5", "PINGPONG")
+                    print(f"  ↳ ⚙️ {grid_label}: Low={self.fmt_price(g_setup.lower_price)} | Up={self.fmt_price(g_setup.upper_price)} | Lưới={g_setup.grid_quantity} | SL Sell={self.fmt_price(g_setup.stop_loss)} | {strict_tag}")
                     
                 if state.macro_levels:
                     macro = state.macro_levels
@@ -498,7 +515,7 @@ class ConsoleRenderer:
                     print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới){self._d3_suffix(state)}")
 
                 # 🦅 WIDE GRID 3D (DC5)
-                wide_line = self._print_wide_grid(state)
+                wide_line = self._print_wide_grid(state, "DC5")
                 self._collect(state, "DC5", score_ctx, wide_grid_line=wide_line)
 
             print("=" * 100)

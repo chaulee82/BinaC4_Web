@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from engines.base_engine import BaseEngine
 from models.market_state import SymbolState, ScoreContext, GridContext, MacroLevels
 from strategies.macro_grid_darvas import MacroGridDarvas
@@ -6,13 +6,21 @@ from strategies.macro_grid_darvas import MacroGridDarvas
 class DC1DarvasEngine(BaseEngine):
     def __init__(self, strategy: MacroGridDarvas):
         self.strategy = strategy
+        self.last_rejections: List[Tuple[str, str]] = []  # (symbol, lý do) bị cổng Strict 3D loại
 
     def run(self, watchlist: List[str], live_data_map: Dict[str, Any], timeframe: str = '4h', safety_map: Dict[str, str] = None, macro_levels_map: Optional[Dict[str, MacroLevels]] = None, **kwargs) -> List[SymbolState]:
         if safety_map is None:
             safety_map = {}
-            
+
+        # ── 🛡️ CỔNG KIỂM DỊCH STRICT 3D — giữ nguyên thiết lập lưới để hiển thị, chỉ kiểm dịch + ghi sổ ──
+        # Trượt → renderer gắn `⛔ [3D STRICT]`, main.py CHẶN mở bot tự động, chi tiết in ở Bảng Tổng Kết.
+        from core.macro_levels import strict_3d_gate
+        self.last_rejections = []
         darvas_results = []
         for symbol in watchlist:
+            gate = strict_3d_gate(symbol, engine="DC1", kind="DARVAS")
+            if not gate.get("is_valid"):
+                self.last_rejections.append((symbol, "; ".join(gate.get("reasons") or [])))
             result = self.strategy.scan_grid_candidate(symbol, timeframe)
             darvas_results.append(result)
 

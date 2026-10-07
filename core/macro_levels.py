@@ -528,6 +528,219 @@ def route_3d_strategy(ind: dict, flow: dict, tick_size: float = 0.0) -> dict:
     return res
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# BỘ LỌC CỨNG "SIÊU SÓNG 3D" — CỔNG KIỂM DỊCH CHUNG (Universal Gatekeeper)
+# Áp dụng cho MỌI lưới: DC1 Darvas / Wide Grid 3D, Grid TP2 (DC2/DC3/DC4), DC5 PingPong.
+# Chặn các mã pump & dump: bắt buộc qua đủ 4 tầng mới được cấp phép dựng lưới.
+# ═════════════════════════════════════════════════════════════════════════════
+STRICT_3D_TAG_OK       = "🛡️ [3D STRICT ✅]"
+STRICT_3D_TAG_REJECT   = "⛔ [3D STRICT] - NÉ GRID"
+STRICT_3D_TAG_FAIL     = "⛔ [3D STRICT]"          # Tag ngắn gắn vào dòng lưới ở từng Động cơ (chi tiết → Bảng Tổng Kết)
+STRICT_3D_POLE_LOOKBACK = 10     # Tìm cột cờ trong 10 nến 3D gần nhất (~30 ngày, không tính nến hiện tại)
+STRICT_3D_POLE_BASE_N   = 10     # Nền so sánh Vol cột cờ: TB 10 nến 3D trước nó
+STRICT_3D_POLE_MIN_VR   = 1.5    # Cột cờ: nến 3D tăng có Vol ≥ 1.5× nền
+STRICT_3D_DRYUP_RATIO   = 0.8    # Vol nến 3D hiện tại phải < 80% Vol cột cờ (kiệt cung)
+STRICT_3D_DUMP_RATIO    = 0.8    # Nến 3D đỏ sau cột cờ có Vol ≥ 80% cột cờ → Phân phối
+STRICT_3D_MAX_RETRACE   = 0.5    # Chỉ cho phép lùi nhẹ: giá giữ ≥ 50% thân cột cờ
+STRICT_3D_MIN_PCT_B     = 0.5    # %B BOLL 3D tối thiểu (0.5 = đường giữa MB)
+
+
+def _strict_ma_series(c: pd.Series):
+    """Chuỗi MA7 / MA25 / MA99 khung 3D (fallback EMA khi thiếu nến — đồng bộ compute_3d_indicators)."""
+    n = len(c)
+    ma7 = c.rolling(7).mean()
+    ma25 = c.rolling(25).mean() if n >= 26 else c.ewm(span=25, adjust=False).mean()
+    ma99 = c.rolling(99).mean() if n >= 100 else c.ewm(span=50, adjust=False).mean()
+    return ma7, ma25, ma99
+
+
+def _strict_fail(reason: str) -> dict:
+    """Kết quả trượt cổng do thiếu dữ liệu / lỗi (fail-safe = loại)."""
+    return {"is_valid": False, "passed": False, "score": 0, "checks": {}, "failed_layers": [],
+            "reasons": [reason], "tag": f"{STRICT_3D_TAG_REJECT} | {reason}"}
+
+
+def _evaluate_strict_3d(df_3d: pd.DataFrame, ind: dict) -> dict:
+    """
+    Kiểm định 4 tầng "Siêu sóng 3D" từ nến 3D thô (đánh giá đủ cả 4 tầng để log lý do loại):
+      1. Supertrend 3D xanh và close > ST.
+      2. MA7 > MA25 > MA99 (3D) và cả 3 đường dốc lên (so với nến 3D trước).
+      3. Kiệt cung sau cột cờ: có nến 3D tăng nổ Vol (cột cờ), sau đó Vol teo lại
+         (< 80% cột cờ), không có nến đỏ Vol lớn (phân phối), không lùi sâu > 50% thân cờ.
+      4. Giá ở nửa trên BOLL 3D: close > MB và %B ≥ STRICT_3D_MIN_PCT_B.
+    """
+    try:
+        if df_3d is None or ind is None or len(df_3d) < 12:
+            return _strict_fail("Thiếu dữ liệu nến 3D")
+
+        c = df_3d["close"].astype(float)
+        o = df_3d["open"].astype(float).values
+        v = df_3d["volume"].astype(float).values
+        cl = c.values
+        n = len(c)
+        close = float(cl[-1])
+        reasons = []
+        L1, L2, L3, L4 = (f"Vi phạm Tầng {i} - " for i in range(1, 5))
+
+        # ── Tầng 1: Supertrend 3D xanh, giá nằm trên ST ─────────────────────
+        st_ok = ind["st_dir_3d"] == 1 and close > ind["st_val_3d"] > 0
+        if not st_ok:
+            reasons.append(L1 + ("Mất Supertrend 3D (đỏ)" if ind["st_dir_3d"] != 1 else "Giá dưới Supertrend 3D"))
+
+        # ── Tầng 2: MA stack bullish + dốc dương ────────────────────────────
+        ma7_s, ma25_s, ma99_s = _strict_ma_series(c)
+        m7, m25, m99 = float(ma7_s.iloc[-1]), float(ma25_s.iloc[-1]), float(ma99_s.iloc[-1])
+        p7, p25, p99 = float(ma7_s.iloc[-2]), float(ma25_s.iloc[-2]), float(ma99_s.iloc[-2])
+        stack_ok = bool(m7 > m25 > m99 > 0)
+        slopes = {"MA7": m7 > p7, "MA25": m25 > p25, "MA99": m99 > p99}
+        slope_ok = all(slopes.values())
+        if not stack_ok:
+            reasons.append(L2 + "MA 3D không xếp tầng 7>25>99")
+        if not slope_ok:
+            reasons.append(L2 + "MA 3D dốc xuống (" + ",".join(k for k, ok in slopes.items() if not ok) + ")")
+        ma_ok = stack_ok and slope_ok
+
+        # ── Tầng 3: Kiệt cung sau Cột cờ (Volume Profile) ───────────────────
+        pole = None
+        for i in range(max(1, n - 1 - STRICT_3D_POLE_LOOKBACK), n - 1):
+            if cl[i] <= o[i]:
+                continue  # Cột cờ phải là nến 3D tăng
+            base = v[max(0, i - STRICT_3D_POLE_BASE_N):i]
+            if len(base) < 3 or base.mean() <= 0:
+                continue
+            if v[i] / base.mean() >= STRICT_3D_POLE_MIN_VR and (pole is None or v[i] > v[pole]):
+                pole = i
+
+        vol_ok = False
+        dryup_ratio = None
+        pole_age = None
+        if pole is None:
+            reasons.append(L3 + "Không có thân cờ nổ Vol 3D")
+        else:
+            pole_vol = float(v[pole])
+            pole_age = n - 1 - pole
+            post = range(pole + 1, n)
+            dryup_ratio = float(v[-1]) / pole_vol if pole_vol > 0 else 9.99
+            dry_ok = dryup_ratio < STRICT_3D_DRYUP_RATIO
+            exceed = any(v[j] > pole_vol for j in post)
+            dump = any(cl[j] < o[j] and v[j] >= pole_vol * STRICT_3D_DUMP_RATIO for j in post)
+            hold_lvl = o[pole] + (cl[pole] - o[pole]) * (1.0 - STRICT_3D_MAX_RETRACE)
+            hold_ok = close >= hold_lvl
+            if not dry_ok:
+                reasons.append(L3 + f"Vol chưa cạn ({dryup_ratio:.2f}x thân cờ)")
+            if exceed:
+                reasons.append(L3 + "Vol vượt thân cờ")
+            if dump:
+                reasons.append(L3 + f"Nến xả ≥{STRICT_3D_DUMP_RATIO:.0%} Vol thân cờ (phân phối)")
+            if not hold_ok:
+                reasons.append(L3 + f"Lùi quá {STRICT_3D_MAX_RETRACE:.0%} thân cờ")
+            vol_ok = dry_ok and not exceed and not dump and hold_ok
+
+        # ── Tầng 4: Nửa trên dải BOLL 3D ────────────────────────────────────
+        up, mid, dn = ind["boll_up_3d"], ind["boll_mid_3d"], ind["boll_dn_3d"]
+        pct_b = (close - dn) / (up - dn) if up > dn else 0.0
+        boll_ok = close > mid and pct_b >= STRICT_3D_MIN_PCT_B
+        if not boll_ok:
+            reasons.append(L4 + f"Dưới nửa trên BOLL 3D (%B {pct_b:.2f})")
+
+        checks = {"supertrend": st_ok, "ma_stack": ma_ok, "volume_dryup": vol_ok, "boll_upper_half": boll_ok}
+        layer_ok = [st_ok, ma_ok, vol_ok, boll_ok]
+        passed = all(layer_ok)
+        out = {
+            "is_valid": passed,
+            "passed": passed,                                   # alias tương thích cũ
+            "score": 25 * sum(layer_ok),                        # 0–100: 25 điểm / tầng đạt
+            "checks": checks,
+            "failed_layers": [i + 1 for i, ok in enumerate(layer_ok) if not ok],
+            "reasons": reasons,
+            "dryup_ratio": dryup_ratio,
+            "pole_age": pole_age,
+            "pct_b": pct_b,
+        }
+        if passed:
+            out["tag"] = (f"{STRICT_3D_TAG_OK} ST🟢 | MA7>25>99↗ | Vol cạn {dryup_ratio:.2f}x thân cờ "
+                          f"({pole_age} nến 3D trước) | %B {pct_b:.2f}")
+        else:
+            out["tag"] = f"{STRICT_3D_TAG_REJECT} | " + "; ".join(reasons)
+        return out
+    except Exception as e:
+        return _strict_fail(f"Lỗi kiểm định 3D: {e}")
+
+
+def validate_strict_3d_wave(source, ind: dict = None) -> dict:
+    """
+    CỔNG KIỂM DỊCH CHUNG — dùng cho mọi Động cơ Grid.
+
+    source chấp nhận:
+      - dict hồ sơ 3D (d3) từ get_3d_profile()  → dùng kết quả đã tính sẵn (memo, 0 API call)
+      - str symbol ('ARB/USDT' | 'ARBUSDT')     → tự lấy hồ sơ 3D
+      - DataFrame nến 3D + ind                  → tính trực tiếp (Unit Test)
+
+    Trả về dict: is_valid, score (0–100), checks, failed_layers, reasons ("Vi phạm Tầng N - ..."), tag.
+    Thiếu dữ liệu → is_valid=False (fail-safe: né lưới).
+    """
+    try:
+        if isinstance(source, pd.DataFrame):
+            return _evaluate_strict_3d(source, ind)
+        d3 = source
+        if isinstance(source, str):
+            d3 = get_3d_profile(source)
+        if not d3:
+            return _strict_fail("Thiếu dữ liệu nến 3D")
+        res = d3.get("strict_3d")
+        if res is None and d3.get("symbol"):
+            res = (get_3d_profile(d3["symbol"]) or {}).get("strict_3d")
+        return res or _strict_fail("Thiếu dữ liệu nến 3D")
+    except Exception as e:
+        return _strict_fail(f"Lỗi kiểm định 3D: {e}")
+
+
+def validate_engine_5_strict_3d(d3: dict) -> bool:
+    """Cổng vào Động cơ 5: True chỉ khi hồ sơ 3D qua đủ 4 tầng. Thiếu dữ liệu → loại (fail-safe)."""
+    return bool(validate_strict_3d_wave(d3).get("is_valid"))
+
+
+# ── Sổ ghi mã bị loại (dùng chung mọi Động cơ → Bảng Tổng Kết) ────────────────────
+_strict_rejections: dict = {}          # sym_clean → {"engines": set, "kinds": set, "reasons": list, "failed_layers": list}
+_strict_rej_lock = threading.Lock()
+
+
+def _clean_sym(symbol: str) -> str:
+    s = (symbol or "").upper().replace("/", "").replace("-", "").strip()
+    return s[:-4] if s.endswith("USDT") and len(s) > 4 else s
+
+
+def record_strict_3d_rejection(symbol: str, engine: str, result: dict, kind: str = "GRID") -> None:
+    """Ghi nhận 1 mã trượt cổng Strict 3D (gộp theo mã, nhiều Động cơ / loại lưới)."""
+    sym = _clean_sym(symbol)
+    if not sym:
+        return
+    with _strict_rej_lock:
+        rec = _strict_rejections.setdefault(sym, {"engines": set(), "kinds": set(), "reasons": [], "failed_layers": []})
+        rec["engines"].add(engine)
+        rec["kinds"].add(kind)
+        rec["reasons"] = list((result or {}).get("reasons") or ["Thiếu dữ liệu nến 3D"])
+        rec["failed_layers"] = list((result or {}).get("failed_layers") or [])
+
+
+def get_strict_3d_rejections() -> dict:
+    with _strict_rej_lock:
+        return {k: {**v, "engines": set(v["engines"]), "kinds": set(v["kinds"])} for k, v in _strict_rejections.items()}
+
+
+def reset_strict_3d_rejections() -> None:
+    with _strict_rej_lock:
+        _strict_rejections.clear()
+
+
+def strict_3d_gate(symbol: str, engine: str, kind: str = "GRID", d3: dict = None) -> dict:
+    """Kiểm dịch + tự ghi sổ nếu trượt. Dùng trước khi dựng bất kỳ lưới nào."""
+    res = validate_strict_3d_wave(d3 if d3 else symbol)
+    if not res.get("is_valid"):
+        record_strict_3d_rejection(symbol, engine, res, kind)
+    return res
+
+
 def get_3d_profile(symbol: str, tick_size: float = None) -> dict:
     """
     Hồ sơ 3D đầy đủ của 1 mã (chỉ báo + định tuyến + Wide Grid + dòng tiền).
@@ -548,7 +761,8 @@ def get_3d_profile(symbol: str, tick_size: float = None) -> dict:
         from core.klines_cache import get_klines_cached
         df_1d = get_klines_cached(sym_api, "1d", limit=300)
         df_1h = get_klines_cached(sym_api, "1h", limit=168)
-        ind = compute_3d_indicators(resample_1d_to_3d(df_1d)) if df_1d is not None else None
+        df_3d = resample_1d_to_3d(df_1d) if df_1d is not None else None
+        ind = compute_3d_indicators(df_3d) if df_3d is not None else None
         if ind is not None:
             if tick_size is None:
                 try:
@@ -565,6 +779,7 @@ def get_3d_profile(symbol: str, tick_size: float = None) -> dict:
             profile["_raw"] = ind          # Giá trị thô (chưa làm tròn) cho so sánh chính xác
             profile.update(flow)
             profile.update(route_3d_strategy(ind, flow, tick_size))
+            profile["strict_3d"] = _evaluate_strict_3d(df_3d, ind)
     except Exception as e:
         logger.debug(f"[3D] {sym_api}: lỗi tính profile 3D: {e}")
         profile = None

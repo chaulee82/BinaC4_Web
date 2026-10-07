@@ -41,6 +41,9 @@ TAG_WIDE_GRID         = "🦅 [WIDE GRID 3D -"
 TAG_SETUP             = "⚙️ SETUP"
 WIDE_GRID_3D_SIGNALS  = ("🚀 [3D: CHÂN SÓNG", "CỘT CỜ CAO")
 BACKUP_TAG            = "[⚠️ DỰ PHÒNG]"
+TAG_STRICT_OK         = "🛡️ [3D STRICT ✅]"
+TAG_STRICT_FAIL       = "⛔ [3D STRICT]"
+GRID_KINDS            = ("GRID_TP2", "WIDE_GRID_3D")
 
 # Chốt chặn sinh tử — áp dụng cho CẢ primary lẫn backup
 FATAL_EW_LEVEL        = 3                                    # 💀 CẤP 3: KHẨN CẤP
@@ -255,8 +258,8 @@ def classify_pool(pool: List[SignalRecord], spot_enabled: bool = True) -> Dict[s
     for s in pool:
         if is_fatal_error(s):
             continue
-        # 1. Grid TP2
-        if _has_grid_tp2(s):
+        # 1. Grid TP2 — lưới trượt cổng Strict 3D (⛔) bị loại hẳn, kể cả dự phòng
+        if _has_grid_tp2(s) and TAG_STRICT_FAIL not in s.grid_tp2_line:
             (b["tp2_backup"] if "NÉ GRID" in s.grid_warning else b["tp2_primary"]).append(s)
         # 2. Spot
         if spot_enabled:
@@ -264,8 +267,8 @@ def classify_pool(pool: List[SignalRecord], spot_enabled: bool = True) -> Dict[s
                 b["spot_primary"].append(s)
             elif _is_spot_backup(s):
                 b["spot_backup"].append(s)
-        # 3. Wide Grid 3D
-        if TAG_WIDE_GRID in s.wide_grid_line:
+        # 3. Wide Grid 3D — lưới trượt cổng Strict 3D (⛔) bị loại hẳn
+        if TAG_WIDE_GRID in s.wide_grid_line and TAG_STRICT_FAIL not in s.wide_grid_line:
             (b["wide_primary"] if _is_wide_primary(s) else b["wide_backup"]).append(s)
     return b
 
@@ -393,10 +396,70 @@ def print_formatted_table(signals_list: List[SignalRecord], kind: str, backup_sy
         if macro_3d:
             components.append(macro_3d)
 
-        print(f"  #{i} {prefix}{signal.symbol:<8} | " + " | ".join(c for c in components if c))
         setup_str = getattr(signal, _LINE_BY_KIND.get(kind, ""), "") or ""
+        # 🛡️ Tag kiểm dịch Strict 3D — đưa lên dòng tiêu đề, bỏ khỏi dòng setup để không lặp
+        if kind in GRID_KINDS and TAG_STRICT_OK in setup_str:
+            components.insert(1 if engine else 0, TAG_STRICT_OK)
+            setup_str = setup_str.replace(f" | {TAG_STRICT_OK}", "").replace(TAG_STRICT_OK, "").rstrip(" |")
+
+        print(f"  #{i} {prefix}{signal.symbol:<8} | " + " | ".join(c for c in components if c))
         if setup_str:
             print(f"     ↳ {setup_str}")
+
+
+_RE_PAREN = re.compile(r"\s*\([^)]*\)")
+_STRICT_LAYER_NAMES = {1: "Supertrend 3D", 2: "MA xếp tầng", 3: "Kiệt cung Vol", 4: "Bollinger 3D"}
+
+
+def _strict_group_key(reason: str) -> str:
+    """'Vi phạm Tầng 3 - Vol chưa cạn (0.88x thân cờ)' → 'Tầng 3 - Vol chưa cạn' (bỏ số liệu để gom nhóm)."""
+    return _RE_PAREN.sub("", reason or "").replace("Vi phạm ", "").strip() or "Không rõ"
+
+
+def print_strict_3d_rejections(rejections: Optional[Dict[str, Dict[str, Any]]]) -> None:
+    """Mục thống kê (dạng gọn): gom mã bị loại theo LÝ DO CHÍNH (tầng thấp nhất bị vi phạm), mỗi nhóm 1 dòng.
+    Ký hiệu `MÃ×N` = trượt N tầng. Nhóm 🟡 Sát chuẩn = chỉ trượt đúng 1 tầng (đáng theo dõi).
+    rejections: {sym: {"engines": set, "kinds": set, "reasons": [...], "failed_layers": [...]}}"""
+    print(f"\n### ⛔ 4. DANH SÁCH MÃ BỊ LOẠI DO TRƯỢT CỔNG STRICT 3D — {len(rejections or {})} mã")
+    if not rejections:
+        print("   Không có mã nào bị loại (hoặc chưa có mã nào được đề xuất lưới).")
+        return
+
+    # 📊 Thống kê theo tầng (1 mã có thể trượt nhiều tầng)
+    layer_count: Dict[int, int] = {}
+    for rec in rejections.values():
+        for lv in rec.get("failed_layers") or []:
+            layer_count[lv] = layer_count.get(lv, 0) + 1
+    if layer_count:
+        print("   📊 " + " | ".join(f"T{lv} {_STRICT_LAYER_NAMES.get(lv, '?')}: {n}"
+                                 for lv, n in sorted(layer_count.items())))
+
+    def _n_fail(sym: str) -> int:
+        return len(rejections[sym].get("failed_layers") or [])
+
+    def _label(sym: str) -> str:
+        n = _n_fail(sym)
+        return f"{sym}×{n}" if n > 1 else sym
+
+    # Gom theo lý do chính = lý do đầu tiên (tầng thấp nhất)
+    groups: Dict[str, List[str]] = {}
+    for sym, rec in rejections.items():
+        reasons = rec.get("reasons") or ["Thiếu dữ liệu nến 3D"]
+        groups.setdefault(_strict_group_key(reasons[0]), []).append(sym)
+
+    def _layer_of(key: str) -> int:
+        m = re.match(r"Tầng (\d)", key)
+        return int(m.group(1)) if m else 9
+
+    for key in sorted(groups, key=lambda k: (_layer_of(k), -len(groups[k]), k)):
+        syms = sorted(groups[key], key=lambda s: (_n_fail(s), s))      # Mã gần đạt chuẩn đứng trước
+        print(f"   ⛔ {key} ({len(syms)}): " + ", ".join(_label(s) for s in syms))
+
+    near = sorted(s for s in rejections if _n_fail(s) == 1)
+    if near:
+        print(f"   🟡 Sát chuẩn — chỉ trượt 1 tầng ({len(near)}): "
+              + ", ".join(f"{s}(T{rejections[s]['failed_layers'][0]})" for s in near))
+    print("   ℹ️ MÃ×N = trượt N/4 tầng | nhóm theo tầng thấp nhất bị vi phạm")
 
 
 _print_table = print_formatted_table   # tương thích tên cũ
@@ -416,10 +479,13 @@ def _board_config(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: str = "",
                            live_data_map: Optional[Dict[str, Any]] = None, df_summary=None,
                            warning_results: Optional[List[Dict[str, Any]]] = None,
-                           config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                           config: Optional[Dict[str, Any]] = None,
+                           strict_3d_rejections: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
     """In BẢNG TỔNG KẾT TỐI ƯU (kèm Mã Dự Phòng lấp đầy slot). Trả về dict kết quả để tầng khác tái sử dụng.
     config: block `summary_board` trong settings.json
-        {"top_spot": 2, "top_grid_tp2": 3, "top_wide_grid": 2, "fill_with_backup": true}"""
+        {"top_spot": 2, "top_grid_tp2": 3, "top_wide_grid": 2, "fill_with_backup": true}
+    strict_3d_rejections: sổ mã trượt cổng Strict 3D (core.macro_levels.get_strict_3d_rejections()).
+        None → không in mục 4."""
     cfg = _board_config(config)
     fill = cfg["fill_with_backup"]
     result: Dict[str, Any] = {"spot": [], "grid_tp2": [], "wide_grid": [],
@@ -466,6 +532,11 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
                                                 top_n=cfg["top_wide_grid"], fill_with_backup=fill)
         result["wide_grid"], result["wide_grid_backup_symbols"] = wide_list, wide_bk
         print_formatted_table(wide_list, "WIDE_GRID_3D", wide_bk)
+
+        # 4. Thống kê mã trượt cổng Strict 3D
+        if strict_3d_rejections is not None:
+            print_strict_3d_rejections(strict_3d_rejections)
+            result["strict_3d_rejections"] = strict_3d_rejections
 
         # Cờ tương thích: True nếu bảng có ít nhất 1 mã dự phòng
         for k in ("spot", "grid_tp2", "wide_grid"):

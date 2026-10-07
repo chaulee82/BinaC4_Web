@@ -9,6 +9,7 @@ logger = logging.getLogger("DC5UptrendEngine")
 class DC5PingpongUptrendEngine(BaseEngine):
     def __init__(self, strategy: GridPingpongUptrendScorer):
         self.strategy = strategy
+        self.last_rejections: List[Tuple[str, str]] = []  # (symbol, lý do) bị Hard Filter 3D loại
 
     def run(self, watchlist: List[str], live_data_map: Dict[str, Any], safety_map: Dict[str, str] = None, macro_levels_map: Optional[Dict[str, MacroLevels]] = None, **kwargs) -> List[SymbolState]:
         if safety_map is None:
@@ -21,10 +22,18 @@ class DC5PingpongUptrendEngine(BaseEngine):
         )
 
         dc5_states = []
+        self.last_rejections = []
         
         if pingpong_results:
+            from core.macro_levels import strict_3d_gate
             for res in pingpong_results:
                 sym = res.get('symbol', '')
+
+                # ── 🛡️ CỔNG KIỂM DỊCH STRICT 3D (4 tầng) — giữ nguyên lưới, renderer gắn tag, chi tiết ở Bảng Tổng Kết ──
+                gate = strict_3d_gate(sym, engine="DC5", kind="PINGPONG")
+                if not gate.get("is_valid"):
+                    self.last_rejections.append((sym, "; ".join(gate.get("reasons") or [])))
+
                 score = res.get('pingpong_score', 0)
                 rank = res.get('rank', '')
                 bounces = res.get('bounces_24h', 0)
