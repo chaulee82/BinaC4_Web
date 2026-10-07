@@ -1,0 +1,308 @@
+2026-10-06 14:24:32,165 - CN4-Controller - INFO - Khởi động hệ thống giao dịch CN4-Platform...
+2026-10-06 14:24:32,166 - CN4-Controller - WARNING - Chưa cấu hình API Key và Secret Key trong file .env! Hệ thống sẽ chạy ở chế độ MOCK (Chỉ quét, không vào lệnh thực).
+2026-10-06 14:24:32,209 - ExchangeInfoCache - INFO - [ExchangeInfoCache] Đang fetch exchangeInfo từ Binance (1 lần duy nhất)...
+2026-10-06 14:24:33,403 - ExchangeInfoCache - INFO - [ExchangeInfoCache] Đã cache tick_size cho 502 mã USDT.
+2026-10-06 14:24:33,424 - CN4-Controller - INFO - Timeframe: 4h
+2026-10-06 14:24:33,425 - TradeExecutionService - INFO - 🛡️ [Execution] Đang chạy ở chế độ DRY-RUN (Mock Mode). Lệnh sẽ không được gửi lên sàn.
+2026-10-06 14:24:35,389 - CN4-Controller - INFO - Đang chạy module coin_filter để quét các mã tiềm năng...
+2026-10-06 14:24:35,389 - CacheService - INFO - [CacheService] Đang cập nhật live_data_map từ Binance...
+2026-10-06 14:24:35,612 - CacheService - INFO - [CacheService] Đã cập nhật thành công 699 mã.
+🎯 TỔNG CỘNG CÓ 80 MÃ ĐƯỢC ĐƯĂ VÀO BẢNG CHẤM ĐIỂM MOMENTUM!
+
+⏳ Hệ thống đang bắt đầu tính toán GRID và chấm điểm (Vui lòng đợi 1-2 phút)...
+
+⏳ Đang tải dữ liệu nến song song (warm cache)...
+2026-10-06 14:24:35,614 - KlinesCache - INFO - [KlinesCache] Warm cache: Cần fetch 320 cặp (symbol×interval) song song...
+2026-10-06 14:25:01,091 - KlinesCache - INFO - [KlinesCache] Warm cache xong: 320 thanh cong, 0 that bai.
+✅ Pre-fetch xong: 320 API calls trong 25.5s
+
+===========================================================================================================================================================
+🏆 BẢNG THAM SỐ GRID CHUẨN (Hợp Thể Động Cơ 1 Darvas + ATR 1D)
+(Sàn Lưới Darvas siêu cứng / Trần Lưới ATR siêu sóng)
+===========================================================================================================================================================
+⚠️ KHÔNG CÓ MÃ NÀO ĐẠT CHUẨN 4 KHÔNG ĐỂ MỞ GRID LÚC NÀY! THỊ TRƯỜNG ĐANG DẦN BỊ NHIỄU.
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+💡 Top 3 Mã Tiềm Năng Nhất (Radar Cảnh Giới Dự Phòng):
+  • ZRO    | Điểm: 79.1 | Grid: 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)
+    └─ Lỗi: 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI 1H Lý Tưởng Grid (56.2)  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  🦅 CỘT CỜ CAO 3D +15  •  ⚠️ Giảm -1.8% Từ Đỉnh 1H
+  • ASTER  | Điểm: 76.7 | Grid: 🛡️ GRID HẸP (12 Lưới)
+    └─ Lỗi: 🟢 RSI 1H Lý Tưởng Grid (62.3)  •  🔴 Nến 15M xả thượt  •  ⚠️ Bearish Engulfing 15M  •  🟢 Net Rút Chân Dương (+5.9%)  •  🚀 Trend Bonus +6  •  🚀 SIÊU SÓNG 3D  •  🟢 Sát nền Mua Limit (Tăng Trên MA25)
+  • AVAX   | Điểm: 70.1 | Grid: 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)
+    └─ Lỗi: 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  🚀 SIÊU SÓNG 3D  •  🟢 Sát nền Mua Limit (Tăng Trên MA25)
+
+============================================================================================================================================================================================================================================================================================================
+
+
+📋 Danh mục watchlist: 83 mã đủ điều kiện vào động cơ phân tích.
+
+2026-10-06 14:25:17,029 - CN4-Controller - INFO - Dang kich hoat He thong Canh bao Som (Early Warning Matrix)...
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+🚨 HỆ THỐNG CẢNH BÁO SỚM & RỦI RO SẬP
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+| Mức Độ (Level)                 | Tín Hiệu                  | Danh Sách Mã
+|--------------------------------|---------------------------|--------------------
+| ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm 1H) (36/83) | Giá cắt xuống dưới cụm MA(7) & EMA(7) 1H | ZRO, NEAR, DOT, RAY, AAVE, SEI, TAO, MUBARAK, ICP, ENA, XRP, ZAMA, LTC, SHIB, SUI, FET, MSTRB, QNT, OGN, VIRTUAL, SOL, PUMP, DOGE, ZEC, SAND, MOVR, TRUMP, WLD, HBAR, SCR, ONDO, XLM, ARB, STRK, GTC, BIO
+| ⚠️ CẤP 1: THEO DÕI (Miễn Cấp 3 - Uptrend 3D) (2/83) | Thủng ST 1D nhưng trên MA7 3D & ST 3D 🟢 | CHIP, NIL
+| 💀 CẤP 3: KHẨN CẤP (Gãy Trend 1D) (4/83) | Giá thủng Supertrend mốc 1D | RVN, CRCLB, SAGA, TON
+| 🛑 CẤP 2: NGUY HIỂM (Cảnh Báo 4H) (5/83) | Xuyên thủng Đáy BB(20) 4H kèm Volume xả | 牛来, MARSCOIN, XPL, DASH, UNI
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+================================================================================
+📦 ĐỘNG CƠ 1: DARVAS GRID
+================================================================================
+Mã         | Điểm   | Trạng Thái           | Hành Động
+| --- | --- | --- | --- |
+XRP        | 85     | ✅ AN TOÀN            | 🟢 LƯỚI TỐI ƯU: Móng bê tông cốt thép — Khởi tạo ngay
+  ↳ ⚙️ DUAL: SL=1.2846|TP=2.0274 | G1:1.4236-1.602(15L) | G2:1.6182-1.9251(23L)
+    ↳ [Macro 4H] Entry: 1.4914     | SL Cứng: 1.4192     | TP 1H: 1.5244     | TP 4H: 1.555      | [3D: MA7=1.4939 MA99=1.4129 BOLL_UP=1.7094 ST=🟢1.1327 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🦅 [WIDE GRID 3D - XRP] 1.3673 - 1.9145 | 28L | Trig: 1.4546 | SL: 1.2990 | TP: 1.9145 (Vốn 1000$ ≈ 35.71$/lưới)
+INJ        | 85     | ✅ AN TOÀN            | 🟢 LƯỚI TỐI ƯU: Móng bê tông cốt thép — Khởi tạo ngay
+  ↳ ⚙️ DUAL: SL=6.9776|TP=8.9062 | G1:7.0597-8.412(23L) | G2:8.497-8.8039(5L)
+    ↳ [Macro 4H] Entry: 7.512      | SL Cứng: 6.884      | TP 1H: 7.75       | TP 4H: 7.843      | [3D: MA7=7.58 MA99=4.595 BOLL_UP=8.561 ST=🟢5.249 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+NVDAB      | 85     | ⚠️ 🌊 4H Tích Lũy: HL | 🟢 LƯỚI TỐI ƯU: Móng bê tông cốt thép — Khởi tạo ngay
+  ↳ ⚙️ DUAL: SL=221.1066|TP=240.6192 | G1:219.0474-237.8079(10L) | G2:240.21-240.5169(5L)
+    ↳ [Macro 4H] Entry: 236.49     | SL Cứng: 226.59     | TP 1H: 240.95     | TP 4H: 240.95     | [3D: MA7=229.04 EMA50*=217.38 BOLL_UP=237.62 ST=🟢210.02 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+SPCXB      | 80     | ⚠️ ⚠️ RSI 1H Quá Mua | 🟢 LƯỚI TỐI ƯU: Móng bê tông cốt thép — Khởi tạo ngay
+  ↳ ⚙️ DUAL: SL=145.0866|TP=173.8692 | G1:143.7876-171.7254(24L) | G2:173.46-173.7669(5L)
+    ↳ [Macro 4H] Entry: 157.89     | SL Cứng: 145.43     | TP 1H: 173.74     | TP 4H: 173.74     | [3D: MA7=155.17 EMA50*=150.4 BOLL_UP=164.49 ST=🟢133.27 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🦅 [WIDE GRID 3D - SPCXB] 161.38 - 204.66 | 28L | Trig: 163.66 | SL: 148.96 | TP: 204.66 (Vốn 1000$ ≈ 35.71$/lưới)
+AVAX       | 75     | ✅ AN TOÀN            | 🟡 THEO DÕI: Móng đủ cứng — Chờ giá về sát nền hơn
+  ↳ ⚙️ DUAL: SL=9.8126|TP=12.2522 | G1:9.8663-11.7246(23L) | G2:11.843-12.1499(5L)
+    ↳ [Macro 4H] Entry: 11.036     | SL Cứng: 10.202     | TP 1H: 11.4       | TP 4H: 11.4       | [3D: MA7=10.553 MA99=9.046 BOLL_UP=11.888 ST=🟢8.018 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🦅 [WIDE GRID 3D - AVAX] 10.448 - 13.314 | 28L | Trig: 10.948 | SL: 9.925 | TP: 13.314 (Vốn 1000$ ≈ 35.71$/lưới)
+================================================================================
+2026-10-06 14:25:43,308 - CN4-Controller - INFO - [DC2] Kiem tra Macro Trend 1D truoc khi cham diem Pullback...
+2026-10-06 14:26:26,819 - DC2Engine - WARNING - [DC2] Lỗi tính OCO cho PENGU/USDT: [PENGUUSDT] R/R Gate REJECTED — Payload 1 R/R = 1.50R < 1.5R (Entry: 0.00935121 → MidTP: 0.00942134, SL_Agg: 0.00930445)
+
+====================================================================================================
+🎯 PULLBACK SNIPER (ĐỘNG CƠ 2)
+====================================================================================================
+Mã       | Điểm  | Trạng Thái      | C0   | C1   | C2   | C3   | C4   | Hành Động
+ENA      | 85    | ✅ AN TOÀN       | +10  | 30   | 25   | 0    | 20   | 🟢 LOẠI A: Kích hoạt 100% Volume (Full Limit OCO)
+   ↳ [ENA] 🛡️ EW: 🟢 EW CẤP 3 — AN TOÀN: APPROVED | PB=53 | W=0 D=25 M=18 TB=10
+   ↳ [ENA] OCO-1: Buy=0.24040496 | SL=0.2390985(-0.5%) | TP=0.2627(+9.3%) | R/R=1:17.1
+   ↳ [ENA] OCO-2: Buy=0.24040496 | SL=0.23608858(-1.8%) | TP=0.2811(+16.9%) | R/R=1:9.4 | Trail=ON->BE khi OCO-1 TP
+    ↳ [ENA] [Macro 4H] Entry: 0.2404     | SL Cứng: 0.2146     | TP 1H: 0.2627     | TP 4H: 0.2648     | [3D: MA7=0.232 MA99=0.13 BOLL_UP=0.2822 ST=🟢0.1618 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - ENA] 0.2253 - 0.2811 | 24L | Trig: 0.2404 | SL: 0.2146 | TP: 0.2811
+   ↳ 🦅 [WIDE GRID 3D - ENA] 0.2297 - 0.3161 | 28L | Trig: 0.2348 | SL: 0.2182 | TP: 0.3161 (Vốn 1000$ ≈ 35.71$/lưới)
+----------------------------------------------------------------------------------------------------
+SUI      | 85    | ✅ AN TOÀN       | +10  | 30   | 25   | 0    | 20   | 🟢 LOẠI A: Kích hoạt 100% Volume (Full Limit OCO)
+   ↳ [SUI] 🛡️ EW: 🟢 EW CẤP 3 — AN TOÀN: APPROVED | PB=53 | W=0 D=25 M=18 TB=10
+   ↳ [SUI] OCO-1: Buy=1.1831 | SL=1.1758(-0.6%) | TP=1.2275(+3.8%) | R/R=1:6.1
+   ↳ [SUI] OCO-2: Buy=1.1831 | SL=1.0932(-7.6%) | TP=1.318(+11.4%) | R/R=1:1.5 | Trail=ON->BE khi OCO-1 TP
+    ↳ [SUI] [Macro 4H] Entry: 1.1838     | SL Cứng: 1.0494     | TP 1H: 1.2545     | TP 4H: 1.2655     | [3D: MA7=1.096 MA99=0.9868 BOLL_UP=1.2509 ST=🟢0.8383 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - SUI] 1.0713 - 1.3180 | 24L | Trig: 1.1831 | SL: 1.0494 | TP: 1.3180
+   ↳ 🦅 [WIDE GRID 3D - SUI] 1.1399 - 1.4027 | 28L | Trig: 1.1554 | SL: 1.0522 | TP: 1.4027 (Vốn 1000$ ≈ 35.71$/lưới)
+----------------------------------------------------------------------------------------------------
+PENGU    | 80    | ✅ AN TOÀN       | +5   | 30   | 25   | 0    | 20   | 🟡 LOẠI B: Kích hoạt 50% Volume (Thăm dò)
+   ↳ [PENGU] 🛡️ EW: 🟢 EW CẤP 3 — AN TOÀN: APPROVED | PB=33 | W=0 D=25 M=18 TB=10
+   ↳ [PENGU] OCO-1: Buy=0.00941 | SL=0.00882(-6.3%) | TP=0.01118(+18.8%) | R/R=1:3.0
+    ↳ [PENGU] [Macro 4H] Entry: 0.009351   | SL Cứng: 0.008248   | TP 1H: 0.009993   | TP 4H: 0.010087   | [3D: MA7=0.00929 MA99=0.007921 BOLL_UP=0.010815 ST=🟢0.00651 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - PENGU] 0.008534 - 0.011180 | 24L | Trig: 0.009410 | SL: 0.008248 | TP: 0.011180
+   ↳ 🦅 [WIDE GRID 3D - PENGU] 0.008642 - 0.012112 | 28L | Trig: 0.009193 | SL: 0.008210 | TP: 0.012112 (Vốn 1000$ ≈ 35.71$/lưới)
+----------------------------------------------------------------------------------------------------
+AAVE     | 80    | ✅ AN TOÀN       | +15  | 30   | 25   | 0    | 10   | 🟡 LOẠI B: Kích hoạt 50% Volume (Thăm dò)
+   ↳ [AAVE] 🛡️ EW: 🟢 EW CẤP 3 — AN TOÀN: APPROVED | PB=53 | W=0 D=25 M=18 TB=10
+   ↳ [AAVE] OCO-1: Buy=180.37 | SL=179.2791(-0.6%) | TP=183.98(+2.0%) | R/R=1:3.3
+   ↳ [AAVE] OCO-2: Buy=180.37 | SL=169.2456(-6.2%) | TP=197.0564(+9.3%) | R/R=1:1.5 | Trail=ON->BE khi OCO-1 TP
+    ↳ [AAVE] [Macro 4H] Entry: 172.02     | SL Cứng: 156.82     | TP 1H: 187.59     | TP 4H: 187.59     | [3D: MA7=158.45 MA99=113.73 BOLL_UP=183.83 ST=🟢132.09 -> 🦅 [3D: CỘT CỜ CAO - WIDE GRID 28L]]
+   ↳ 🎯 [GRID TP2 - AAVE] 163.03 - 197.06 | 23L | Trig: 180.37 | SL: 156.82 | TP: 197.06
+   ↳ 🦅 [WIDE GRID 3D - AAVE] 164.79 - 213.79 | 28L | Trig: 176.11 | SL: 152.11 | TP: 213.79 (Vốn 1000$ ≈ 35.71$/lưới)
+----------------------------------------------------------------------------------------------------
+OP       | 80    | ✅ AN TOÀN       | +5   | 30   | 25   | 0    | 20   | 🟡 LOẠI B: Kích hoạt 50% Volume (Thăm dò)
+   ↳ [OP] 🛡️ EW: 🟢 EW CẤP 3 — AN TOÀN: APPROVED | PB=46 | W=0 D=18 M=18 TB=10
+   ↳ [OP] OCO-1: Buy=0.13237124 | SL=0.13197189(-0.3%) | TP=0.13892532(+5.0%) | R/R=1:16.4
+   ↳ [OP] OCO-2: Buy=0.13237124 | SL=0.12999231(-1.8%) | TP=0.13961995(+5.5%) | R/R=1:3.0 | Trail=ON->BE khi OCO-1 TP
+    ↳ [OP] [Macro 4H] Entry: 0.1326     | SL Cứng: 0.1176     | TP 1H: 0.141      | TP 4H: 0.141      | [3D: MA7=0.1327 MA99=0.1471 BOLL_UP=0.1472 ST=🟢0.0923 -> ⚠️ [3D: ĐỤNG CẢN VĨ MÔ - KHÓA TRẦN TP2]] [3D: ⚠️ CẢN ĐÈ MA99_3D=0.1471 -> Khóa TP]
+   ↳ 🎯 [GRID TP2 - OP] 0.1238 - 0.1396 | 14L | Trig: 0.1324 | SL: 0.1176 | TP: 0.1396
+----------------------------------------------------------------------------------------------------
+====================================================================================================
+2026-10-06 14:26:27,318 - CN4-Controller - WARNING - [TIN HIEU DC2] ENA/USDT APPROVED | Entry=0.2404 | OCO-1 SL=0.2391 TP=0.2627 | OCO-2 SL=0.2361 TP=0.2811
+2026-10-06 14:26:27,319 - CN4-Controller - INFO - [MOCK MODE] ENA/USDT: OCO-1 Buy Limit @ 0.2404 SL=0.2391 TP=0.2627 | OCO-2 Buy Limit @ 0.2404 SL=0.2361 TP=0.2811
+2026-10-06 14:26:27,319 - CN4-Controller - WARNING - [TIN HIEU DC2] SUI/USDT APPROVED | Entry=1.1831 | OCO-1 SL=1.1758 TP=1.2275 | OCO-2 SL=1.0932 TP=1.318
+2026-10-06 14:26:27,319 - CN4-Controller - INFO - [MOCK MODE] SUI/USDT: OCO-1 Buy Limit @ 1.1831 SL=1.1758 TP=1.2275 | OCO-2 Buy Limit @ 1.1831 SL=1.0932 TP=1.318
+
+🔍 [DC3] Kiểm tra BTC 1H Gate trước khi quét Breakout...
+✅ [DC3] BTC Gate mở: ⚠️ CẢNH BÁO: BTC gãy MA25 1H (RSI=41.1) — Fakeout Risk Cao
+
+====================================================================================================
+🚀 MOMENTUM BREAKOUT (ĐỘNG CƠ 3) | BTC: ⚠️ CẢNH BÁO: BTC gãy MA25 1H (RSI=41.1) — Fakeout Risk Cao
+====================================================================================================
+Mã       | Điểm  | C1(PA)     | C2(Vol)    | C3(OB)     | C4(R/R)    | Bonus  | Hành Động
+RAD      | 95    | Breakout (🚀 Miễn phạt râu | Dòng tiền Bạo Phát (4.7x  | Lực Mua Yếu (Taker Buy 48 | R/R Tối Ưu (2.6) — SL Sát | 🚀+25 💥+20 ⇒+30(cap) | 🟢 BREAKOUT HÀNG THẬT: Bắn lệnh Hybrid Executor | 💥 TIỀN BẠO PHÁT (6.9x) → Trig đón nhúng
+   ↳ ⚙️ SETUP: In=0.385 | SL=0.3391428571(-11.9%) | R/R=1:2.6
+       📄 [MOCK] TP1=0.5037470167(+30.8%) | TP2=0.5631205251(+46.3%)
+    ↳ [Macro 4H] Entry: 0.32       | SL Cứng: 0.214      | TP 1H: 0.436      | TP 4H: 0.436      | [3D: MA7=0.273 MA99=0.246 BOLL_UP=0.324 ST=🟢0.236 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - RAD] 0.277 - 0.563 | 24L | Trig: 0.385 | SL: 0.214 | TP: 0.563
+----------------------------------------------------------------------------------------------------
+API3     💰x2.9 | 85    | Breakout Sạch (Đóng nến q | Dòng tiền Bạo Phát (8.5x  | Lực Mua Yếu (Taker Buy 50 | 🚫 HỦY SETUP (R/R 1.2 < 2. | 🚀+25 💥+25 ⇒+30(cap) | 🟢 BREAKOUT HÀNG THẬT: Bắn lệnh Hybrid Executor | 💥 TIỀN BẠO PHÁT (10.0x) → Trig đón nhúng
+   ↳ ⚙️ SETUP: In=0.3633 | SL=0.3000428571(-17.4%) | R/R=1:2.2
+       📄 [MOCK] TP1=0.5024657143(+38.3%) | TP2=0.5720485714(+57.5%)
+    ↳ [Macro 4H] Entry: 0.3077     | SL Cứng: 0.2411     | TP 1H: 0.3769     | TP 4H: 0.3769     | [3D: MA7=0.2888 MA99=0.2996 BOLL_UP=0.3278 ST=🟢0.2197 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - API3] 0.2706 - 0.5720 | 24L | Trig: 0.3633 | SL: 0.2411 | TP: 0.5720
+----------------------------------------------------------------------------------------------------
+RLC      | 85    | Breakout Sạch (Đóng nến q | Dòng tiền Bạo Phát (4.9x  | Lực Mua Yếu (Taker Buy 44 | 🚫 HỦY SETUP (R/R 1.6 < 2. | 🚀+25 💥+20 ⇒+30(cap) | 🟢 BREAKOUT HÀNG THẬT: Bắn lệnh Hybrid Executor | 💥 TIỀN BẠO PHÁT (8.2x) → Trig đón nhúng
+   ↳ ⚙️ SETUP: In=0.9046 | SL=0.6271142857(-30.7%) | R/R=1:2.2
+       📄 [MOCK] TP1=1.5150685714(+67.5%) | TP2=1.8203028571(+101.2%)
+    ↳ [Macro 4H] Entry: 0.5902     | SL Cứng: 0.2294     | TP 1H: 0.9735     | TP 4H: 0.9735     | [3D: MA7=0.4295 MA99=0.4189 BOLL_UP=0.6234 ST=🟢0.384 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - RLC] 0.4283 - 1.8203 | 24L | Trig: 0.9046 | SL: 0.2294 | TP: 1.8203
+----------------------------------------------------------------------------------------------------
+VTHO     💥💰x5.5 | 70    | Chưa có dấu hiệu Breakout | Dòng tiền Bạo Phát (6.7x  | Lực Mua Yếu (Taker Buy 48 | R/R Tối Ưu (3.1) — SL Sát | 💥+20   | 🟡 THEO DÕI: Cần tích lũy thêm Volume | 💥 TIỀN BẠO PHÁT (29.1x) → Trig đón nhúng
+   ↳ ⚙️ SETUP: In=0.000724 | SL=0.0006787143(-6.3%) | R/R=1:7.6
+       📄 [MOCK] TP1=0.00106628(+47.3%) | TP2=0.00123742(+70.9%)
+    ↳ [Macro 4H] Entry: 0.000677   | SL Cứng: 0.000594   | TP 1H: 0.000782   | TP 4H: 0.000782   | [3D: MA7=0.000716 MA99=0.000556 BOLL_UP=0.000874 ST=🟢0.000524 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - VTHO] 0.000636 - 0.001237 | 24L | Trig: 0.000724 | SL: 0.000594 | TP: 0.001237
+----------------------------------------------------------------------------------------------------
+OGN      | 70    | Chưa có dấu hiệu Breakout | Volume Đột Biến (2.5x MA2 | Lực Mua Yếu (Taker Buy 45 | R/R Tối Ưu (3.2) — SL Sát | 🚀+25 💥+20 ⇒+30(cap) | 🟡 THEO DÕI: Cần tích lũy thêm Volume | 💥 TIỀN BẠO PHÁT (2.8x) → Trig đón nhúng
+   ↳ ⚙️ SETUP: In=0.02126 | SL=0.0197371429(-7.2%) | R/R=1:3.5
+       📄 [MOCK] TP1=0.026596(+25.1%) | TP2=0.029264(+37.6%)
+    ↳ [Macro 4H] Entry: 0.02233    | SL Cứng: 0.01875    | TP 1H: 0.026      | TP 4H: 0.026      | [3D: MA7=0.02035 MA99=0.02162 BOLL_UP=0.0218 ST=🟢0.01616 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - OGN] 0.01924 - 0.02926 | 24L | Trig: 0.02126 | SL: 0.01875 | TP: 0.02926
+----------------------------------------------------------------------------------------------------
+====================================================================================================
+
+====================================================================================================
+🔥 HOT TREND PULLBACK (ĐỘNG CƠ 4) | Nguồn: 16 mã (>=5.0%, vol>=3M)
+====================================================================================================
+[CHIP  ] Điểm: 100    | RSI1H: 64.6 | Pull%: 3.2   | 🎯 🚀 VÀO LỆNH PULLBACK | 💥 TIỀN BẠO PHÁT (3.4x)
+   ↳ C1: EMA20(0.0521) > EMA50(0.0498) ✅ | RSI Lý Tưởng (64.6) — Setup Full Vol | C2: Lý Tưởng (-3.2% từ Swing) | C3: Kiệt Cung (28% đỉnh push) ✅ | C4: Xa Bệ Đỡ (EMA20 ±3.1%) | C5: Taker Còn Yếu (52.6%)
+   ↳ 🌀 Macro: 🟢 TÍCH LŨY / HỒI PHỤC | C0=+20đ | 💥 TIỀN BẠO PHÁT (3.4x) +15 | Trần C0 +30 ⇒ C0=+30đ | 0.0% | MA99 Dốc Lên (+11.1%/30D) — Đà Tăng Trưởng
+   ↳ ⚙️ SETUP: Trig=0.05207 | SL=0.0499875(-4.0%) | TP=0.075823(+45.6%) | R/R=1:11.4
+    ↳ [Macro 4H] Entry: 0.04662    | SL Cứng: 0.03808    | TP 1H: 0.05552    | TP 4H: 0.05552    | [3D: MA7=0.0467 EMA50*=0.04481 BOLL_UP=0.06215 ST=🟢0.03165 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - CHIP] 0.044034 - 0.075823 | 24L | Trig: 0.052070 | SL: 0.038080 | TP: 0.075823
+----------------------------------------------------------------------------------------------------
+[VTHO  ] 💥💰x5.5 Điểm: 95     | RSI1H: 70.8 | Pull%: 3.7   | 🎯 🚀 VÀO LỆNH PULLBACK | 💥 TIỀN BẠO PHÁT (29.1x)
+   ↳ C1: EMA20(0.0007) > EMA50(0.0007) ✅ | RSI Nóng (70.8) — Tín Hiệu Tốt, Dời SL Sớm | C2: Lý Tưởng (-3.7% từ Swing) | C3: Kiệt Cung (14% đỉnh push) ✅ | C4: Xa Bệ Đỡ (Fib0.382 ±3.9%) | C5: Taker Còn Yếu (47.3%)
+   ↳ 🌀 Macro: 🟡 TRUNG TÍNH | C0=+10đ | 💥 TIỀN BẠO PHÁT (29.1x) +20 ⇒ C0=+30đ | 0.0% | MA99 Dốc Lên (+21.9%/30D) — Đà Tăng Trưởng
+   ↳ ⚙️ SETUP: Trig=0.000727 | SL=0.00070029(-3.7%) | TP=0.00106628(+46.7%) | R/R=1:12.7
+    ↳ [Macro 4H] Entry: 0.000677   | SL Cứng: 0.000594   | TP 1H: 0.000782   | TP 4H: 0.000782   | [3D: MA7=0.000716 MA99=0.000556 BOLL_UP=0.000874 ST=🟢0.000524 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - VTHO] 0.000647 - 0.001066 | 24L | Trig: 0.000727 | SL: 0.000594 | TP: 0.001066
+----------------------------------------------------------------------------------------------------
+[S     ] Điểm: 110    | RSI1H: 61.3 | Pull%: 3.2   | 🎯 🚀 VÀO LỆNH PULLBACK
+   ↳ C1: EMA20(0.0430) > EMA50(0.0420) ✅ | RSI Lý Tưởng (61.3) — Setup Full Vol | C2: Lý Tưởng (-3.2% từ Swing) | C3: Kiệt Cung (21% đỉnh push) ✅ | C4: Chạm Fib0.382 (±1.4%) ✅ | C5: Taker Còn Yếu (50.8%)
+   ↳ 🌀 Macro: 🟡 TRUNG TÍNH | C0=+0đ | 🚀 NÉN SÁT BOLL UP 3D +20 ⇒ C0=+20đ | 0.0% | MA99 Dốc Lên (+6.5%/30D) — Đà Tăng Trưởng
+   ↳ ⚙️ SETUP: In=0.04384 | SL=0.0412574(-5.9%) | TP=0.0557418(+27.1%) | R/R=1:4.6
+    ↳ [Macro 4H] Entry: 0.04008    | SL Cứng: 0.03446    | TP 1H: 0.04527    | TP 4H: 0.04527    | [3D: MA7=0.04019 MA99=0.04274 BOLL_UP=0.04569 ST=🟢0.02828 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - S] 0.037859 - 0.055742 | 24L | Trig: 0.043840 | SL: 0.034460 | TP: 0.055742
+----------------------------------------------------------------------------------------------------
+[RAD   ] Điểm: 85     | RSI1H: 71.1 | Pull%: 7.6   | 🎯 🚀 VÀO LỆNH PULLBACK | 💥 TIỀN BẠO PHÁT (6.9x)
+   ↳ C1: EMA20(0.3498) > EMA50(0.3106) ✅ | RSI Nóng (71.1) — Tín Hiệu Tốt, Dời SL Sớm | C2: Lý Tưởng (-7.6% từ Swing) | 🚀 Miễn phạt Râu 1H (4.6%) | C3: Kiệt Cung (25% đỉnh push) ✅ | C4: Xa Bệ Đỡ (Fib0.382 ±8.7%) | C5: Taker Còn Yếu (52.2%)
+   ↳ 🌀 Macro: 🔴 RỦI RO PHÂN PHỐI | C0=-10đ | 🚀 NỔ VOL VƯỢT BOLL UP 3D +25 | 💥 TIỀN BẠO PHÁT (6.9x) +20 | Trần thưởng +30 ⇒ C0=+20đ | 0.0% | MA99 Dốc Lên (+4.4%/30D) — Đà Tăng Trưởng
+   ↳ ⚙️ SETUP: Trig=0.389 | SL=0.37479(-3.7%) | TP=0.4836(+24.3%) | R/R=1:6.7
+    ↳ [Macro 4H] Entry: 0.32       | SL Cứng: 0.214      | TP 1H: 0.436      | TP 4H: 0.436      | [3D: MA7=0.273 MA99=0.246 BOLL_UP=0.324 ST=🟢0.236 -> 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - RAD] 0.294395 - 0.483600 | 24L | Trig: 0.389000 | SL: 0.214000 | TP: 0.483600
+   ↳ 🦅 [WIDE GRID 3D - RAD] 0.303 - 0.476 | 28L | Trig: 0.322 | SL: 0.262 | TP: 0.476 (Vốn 1000$ ≈ 35.71$/lưới)
+----------------------------------------------------------------------------------------------------
+[UMA   ] Điểm: 95     | RSI1H: 66.8 | Pull%: 8.7   | 🎯 ⏳ CHỜ XÁC NHẬN (Pullback nông) | 💥 TIỀN BẠO PHÁT (5.1x)
+   ↳ C1: EMA20(0.4292) > EMA50(0.4194) ✅ | RSI Lý Tưởng (66.8) — Setup Full Vol | C2: 🔴 Bơm xả (Râu trên 5.2%) — TỪ CHỐI | C3: Kiệt Cung (17% đỉnh push) ✅ | C4: Chạm Fib0.500 (±1.2%) ✅ | C5: Taker Còn Yếu (52.9%)
+   ↳ 🌀 Macro: 🟢 TÍCH LŨY / HỒI PHỤC | C0=+20đ | 💥 TIỀN BẠO PHÁT (5.1x) +20 | Trần C0 +30 ⇒ C0=+30đ | 0.0% | Golden Transition ✅ MA99 Flat(-0.6%) + Giá Trên MA99
+   ↳ ⚙️ SETUP: Trig=0.434 | SL=0.4185(-3.6%) | TP=0.493(+13.6%) | R/R=1:3.8
+    ↳ [Macro 4H] Entry: 0.425      | SL Cứng: 0.362      | TP 1H: 0.493      | TP 4H: 0.493      | [3D: MA7=0.413 MA99=0.466 BOLL_UP=0.445 ST=🟢0.31 -> ⚠️ [3D: ĐỤNG CẢN VĨ MÔ - KHÓA TRẦN TP2]] [3D: ⚠️ CẢN ĐÈ MA99_3D=0.466 -> Khóa TP]
+   ↳ 🎯 [GRID TP2 - UMA] 0.390250 - 0.472990 | 23L | Trig: 0.434000 | SL: 0.362000 | TP: 0.472990 [🔒 Khóa TP2 ≤ MA99_3D×1.015]
+----------------------------------------------------------------------------------------------------
+👀 THEO DÕI THÊM: API3 (75đ ⏳), PARTI (78đ ⏳), NIGHT (75đ ⏳), SPCXB (68đ ⏳), RLC (60đ ⏳), ORCA (55đ 🔴), ZRO (75đ 🔴), MRNAB (35đ 🔴), FIL (30đ 🔴), OGN (103đ 🔥), EDU (100đ 🔥)
+====================================================================================================
+
+====================================================================================================
+🏓 GRID PINGPONG (ĐỘNG CƠ 5)
+====================================================================================================
+Mã       | Điểm     | Action          | Bounces/Range        | Center/Trigger/SL
+MUBARAKUSDT | 53.0017  | Hạng S - Siêu phẩm | 🦅 CỘT CỜ 3D +15 | F:8.0 A:5.0 Bx:10.0 R:10.0 RSI:5.0 | B:2.0x15.16% | Center: 0.07484 | Trigger: 0.07484 | SL: 0.06089
+  ↳ ⚙️ GRID: Low=0.0618077 | Up=0.0878684905 | Lưới=24 | SL Sell=0.06089
+    ↳ [Macro 4H] Entry: 0.0668     | SL Cứng: 0.0502     | TP 1H: 0.07971    | TP 4H: 0.07971    | [3D: MA7=0.053 MA99=0.01823 BOLL_UP=0.06673 ST=🟢0.034 -> 🦅 [3D: CỘT CỜ CAO - WIDE GRID 28L]]
+   ↳ 🦅 [WIDE GRID 3D - MUBARAK] 0.05964 - 0.08582 | 28L | Trig: 0.06640 | SL: 0.05088 | TP: 0.08582 (Vốn 1000$ ≈ 35.71$/lưới)
+QNTUSDT  | 50.8357  | Hạng S - Siêu phẩm | 🦅 CỘT CỜ 3D +15 | F:20.0 A:5.0 Bx:4.77 R:1.06 RSI:5.0 | B:5.0x4.56% | Center: 257.11429 | Trigger: 257.11429 | SL: 224.94032
+  ↳ ⚙️ GRID: Low=228.3144206584 | Up=285.9141507702 | Lưới=24 | SL Sell=224.94032
+    ↳ [Macro 4H] Entry: 256.45     | SL Cứng: 207.33     | TP 1H: 269.57     | TP 4H: 307.0      | [3D: MA7=186.43 MA99=77.46 BOLL_UP=272.3 ST=🟢128.58 -> 🦅 [3D: CỘT CỜ CAO - WIDE GRID 28L]]
+   ↳ 🦅 [WIDE GRID 3D - QNT] 208.62 - 304.97 | 28L | Trig: 247.29 | SL: 178.97 | TP: 304.97 (Vốn 1000$ ≈ 35.71$/lưới)
+PUMPUSDT | 50.8154  | Hạng S - Siêu phẩm | 🦅 CỘT CỜ 3D +15 | F:20.0 A:5.0 Bx:3.56 R:2.25 RSI:5.0 | B:5.0x5.75% | Center: 0.00638 | Trigger: 0.00638 | SL: 0.00563
+  ↳ ⚙️ GRID: Low=0.0057167967 | Up=0.0070416795 | Lưới=24 | SL Sell=0.00563
+    ↳ [Macro 4H] Entry: 0.00575    | SL Cứng: 0.004721   | TP 1H: 0.006694   | TP 4H: 0.006806   | [3D: MA7=0.005161 MA99=0.002408 BOLL_UP=0.00637 ST=🟢0.003902 -> 🦅 [3D: CỘT CỜ CAO - WIDE GRID 28L]]
+   ↳ 🦅 [WIDE GRID 3D - PUMP] 0.005367 - 0.007438 | 28L | Trig: 0.006127 | SL: 0.004954 | TP: 0.007438 (Vốn 1000$ ≈ 35.71$/lưới)
+GLMRUSDT | 36.7040  | Hạng S - Siêu phẩm | F:12.0 A:5.0 Bx:10.0 R:4.99 RSI:4.72 | B:3.0x8.49% | Center: 0.01119 | Trigger: 0.01119 | SL: 0.00923
+  ↳ ⚙️ GRID: Low=0.00936621 | Up=0.0130115043 | Lưới=24 | SL Sell=0.00923
+    ↳ [Macro 4H] Entry: 0.01073    | SL Cứng: 0.00681    | TP 1H: 0.01244    | TP 4H: 0.014355   | [3D: MA7=0.008584 MA99=0.012812 BOLL_UP=0.010769 ST=🟢0.005617 -> ⚠️ [3D: ĐỤNG CẢN VĨ MÔ - KHÓA TRẦN TP2]] [3D: ⚠️ CẢN ĐÈ MA99_3D=0.012812 -> Khóa TP]
+ZROUSDT  | 35.1238  | Hạng S - Siêu phẩm | 🦅 CỘT CỜ 3D +15 | F:4.0 A:5.0 Bx:2.94 R:3.18 RSI:5.0 | B:1.0x6.68% | Center: 2.05571 | Trigger: 2.05571 | SL: 1.8235
+  ↳ ⚙️ GRID: Low=1.850850657 | Up=2.2605779145 | Lưới=24 | SL Sell=1.8235
+    ↳ [Macro 4H] Entry: 1.84       | SL Cứng: 1.488      | TP 1H: 2.19       | TP 4H: 2.19       | [3D: MA7=1.603 MA99=1.385 BOLL_UP=1.955 ST=🟢1.267 -> 🦅 [3D: CỘT CỜ CAO - WIDE GRID 28L]]
+   ↳ 🦅 [WIDE GRID 3D - ZRO] 1.726 - 2.484 | 28L | Trig: 1.945 | SL: 1.539 | TP: 2.484 (Vốn 1000$ ≈ 35.71$/lưới)
+====================================================================================================
+================================================================================================================================================
+🌱 BẢNG 3: MỎ VÀNG NGỦ SAY (WATCHLIST VĨ MÔ 1D - THANG ĐIỂM 100 - TOP 5)
+================================================================================================================================================
+Mã           | Giá Live     | Điểm     | Chiết Khấu   | Nén Hộp      | Cạn Cung     | Nến Gom    | Radar Breakout                               
+------------------------------------------------------------------------------------------------------------------------------------------------
+BIO          | 0.03124      | 59.6     | -52.7%       | 48.4%        | Giảm 77.8%   | 4 nến      | 🟢 Nổ Vol Mồi                                
+    ↳ [Điểm] Tĩnh: 34.6/65 | ⏰ Awakening: +25.0/35 (MA 15 • Vol 10 • RSI 0) | Giá>MA7&MA25 • Vol Mồi x1.6/Taker 52%
+  ↳ ⚙️ GRID Hứng Breakout (100%) : [BIO] | Trig: 0.02802 (Breakout xác nhận) | Lưới: 0.02802 - 0.03442 (28L) | SL: 0.02888 (SL Cứng) | TP: 0.03511 (+5.0%)
+    ↳ 🛡️ [Chốt chặn] SL 0.02242→sàn • TP khóa ST 3D đỏ 0.03442 • Bỏ G1 (hẹp 0.0% < 3%)
+    ↳ [Macro 4H] Entry: 0.0312     | SL Cứng: 0.02808    | TP 1H: 0.03378    | TP 4H: 0.03378    | [3D: MA7=0.0304 MA99=0.03112 BOLL_UP=0.03271 ST=🔴0.03441 -> ⚠️ [3D: ĐỤNG CẢN VĨ MÔ - KHÓA TRẦN TP2]] [3D: ⚠️ CẢN ĐÈ ST3D=0.03441 -> Khóa TP]
+   ↳ 🎯 [GRID TP2 - BIO] 0.02848 - 0.03493 | 24L | Trig: 0.03124 | SL: 0.02808 | TP: 0.03493 [🔒 Khóa TP2 ≤ ST3D×1.015]
+SKL          | 0.00483      | 56.2     | -52.6%       | 73.5%        | Giảm 30.4%   | 3 nến      | 🟢 Nổ Vol Mồi                                
+    ↳ [Điểm] Tĩnh: 21.2/65 | ⏰ Awakening: +35.0/35 (MA 15 • Vol 10 • RSI 10) | Giá>MA7&MA25 • Vol Mồi x1.5/Taker 59% • RSI 65↗
+  ↳ ⚙️ GRID Darvas [Gom Đáy 70%] : [SKL] | Trig: 0.004535 | Lưới: 0.004379 - 0.004512 (10L) | SL: 0.004336 | TP: N/A
+  ↳ ⚙️ GRID Darvas [Hứng Breakout 30%] : [SKL] | Trig: 0.004512 | Lưới: 0.004512 - 0.004864 (10L) | SL: 0.004336 | TP: 0.004962
+    ↳ 🛡️ [Chốt chặn] SL 0.003087→sàn • TP khóa ST 3D đỏ 0.004864
+    ↳ [Macro 4H] Entry: 0.00472    | SL Cứng: 0.00423    | TP 1H: 0.00515    | TP 4H: 0.00515    | [3D: MA7=0.00456 MA99=0.00607 BOLL_UP=0.00493 ST=🔴0.00486 -> ⚠️ [3D: ĐỤNG CẢN VĨ MÔ - KHÓA TRẦN TP2]] [3D: ⚠️ CẢN ĐÈ ST3D=0.00486 -> Khóa TP]
+   ↳ 🎯 [GRID TP2 - SKL] 0.00430 - 0.00493 | 16L | Trig: 0.00483 | SL: 0.00423 | TP: 0.00493 [🔒 Khóa TP2 ≤ ST3D×1.015]
+PARTI        | 0.0325       | 53.2     | -52.6%       | 58.9%        | Giảm 53.9%   | 4 nến      | 🟢 Nổ Vol Mồi                                
+    ↳ [Điểm] Tĩnh: 28.2/65 | ⏰ Awakening: +25.0/35 (MA 15 • Vol 10 • RSI 0) | Giá>MA7&MA25 • Vol Mồi x1.3/Taker 51%
+  ↳ ⚙️ GRID Darvas [Gom Đáy 70%] : [PARTI] | Trig: 0.03234 | Lưới: 0.02593 - 0.03218 (30L) | SL: 0.02568 | TP: N/A
+  ↳ ⚙️ GRID Darvas [Hứng Breakout 30%] : [PARTI] | Trig: 0.0325 | Lưới: 0.0325 - 0.03443 (10L) | SL: 0.02568 | TP: 0.03512
+    ↳ 🛡️ [Chốt chặn] SL 0.02082→sàn • TP khóa ST 3D đỏ 0.03443
+    ↳ [Macro 4H] Entry: 0.0285     | SL Cứng: 0.0238     | TP 1H: 0.0329     | TP 4H: 0.0329     | [3D: MA7=0.027 MA99=0.0595 BOLL_UP=0.0295 ST=🔴0.0344 -> ⚠️ [3D: ĐỤNG CẢN VĨ MÔ - KHÓA TRẦN TP2]] [3D: ⚠️ CẢN ĐÈ ST3D=0.0344 -> Khóa TP]
+   ↳ 🎯 [GRID TP2 - PARTI] 0.0249 - 0.0349 | 24L | Trig: 0.0325 | SL: 0.0238 | TP: 0.0349 [🔒 Khóa TP2 ≤ ST3D×1.015]
+ORDI         | 4.547        | 31.3     | -57.5%       | 67.1%        | Giảm 73.2%   | 2 nến      | -                                            
+    ↳ [Điểm] Tĩnh: 31.3/65 | ⏰ Awakening: +0.0/35 (MA 0 • Vol 0 • RSI 0) | 💤 Chưa thức giấc
+  ↳ ⚙️ GRID Darvas [Gom Đáy 70%] : [ORDI] | Trig: 4.929 | Lưới: 4.4741 - 4.9045 (12L) | SL: 4.4299 | TP: N/A
+  ↳ ⚙️ GRID Darvas [Hứng Breakout 30%] : [ORDI] | Trig: 4.954 | Lưới: 4.954 - 5.5242 (14L) | SL: 4.4299 | TP: 5.7143
+    ↳ 🛡️ [Chốt chặn] SL 4.0579→sàn
+    ↳ [Macro 4H] Entry: 4.559      | SL Cứng: 4.278      | TP 1H: 4.662      | TP 4H: 4.808      | [3D: MA7=4.663 MA99=3.664 BOLL_UP=5.043 ST=🟢3.149 -> ⛔ [3D: GÃY ĐƯỜNG RAY MA7 3D - CẤM VÀO]]
+   ↳ 🎯 [GRID TP2 - ORDI] 4.376 - 5.714 | 24L | Trig: 4.547 | SL: 4.278 | TP: 5.714
+================================================================================================================================================
+
+============================================================================================================================================================================================================================================================================================================
+============================================================================================================================================================================================================================================================================================================
+🏆 BẢNG CHẤM ĐIỂM REBALANCE / SPOT GRID (THANG ĐIỂM 100 - TUYẾN TÍNH & 4 KHÔNG)
+⏰ Thời điểm cập nhật (UTC+7): 2026-10-06 14:25:09
+============================================================================================================================================================================================================================================================================================================
+Hạng | Mã      | Trạng Thái                   | Phân Loại Grid                         | TỔNG  | Chế Độ         | Tín Hiệu Cảnh Báo                                            | Đ.Nến15M  | Đ.Râu24H  | Đ.Entry  | Đ.RSI  | RSI1H  | Giá Live       | Giá Limit        | Cần Giảm  | Vol24H(M)  | Vola24H% 
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#1   | ZRO     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 79.1  | 🌊 Tích Lũy    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 33.1      | 55.8      | 85.0     | 94.7   | 56.2   | 2.105          | 1.9727           | 6.29%     | $24.1M     | 14.9%    
+#2   | AVAX    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 70.1  | 🌊 Tích Lũy    | 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  🚀 SIÊU SÓ | 50.0      | 50.5      | 60.0     | 96.8   | 65.6   | 11.266         | 11.0849          | 1.61%     | $46.6M     | 5.6%     
+#3   | NEAR    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 69.7  | 🌊 Tích Lũy    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 35.5      | 46.7      | 100.0    | 91.4   | 50.6   | 5.148          | 4.9168           | 4.49%     | $138.2M    | 9.1%     
+#4   | DOT     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 64.6  | 🌊 Tích Lũy    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 32.6      | 45.4      | 70.0     | 92.9   | 53.2   | 1.224          | 1.2059           | 1.48%     | $12.0M     | 5.2%     
+#5   | RAY     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 59.5  | 🌊 Tích Lũy    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 26.2      | 45.7      | 85.0     | 88.9   | 46.6   | 2.1099         | 2.0685           | 1.96%     | $7.6M      | 13.2%    
+#6   | AAVE    | 🛡️ PULLBACK LÀNH MẠNH (Uptren | 🛡️ GRID ĐÓN PULLBACK                    | 57.4  | ⚡ Lướt Ngắn   | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 58.7      | 30.1      | 14.0     | 88.0   | 45.1   | 181.25         | 181.2156         | 0.02%     | $29.6M     | 5.8%     
+#7   | HYPE    | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 57.1  | 🌊 Tích Lũy    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 52.3      | 44.6      | 38.0     | 90.0   | 48.3   | 92.92          | 90.9847          | 2.08%     | $48.0M     | 3.7%     
+#8   | SEI     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 57.0  | 🌊 Tích Lũy    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 28.5      | 46.1      | 60.0     | 90.0   | 48.4   | 0.07347        | 0.0726           | 1.18%     | $6.3M      | 5.7%     
+#9   | TAO     | 🛡️ PULLBACK LÀNH MẠNH (Uptren | 🛡️ GRID ĐÓN PULLBACK                    | 56.8  | ⚡ Lướt Ngắn   | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 60.7      | 46.8      | 50.0     | 88.2   | 45.3   | 301.2          | 300.992          | 0.07%     | $33.9M     | 4.2%     
+#10  | MUBARAK | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 56.6  | 🌊 Tích Lũy    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 57.4      | 43.2      | 38.0     | 88.8   | 46.3   | 0.07273        | 0.06806          | 6.42%     | $16.5M     | 12.1%    
+#11  | AERO    | 🛡️ PULLBACK LÀNH MẠNH (Uptren | 🛡️ GRID ĐÓN PULLBACK                    | 56.5  | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (43.7)  •  ⚠️ Net Giật Râu Âm (-5.0%) | 52.2      | 37.4      | 50.0     | 87.2   | 43.7   | 0.8383         | 0.8291           | 1.10%     | $5.1M      | 5.1%     
+#12  | PENGU   | 🛡️ PULLBACK LÀNH MẠNH (Uptren | 🛡️ GRID ĐÓN PULLBACK                    | 54.8  | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (42.6)  •  Nhiễu sóng (10 lần/10 nến | 45.5      | 41.1      | 50.0     | 86.6   | 42.6   | 0.00946        | 0.009416         | 0.47%     | $16.9M     | 7.8%     
+#13  | ACE     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 54.6  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (58.9)  •  🟢 Nến 15M xanh đẹp  •    | 23.3      | 82.9      | 60.0     | 96.4   | 58.9   | 0.1927         | 0.188            | 2.44%     | $10.0M     | 3.3%     
+#14  | ICP     | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 54.2  | 🌊 Tích Lũy    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 28.3      | 32.4      | 50.0     | 90.3   | 48.8   | 3.457          | 3.3768           | 2.32%     | $15.0M     | 9.9%     
+#15  | ENA     | ⚠️ CHỈNH NGẮN HẠN (Đợi Nền)   | 🛡️ GRID ĐÓN PULLBACK                    | 53.8  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 56.9      | 50.0      | 25.0     | 85.5   | 40.8   | 0.2416         | 0.2413           | 0.11%     | $64.2M     | 9.3%     
+#16  | ADA     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 53.8  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (57.1)  •  ⚠️ Net Giật Râu Âm (-10.6% | 46.1      | 23.5      | 34.0     | 95.3   | 57.1   | 0.2702         | 0.2558           | 5.34%     | $61.8M     | 5.8%     
+#17  | XRP     | 🛡️ PULLBACK LÀNH MẠNH (Uptren | 🛡️ GRID ĐÓN PULLBACK                    | 53.3  | ⚡ Lướt Ngắn   | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 40.8      | 59.7      | 26.0     | 86.5   | 42.5   | 1.4965         | 1.5007           | -0.28%    | $120.8M    | 2.6%     
+#18  | ZAMA    | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 49.1  | 🌊 Tích Lũy    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 63.2      | 39.0      | 38.0     | 88.2   | 45.4   | 0.08352        | 0.08355          | -0.04%    | $3.2M      | 5.3%     
+#19  | RENDER  | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 48.2  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (59.7)  •  🟢 Nến 15M xanh đẹp  •  ⚠️ | 40.5      | 25.4      | 42.0     | 96.8   | 59.7   | 2.069          | 1.9926           | 3.69%     | $9.4M      | 9.3%     
+#20  | INJ     | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 45.7  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (51.0)  •  🟢 Nến 15M xanh đẹp  •  ⚠️ | 24.8      | 37.4      | 50.0     | 91.6   | 51.0   | 7.599          | 7.6106           | -0.15%    | $7.3M      | 4.3%     
+#21  | OP      | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 45.1  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (45.9)  •  🟢 Rút chân xịn 15M (50%) | 51.2      | 37.0      | 50.0     | 88.5   | 45.9   | 0.134          | 0.1341           | -0.06%    | $6.1M      | 6.9%     
+#22  | LTC     | ⚠️ CHỈNH NGẮN HẠN (Đợi Nền)   | 🛡️ GRID ĐÓN PULLBACK                    | 44.7  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 Net | 58.8      | 63.2      | 26.0     | 83.5   | 39.2   | 69.47          | 70.0892          | -0.89%    | $21.5M     | 3.9%     
+#23  | SHIB    | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 44.6  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (41.2)  •  🟢 Rút chân xịn 15M (50%) | 10.0      | 33.6      | 38.0     | 85.7   | 41.2   | 0.00000584     | 0.000005832      | 0.14%     | $4.9M      | 3.6%     
+#24  | APT     | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 43.1  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (50.5)  •  🟢 Nến 15M xanh đẹp  •  ⚠️ | 27.9      | 32.6      | 38.0     | 91.3   | 50.5   | 0.82           | 0.8127           | 0.89%     | $14.2M     | 7.7%     
+#25  | SUI     | ⚠️ CHỈNH NGẮN HẠN (Đợi Nền)   | 🛡️ GRID ĐÓN PULLBACK                    | 36.0  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 43.0      | 35.9      | 14.0     | 86.0   | 41.7   | 1.1891         | 1.1898           | -0.06%    | $91.4M     | 6.7%     
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+⚠️ NHÓM PHỤ — Chưa đạt chuẩn An Toàn (RSI 1H ≥ 70 / FOMO 24H / Né Grid / Gãy Trend...) → xếp sau nhóm chính dù điểm cao hơn
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#26  | ASTER   | 🚀 UPTREND MẠNH (Leader)     | 🛡️ GRID HẸP (12 Lưới)                   | 76.7  | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (62.3)  •  🔴 Nến 15M xả thượt  •  ⚠️ | 20.0      | 64.7      | 70.0     | 98.4   | 62.3   | 0.7402         | 0.7395           | 0.09%     | $12.8M     | 3.6%     
+#27  | FIL     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 62.7  | 🌊 Tích Lũy    | 🟢 Nến 15M xanh đẹp  •  🦅 Giật Râu 30D (17.9%) — Miễn Phạt  | 8.5       | 44.1      | 20.0     | 71.4   | 70.7   | 1.2            | 1.0797           | 10.03%    | $28.0M     | 13.5%    
+#28  | NVDAB   | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 57.6  | 🌊 Tích Lũy    | 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  🚀 SIÊU SÓ | 35.3      | 53.1      | 26.0     | 62.1   | 72.6   | 240.21         | 236.7346         | 1.45%     | $5.7M      | 2.6%     
+#29  | FET     | 🛡️ PULLBACK LÀNH MẠNH (Uptren | 🛡️ GRID ĐÓN PULLBACK                    | 54.1  | ⚡ Lướt Ngắn   | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 37.8      | 42.0      | 50.0     | 88.4   | 45.7   | 0.2494         | 0.238            | 4.55%     | $34.3M     | 12.1%    
+#30  | CHIP    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 54.0  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (64.6)  •  Chỉnh -3.2% Đỉnh 1H  •    | 20.0      | 46.5      | 60.0     | 99.8   | 64.6   | 0.05375        | 0.04703          | 12.50%    | $4.8M      | 15.5%    
+
+============================================================================================================================================================================================================================================================================================================
+
+2026-10-06 14:26:57,941 - CN4-Controller - INFO - Hoàn tất quét thị trường. Chương trình kết thúc.
