@@ -27,6 +27,12 @@
         "peak_1h_lookback": 24,
         "entry_discount_pct": 0.20
     },
+    "summary_board": {
+        "top_spot": 2,
+        "top_grid_tp2": 3,
+        "top_wide_grid": 2,
+        "fill_with_backup": true
+    },
     "system": {
         "log_level": "INFO",
         "watchlist": [

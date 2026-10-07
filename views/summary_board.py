@@ -271,9 +271,20 @@ def classify_pool(pool: List[SignalRecord], spot_enabled: bool = True) -> Dict[s
 
 
 # ── Hàm sắp xếp ──────────────────────────────────────────────────────────────
-def sort_spot_primary(lst):  return sorted(lst, key=lambda s: (s.rr_ratio, s.money_flow), reverse=True)
-def sort_spot_backup(lst):   return sorted(lst, key=lambda s: (s.target_score, s.rr_ratio), reverse=True)
+def sort_spot_primary(lst):
+    """Spot: ưu tiên 1 = 💥 Tiền Bạo Phát, ưu tiên 2 = R:R (cả 2 đều chuẩn hóa, so được giữa các Động cơ)."""
+    return sorted(lst, key=lambda s: (_num(s.money_flow), _num(s.rr_ratio)), reverse=True)
+
+
+def sort_spot_backup(lst):
+    return sorted(lst, key=lambda s: (_num(s.money_flow), _num(s.rr_ratio), _num(s.target_score)), reverse=True)
 def sort_by_score(lst):      return sorted(lst, key=lambda s: s.target_score, reverse=True)
+
+
+def sort_grid_tp2(lst):
+    """Bảng 2: thang điểm DC2 / DC3 / DC4 khác hệ quy chiếu (DC4 dễ 95–115đ, DC3 ~60–85đ)
+    → ưu tiên 1 = 💥 Tiền Bạo Phát (đã chuẩn hóa, cùng ý nghĩa mọi Động cơ), ưu tiên 2 = Điểm."""
+    return sorted(lst, key=lambda s: (_num(s.money_flow), _num(s.target_score)), reverse=True)
 
 
 def sort_wide_primary(lst):
@@ -290,16 +301,24 @@ def sort_wide_backup(lst):
 
 def pick_with_fallback(primary: List[SignalRecord], backup: List[SignalRecord],
                        sort_primary: Callable, sort_backup: Callable,
-                       blacklist: Iterable[str] = ()) -> tuple:
-    """Top N từ primary; primary rỗng → Top N từ backup. Trả về (danh sách, is_backup)."""
+                       blacklist: Iterable[str] = (), top_n: int = TOP_N,
+                       fill_with_backup: bool = True) -> tuple:
+    """Cơ chế LẤP ĐẦY (Fill-up):
+        1. Lấy tối đa top_n mã từ primary.
+        2. Nếu chỉ có X < top_n → lấy thêm (top_n − X) mã từ backup (bỏ mã đã chọn).
+       fill_with_backup=False → hành vi cũ: chỉ dùng backup khi primary rỗng.
+    Trả về (danh sách cuối, set mã dự phòng)."""
+    top_n = max(0, int(top_n))
     bl = set(blacklist)
-    primary = [s for s in primary if s.symbol not in bl]
-    backup = [s for s in backup if s.symbol not in bl]
-    if primary:
-        return _dedupe_keep_first(sort_primary(primary))[:TOP_N], False
-    if backup:
-        return _dedupe_keep_first(sort_backup(backup))[:TOP_N], True
-    return [], False
+    picked = _dedupe_keep_first(sort_primary([s for s in primary if s.symbol not in bl]))[:top_n]
+    if picked and not fill_with_backup:
+        return picked, set()
+    slots = top_n - len(picked)
+    if slots <= 0:
+        return picked, set()
+    taken = bl | {s.symbol for s in picked}
+    extra = _dedupe_keep_first(sort_backup([s for s in backup if s.symbol not in taken]))[:slots]
+    return picked + extra, {s.symbol for s in extra}
 
 
 # ── Render ───────────────────────────────────────────────────────────────────
@@ -318,17 +337,25 @@ def _num(v: Any) -> float:
 _LINE_BY_KIND = {"SPOT": "setup_line", "GRID_TP2": "grid_tp2_line", "WIDE_GRID_3D": "wide_grid_line"}
 
 
-def print_formatted_table(signals_list: List[SignalRecord], kind: str, is_backup: bool = False) -> None:
+def print_formatted_table(signals_list: List[SignalRecord], kind: str, backup_symbols: Any = False) -> None:
     """In bảng theo cơ chế Lắp ráp mảng động: 4 thông số cốt lõi (Điểm, 💥 Tiền Bạo Phát, R:R, Sóng 3D)
-    đồng nhất cho mọi cách đánh — trường nào thiếu dữ liệu tự ẩn, không thừa dấu `|`."""
+    đồng nhất cho mọi cách đánh — trường nào thiếu dữ liệu tự ẩn, không thừa dấu `|`.
+    backup_symbols: set mã dự phòng (gắn [⚠️ DỰ PHÒNG] từng dòng) — hoặc bool (True = cả bảng)."""
     if not signals_list:
         print("   Không có setup nào đạt chuẩn (kể cả dự phòng).")
         return
-    if is_backup:
+    if isinstance(backup_symbols, bool):
+        backup_symbols = {s.symbol for s in signals_list} if backup_symbols else set()
+    backup_symbols = set(backup_symbols or ())
+    n_backup = sum(1 for s in signals_list if s.symbol in backup_symbols)
+    if n_backup and n_backup == len(signals_list):
         print("   💡 Không có mã đạt chuẩn vàng → hiển thị MÃ DỰ PHÒNG (hạng 2 — cân nhắc giảm khối lượng vốn)")
-    prefix = f"{BACKUP_TAG} " if is_backup else ""
+    elif n_backup:
+        print(f"   💡 Bổ sung {n_backup} MÃ DỰ PHÒNG cho đủ slot (hạng 2 — chỉ đánh thăm dò / Watchlist)")
 
     for i, signal in enumerate(signals_list, 1):
+        is_backup = signal.symbol in backup_symbols
+        prefix = f"{BACKUP_TAG} " if is_backup else ""
         engine = getattr(signal, "engine_source", "") or ""
         score = _num(getattr(signal, "target_score", 0))
         mf = _num(getattr(signal, "money_flow", 0))
@@ -375,11 +402,29 @@ def print_formatted_table(signals_list: List[SignalRecord], kind: str, is_backup
 _print_table = print_formatted_table   # tương thích tên cũ
 
 
+DEFAULT_BOARD_CONFIG = {"top_spot": 2, "top_grid_tp2": 3, "top_wide_grid": 2, "fill_with_backup": True}
+
+
+def _board_config(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    cfg = dict(DEFAULT_BOARD_CONFIG)
+    for k, v in (config or {}).items():
+        if k in cfg and v is not None:
+            cfg[k] = bool(v) if k == "fill_with_backup" else max(0, int(v))
+    return cfg
+
+
 def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: str = "",
                            live_data_map: Optional[Dict[str, Any]] = None, df_summary=None,
-                           warning_results: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-    """In BẢNG TỔNG KẾT TỐI ƯU (kèm Mã Dự Phòng). Trả về dict kết quả để tầng khác tái sử dụng."""
+                           warning_results: Optional[List[Dict[str, Any]]] = None,
+                           config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """In BẢNG TỔNG KẾT TỐI ƯU (kèm Mã Dự Phòng lấp đầy slot). Trả về dict kết quả để tầng khác tái sử dụng.
+    config: block `summary_board` trong settings.json
+        {"top_spot": 2, "top_grid_tp2": 3, "top_wide_grid": 2, "fill_with_backup": true}"""
+    cfg = _board_config(config)
+    fill = cfg["fill_with_backup"]
     result: Dict[str, Any] = {"spot": [], "grid_tp2": [], "wide_grid": [],
+                              "spot_backup_symbols": set(), "grid_tp2_backup_symbols": set(),
+                              "wide_grid_backup_symbols": set(),
                               "spot_is_backup": False, "grid_tp2_is_backup": False, "wide_grid_is_backup": False}
     try:
         pool = list(global_signals_pool or [])
@@ -393,30 +438,37 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
         print("=" * 100)
 
         # Grid TP2 chọn trước → danh sách chống trùng cho Spot
-        tp2_list, tp2_bk = pick_with_fallback(b["tp2_primary"], b["tp2_backup"], sort_by_score, sort_by_score)
+        tp2_list, tp2_bk = pick_with_fallback(b["tp2_primary"], b["tp2_backup"], sort_grid_tp2, sort_grid_tp2,
+                                              top_n=cfg["top_grid_tp2"], fill_with_backup=fill)
         tp2_symbols = [s.symbol for s in tp2_list]
 
         # 1. Spot (OCO) — BTC khóa thì khóa trắng, kể cả mã dự phòng
-        print("\n### 🎯 1. CHIẾN LƯỢC SPOT (Lướt sóng OCO / Bắn tỉa 1 điểm)")
+        print(f"\n### 🎯 1. CHIẾN LƯỢC SPOT (Lướt sóng OCO / Bắn tỉa 1 điểm) — Top {cfg['top_spot']}")
         if btc_locked:
             print("   ⚠️ BTC RỦI RO CAO - TẠM KHÓA TÍN HIỆU SPOT")
         else:
             spot_list, spot_bk = pick_with_fallback(b["spot_primary"], b["spot_backup"],
-                                                    sort_spot_primary, sort_spot_backup, tp2_symbols)
-            result["spot"], result["spot_is_backup"] = spot_list, spot_bk
-            _print_table(spot_list, "SPOT", spot_bk)
+                                                    sort_spot_primary, sort_spot_backup, tp2_symbols,
+                                                    top_n=cfg["top_spot"], fill_with_backup=fill)
+            result["spot"], result["spot_backup_symbols"] = spot_list, spot_bk
+            print_formatted_table(spot_list, "SPOT", spot_bk)
 
         # 2. Grid TP2
-        print("\n### 🥅 2. CHIẾN LƯỢC GRID TP2 (Lưới đón Pullback 2-5 ngày)")
-        result["grid_tp2"], result["grid_tp2_is_backup"] = tp2_list, tp2_bk
-        _print_table(tp2_list, "GRID_TP2", tp2_bk)
+        print(f"\n### 🥅 2. CHIẾN LƯỢC GRID TP2 (Lưới đón Pullback 2-5 ngày) — Top {cfg['top_grid_tp2']}")
+        result["grid_tp2"], result["grid_tp2_backup_symbols"] = tp2_list, tp2_bk
+        print_formatted_table(tp2_list, "GRID_TP2", tp2_bk)
 
         # 3. Wide Grid 3D
-        print("\n### 🦅 3. CHIẾN LƯỢC WIDE GRID 3D (Nuôi Cột cờ / Siêu sóng 1-3 tuần)")
+        print(f"\n### 🦅 3. CHIẾN LƯỢC WIDE GRID 3D (Nuôi Cột cờ / Siêu sóng 1-3 tuần) — Top {cfg['top_wide_grid']}")
         wide_list, wide_bk = pick_with_fallback(b["wide_primary"], b["wide_backup"],
-                                                sort_wide_primary, sort_wide_backup)
-        result["wide_grid"], result["wide_grid_is_backup"] = wide_list, wide_bk
-        _print_table(wide_list, "WIDE_GRID_3D", wide_bk)
+                                                sort_wide_primary, sort_wide_backup,
+                                                top_n=cfg["top_wide_grid"], fill_with_backup=fill)
+        result["wide_grid"], result["wide_grid_backup_symbols"] = wide_list, wide_bk
+        print_formatted_table(wide_list, "WIDE_GRID_3D", wide_bk)
+
+        # Cờ tương thích: True nếu bảng có ít nhất 1 mã dự phòng
+        for k in ("spot", "grid_tp2", "wide_grid"):
+            result[f"{k}_is_backup"] = bool(result[f"{k}_backup_symbols"])
 
         print("=" * 100)
     except Exception as e:

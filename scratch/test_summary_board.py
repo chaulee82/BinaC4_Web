@@ -50,12 +50,13 @@ live = {f"{s}USDT": {"daily_vola": v} for s, v in
 df = pd.DataFrame([{"Symbol": "S", "Phân Loại Grid": "⛔ NÉ GRID (Bơm Xả Râu Dài)"}])
 ew = [{"symbol": "TON/USDT", "level": 3, "label": "💀 CẤP 3: KHẨN CẤP (Gãy Trend 1D)"}]
 
-r = generate_summary_board(pool, "✅ BTC ổn định", live, df, ew)
-assert [s.symbol for s in r["grid_tp2"]] == ["CHIP", "VTHO"], r["grid_tp2"]
-assert [s.symbol for s in r["spot"]] == ["ENA", "RAD"], [s.symbol for s in r["spot"]]
+LEGACY = {"top_spot": 2, "top_grid_tp2": 2, "top_wide_grid": 2, "fill_with_backup": False}
+r = generate_summary_board(pool, "✅ BTC ổn định", live, df, ew, config=LEGACY)
+assert [s.symbol for s in r["grid_tp2"]] == ["VTHO", "CHIP"], r["grid_tp2"]   # 29.1x > 3.4x (Money Flow trước Điểm)
+assert [s.symbol for s in r["spot"]] == ["RAD", "ENA"], [s.symbol for s in r["spot"]]   # 💥 6.9x trước, rồi R:R
 assert [s.symbol for s in r["wide_grid"]] == ["QNT", "MUBARAK"], [s.symbol for s in r["wide_grid"]]
 
-r2 = generate_summary_board(pool, "⚠️ CẢNH BÁO: BTC gãy MA25 1H (RSI=41.1) — Fakeout Risk Cao", live, df, ew)
+r2 = generate_summary_board(pool, "⚠️ CẢNH BÁO: BTC gãy MA25 1H (RSI=41.1) — Fakeout Risk Cao", live, df, ew, config=LEGACY)
 assert r2["spot"] == [] and len(r2["grid_tp2"]) == 2
 assert r["spot_is_backup"] is False and r["grid_tp2_is_backup"] is False
 
@@ -108,4 +109,32 @@ r4 = generate_summary_board(weak, "Fakeout Risk Cao", live2, df2, ew2)
 assert r4["spot"] == []
 r5 = generate_summary_board([], "", {}, None, [])
 assert r5["spot"] == [] and r5["grid_tp2"] == [] and r5["wide_grid"] == []
+
+# ───────── FILL-UP (mặc định 2 / 3 / 2): primary thiếu slot → lấp bằng backup ─────────
+mixed = weak + [
+    SignalRecord("CHIP", "DC4", "🎯 🚀 VÀO LỆNH PULLBACK", target_score=100, rr_ratio=11.4, sl_percent=-4.0, macro_3d_signal=BREAK,
+                 setup_line="⚙️ SETUP: Trig=0.05207 | SL=0.0499875(-4.0%) | TP=0.075823(+45.6%) | R/R=1:11.4",
+                 grid_tp2_line="🎯 [GRID TP2 - CHIP] 0.044034 - 0.075823 | 24L | Trig: 0.052070 | SL: 0.038080 | TP: 0.075823"),
+    SignalRecord("SEI", "DC2", "APPROVED 🟢", target_score=85, rr_ratio=5.0, sl_percent=-2.0, macro_3d_signal=BREAK,
+                 setup_line="⚙️ SETUP: In=0.07 | SL=0.0686(-2.0%) | TP=0.077(+10%) | R/R=1:5.0"),
+    SignalRecord("PUMP", "DC5", target_score=61.12, macro_3d_signal=FLAG, bounces=8.5, bounce_range=3.82,
+                 wide_grid_line="🦅 [WIDE GRID 3D - PUMP] 0.005474 - 0.007834 | 28L | Trig: 0.006453 | SL: 0.005053 | TP: 0.007834"),
+]
+live3 = dict(live2, PUMPUSDT={"daily_vola": 11.3})
+r6 = generate_summary_board(mixed, "✅ BTC ổn định", live3, df2, ew2)
+assert [s.symbol for s in r6["grid_tp2"]] == ["CHIP", "UMA", "SKL"] and r6["grid_tp2_backup_symbols"] == {"UMA", "SKL"}
+assert [s.symbol for s in r6["spot"]] == ["SEI", "NEAR"] and r6["spot_backup_symbols"] == {"NEAR"}
+assert [s.symbol for s in r6["wide_grid"]] == ["PUMP", "AVAX"] and r6["wide_grid_backup_symbols"] == {"AVAX"}
+
+# fill_with_backup=False → primary có hàng thì KHÔNG lấp
+r7 = generate_summary_board(mixed, "", live3, df2, ew2, config={"fill_with_backup": False})
+assert [s.symbol for s in r7["grid_tp2"]] == ["CHIP"] and not r7["grid_tp2_backup_symbols"]
+
+# ───────── Công bằng thang điểm: DC3 75đ / 4.5x phải đứng trên DC4 100đ / 3.2x ─────────
+def _g(sym, eng, score, mf):
+    return SignalRecord(sym, eng, target_score=score, money_flow=mf, macro_3d_signal=BREAK,
+                        grid_tp2_line=f"🎯 [GRID TP2 - {sym}] 1 - 2 | 24L | Trig: 1.5 | SL: 0.9 | TP: 2")
+fair = [_g("HOT", "DC4", 100, 3.2), _g("BRK", "DC3", 75, 4.5), _g("SNP", "DC2", 90, 0), _g("HOT2", "DC4", 110, 0)]
+r8 = generate_summary_board(fair, "", {}, None, [])
+assert [s.symbol for s in r8["grid_tp2"]] == ["BRK", "HOT", "HOT2"], [s.symbol for s in r8["grid_tp2"]]
 print("\nALL TESTS PASSED")

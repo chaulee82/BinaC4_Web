@@ -416,6 +416,7 @@ def main():
                         live_data_map=live_data_map,
                         df_summary=df_summary,
                         warning_results=_warning_results,
+                        config=settings.get("summary_board"),
                     )
 
             from core.coin_filter import print_final_tables
