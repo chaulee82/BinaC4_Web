@@ -292,8 +292,12 @@ def classify_pool(pool: List[SignalRecord], spot_enabled: bool = True) -> Dict[s
 
 # ── Hàm sắp xếp ──────────────────────────────────────────────────────────────
 def sort_spot_primary(lst):
-    """Spot: ưu tiên 1 = 💥 Tiền Bạo Phát, ưu tiên 2 = R:R (cả 2 đều chuẩn hóa, so được giữa các Động cơ)."""
-    return sorted(lst, key=lambda s: (_num(s.money_flow), _num(s.rr_ratio)), reverse=True)
+    """Spot: ưu tiên 1 = 3D Strict, ưu tiên 2 = Dòng Tiền Bạo Phát, ưu tiên 3 = Điểm Động cơ."""
+    return sorted(lst, key=lambda s: (
+        max(strict_score_of(getattr(s, "grid_tp2_line", "")), strict_score_of(getattr(s, "wide_grid_line", ""))),
+        _num(s.money_flow),
+        _num(s.target_score)
+    ), reverse=True)
 
 
 def sort_spot_backup(lst):
@@ -548,14 +552,25 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
         tp2_symbols = [s.symbol for s in tp2_list]
 
         # 1. Spot (OCO) — BTC rủi ro cao: in cảnh báo khóa tín hiệu nhưng VẪN liệt kê ứng viên (Watchlist)
-        print(f"\n### 🎯 1. CHIẾN LƯỢC SPOT (Lướt sóng OCO / Bắn tỉa 1 điểm) — Top {cfg['top_spot']}")
+        print(f"\n### 🎯 1. CHIẾN LƯỢC SPOT (Lướt sóng OCO / Bắn tỉa 1 điểm / Mã có dòng tiền bạo phát, R:R tối ưu) — Top 5")
         if btc_locked:
             print("   ⚠️ BTC RỦI RO CAO - TẠM KHÓA TÍN HIỆU SPOT")
-        spot_list, spot_bk = pick_with_fallback(b["spot_primary"], b["spot_backup"],
-                                                sort_spot_primary, sort_spot_backup, tp2_symbols,
-                                                top_n=cfg["top_spot"], fill_with_backup=fill)
-        result["spot"], result["spot_backup_symbols"] = spot_list, spot_bk
-        print_formatted_table(spot_list, "SPOT", spot_bk)
+            
+        # Gom chung mã đạt chuẩn và dự phòng, loại trừ mã trùng với GRID TP2
+        all_spot = [s for s in b["spot_primary"] + b["spot_backup"] if s.symbol not in tp2_symbols]
+        all_spot = _dedupe_keep_first(sort_spot_primary(all_spot))[:5]
+        
+        result["spot"] = all_spot
+        result["spot_backup_symbols"] = set()
+        print_formatted_table(all_spot, "SPOT", set())
+
+        # Bổ sung nhóm mới: TOP 3 MÃ DÒNG TIỀN BẠO PHÁT CAO NHẤT
+        all_spot_syms = {s.symbol for s in all_spot}
+        top_mf_spot = [s for s in pool if s.symbol not in all_spot_syms and _num(getattr(s, "money_flow", 0)) > 0]
+        top_mf_spot = sorted(top_mf_spot, key=lambda s: _num(getattr(s, "money_flow", 0)), reverse=True)[:3]
+        if top_mf_spot:
+            print("\n   🔥 TOP 3 MÃ DÒNG TIỀN BẠO PHÁT CAO NHẤT:")
+            print_formatted_table(top_mf_spot, "SPOT", set([s.symbol for s in top_mf_spot]))
 
         # 2. Grid TP2
         print(f"\n### 🥅 2. CHIẾN LƯỢC GRID TP2 (Lưới đón Pullback 2-5 ngày) — Top {cfg['top_grid_tp2']}")
@@ -572,7 +587,7 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
 
         # 4. Thống kê mã trượt cổng Strict 3D
         if strict_3d_rejections is not None:
-            print_strict_3d_rejections(strict_3d_rejections)
+            # print_strict_3d_rejections(strict_3d_rejections)  # Ẩn theo yêu cầu người dùng
             result["strict_3d_rejections"] = strict_3d_rejections
 
         # Cờ tương thích: True nếu bảng có ít nhất 1 mã dự phòng
