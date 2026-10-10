@@ -28,9 +28,10 @@
         "entry_discount_pct": 0.20
     },
     "summary_board": {
-        "top_spot": 2,
+        "top_spot": 5,
         "top_grid_tp2": 3,
         "top_wide_grid": 2,
+        "top_super_wave": 3,
         "fill_with_backup": true
     },
     "system": {

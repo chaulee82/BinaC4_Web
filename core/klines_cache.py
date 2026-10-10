@@ -28,7 +28,7 @@ _DEFAULT_FETCH_LIMIT = {
     '15m': 250,
     '1h':  168,
     '4h':  120,
-    '1d':  300,   # ≥ 300 nến 1D → gộp được ≥ 100 nến 3D (đủ tính MA99 3D) — weight API vẫn = 2
+    '1d':  330,   # 330 nến 1D → 110 nến 3D (MA99 3D + cửa sổ Golden Cross 3 nến của Bảng 3B) — weight API vẫn = 2
 }
 
 # ── Internal storage ─────────────────────────────────────────────

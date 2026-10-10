@@ -73,7 +73,9 @@ class DC3BreakoutEngine(BaseEngine):
                 total_score=score,
                 action_label=act,
                 c1_score=c1, c2_score=c2, c3_score=c3, c4_score=c4, bonus_score=bonus,
-                entry_setup1=setup1
+                entry_setup1=setup1,
+                execution_allowed=bool(res.get('execution_allowed', False)),
+                execution_veto_reason=res.get('execution_veto_reason', ''),
             )
             
             state = SymbolState(

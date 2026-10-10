@@ -34,6 +34,7 @@ STATUS_WAIT           = "⏳ CHỜ"
 SPOT_ALLOWED_STATUS   = (STATUS_APPROVED, STATUS_PULLBACK)
 SPOT_MAX_SL_PCT       = -6.0          # SL_Percent < -6.0% → Loại (chuẩn cứng)
 SPOT_BACKUP_MAX_SL    = -10.0         # Nới lỏng cho mã dự phòng
+MF_MAX_SL_PCT         = 15.0          # Top 3 Bạo phát: SL ≥ 15% → 🔴 TỪ CHỐI (đồng bộ DC3_MAX_SL_PCT ở momentum_breakout)
 DC2_BACKUP_MIN_SCORE  = 70            # DC2 dính EW CẤP 1 vẫn phải có điểm Pullback cao (ngưỡng lệnh Sniper)
 WIDE_GRID_MIN_VOLA    = 5.0
 BTC_KILL_SWITCH_TEXT  = "Fakeout Risk Cao"
@@ -361,7 +362,32 @@ def _num(v: Any) -> float:
 
 
 # Dòng setup gốc tương ứng từng bảng (raw_setup_string gộp cả 3 → không dùng để in)
-_LINE_BY_KIND = {"SPOT": "setup_line", "GRID_TP2": "grid_tp2_line", "WIDE_GRID_3D": "wide_grid_line"}
+_LINE_BY_KIND = {"SPOT": "setup_line", "SPOT_MF": "setup_line",
+                 "GRID_TP2": "grid_tp2_line", "WIDE_GRID_3D": "wide_grid_line"}
+WATCH_ONLY_PREFIX = "👁️ CHỈ THEO DÕI | "
+
+
+def mf_gate_label(s: SignalRecord) -> tuple:
+    """Quyền bóp cò của 1 mã trong mục 🔥 TOP 3 BẠO PHÁT (radar dòng tiền — không tự cấp phép).
+    Trả về (label, allowed). Thứ tự ưu tiên:
+      1. SL ≥ 15% (mọi Động cơ)        → 🔴 TỪ CHỐI — SL RỘNG (≥ 15%)   (đồng bộ chốt thực thi DC3)
+      2. Chưa duyệt / bị VETO           → 🟡 CHỜ ĐÓNG NẾN / 🔴 TỪ CHỐI / ⏳ CHỜ
+      3. Đã duyệt, SL 10–15%           → ⚠️ được phép nhưng giảm vốn
+      4. Đã duyệt, SL < 10%            → 🟢 ĐƯỢC PHÉP BÓP CÒ"""
+    act = getattr(s, "action_label", "") or ""
+    status = getattr(s, "action_status", STATUS_WAIT)
+    sl = _spot_sl(s)
+    if sl is not None and round(sl, 6) <= -MF_MAX_SL_PCT:
+        return f"🔴 TỪ CHỐI — SL RỘNG (≥ {MF_MAX_SL_PCT:.0f}%)", False
+    if status not in SPOT_ALLOWED_STATUS:
+        if "Chờ đóng nến" in act:                         # DC3 Execution Gatekeeper VETO
+            return "🟡 CHỜ ĐÓNG NẾN — KHÔNG BÓP CÒ", False
+        if status == STATUS_REJECTED:
+            return "🔴 TỪ CHỐI", False
+        return (f"⏳ CHỜ: {act.strip()[:30]}" if act.strip() else "⏳ CHỜ"), False
+    if sl is not None and sl < SPOT_BACKUP_MAX_SL:
+        return f"⚠️ SL {sl:.1f}% — được phép, giảm vốn", True
+    return "🟢 ĐƯỢC PHÉP BÓP CÒ", True
 
 
 def print_formatted_table(signals_list: List[SignalRecord], kind: str, backup_symbols: Any = False) -> None:
@@ -421,6 +447,12 @@ def print_formatted_table(signals_list: List[SignalRecord], kind: str, backup_sy
             components.append(macro_3d)
 
         setup_str = getattr(signal, _LINE_BY_KIND.get(kind, ""), "") or ""
+        # 🔥 Top 3 Bạo phát: nhãn quyền bóp cò ngay sau Động cơ — mã không được phép → setup chỉ để theo dõi
+        if kind == "SPOT_MF":
+            gate_label, allowed = mf_gate_label(signal)
+            components.insert(1 if engine else 0, gate_label)
+            if setup_str and not allowed:
+                setup_str = WATCH_ONLY_PREFIX + setup_str
         # 🛡️ Tag Điểm Strict 3D (✅ / 🟡) — đưa lên dòng tiêu đề, bỏ khỏi dòng setup để không lặp
         m_strict = _RE_STRICT_SEG.search(setup_str) if kind in GRID_KINDS else None
         if m_strict:
@@ -431,7 +463,7 @@ def print_formatted_table(signals_list: List[SignalRecord], kind: str, backup_sy
         if setup_str:
             print(f"     ↳ {setup_str}")
         # SPOT: bổ sung các dòng setup Grid (TP2 / Wide 3D) mà chính Động cơ đó đã in — giữ nguyên tag Strict 3D
-        if kind == "SPOT":
+        if kind in ("SPOT", "SPOT_MF"):
             for extra in (getattr(signal, "grid_tp2_line", ""), getattr(signal, "wide_grid_line", "")):
                 if extra:
                     print(f"     ↳ {extra}")
@@ -506,7 +538,88 @@ def print_strict_3d_rejections(rejections: Optional[Dict[str, Dict[str, Any]]]) 
 _print_table = print_formatted_table   # tương thích tên cũ
 
 
-DEFAULT_BOARD_CONFIG = {"top_spot": 2, "top_grid_tp2": 3, "top_wide_grid": 2, "fill_with_backup": True}
+def print_super_wave_summary(results: List[Dict[str, Any]], top_n: int) -> List[Dict[str, Any]]:
+    """🌊 4. SÓNG 3D — Top mã Bảng 3B có setup hợp lệ, mỗi mã 2 dòng:
+        #1 MET | 95đ | 🚀 NUÔI SÓNG | 15M ⏳ Bị xả-Chờ
+           ↳ 🌊 [SÓNG 3D - MET] Low - Up | NL | Trig | SL | TP | R:R
+    Loại mã ⚠️ XA RAY (mode OVEREXTENDED — cách MA7 3D > 22%): rơi thẳng về MA7 từ +40–70% là xả gãy
+    cấu trúc chứ không phải pullback lành mạnh → chuyển xuống 👀 WATCHLIST (build_watchlist)."""
+    picked = [r for r in (results or []) if r.get("wave_setup") and r.get("mode") != "OVEREXTENDED"]
+    picked = picked[:max(0, int(top_n))]
+    print(f"\n### 🌊 4. CHIẾN LƯỢC SÓNG 3D (Bảng 3B — Đón nhúng MA7 3D, nuôi sóng) — Top {top_n}")
+    if not picked:
+        print("   Không có mã Sóng 3D đạt chuẩn.")
+    for i, r in enumerate(picked, 1):
+        parts = [f"{_fmt_score(_num(r.get('score')))}đ", r.get("action_short", ""), f"15M {r.get('m15_short', 'N/A')}"]
+        print(f"  #{i} {r.get('symbol', ''):<8} | " + " | ".join(p for p in parts if p))
+        print(f"     ↳ {r['wave_setup']['display_line']}")
+    return picked
+
+
+# ── 👀 WATCHLIST — mã tiềm năng nhưng kẹt chốt kiểm duyệt (KHÔNG bóp cò) ──
+WATCH_OVEREXT, WATCH_BREAKOUT, WATCH_SL_WIDE = "overextended", "breakout_pending", "sl_wide"
+WATCH_FLOW_WAIT = "flow_pending"
+WATCH_FLOW_ENGINES = ("DC1", "DC4")
+WATCH_FLOW_MAX = 5
+_RE_SL_WIDE = re.compile(r"SL RỘNG (\d+(?:\.\d+)?)%")
+
+
+def build_watchlist(pool: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]] = None,
+                    exclude_symbols: Iterable[str] = ()) -> Dict[str, List[Dict[str, Any]]]:
+    """Phân loại 4 dòng Watchlist (pure — dữ liệu có cấu trúc cho Web / Telegram):
+      overextended     : Bảng 3B mode OVEREXTENDED (cách MA7 3D > 22%)       → Chờ pullback về MA7
+      breakout_pending : DC3 bị VETO Gate 1 (nến 4H đang chạy chưa đóng)      → Chờ đóng nến 4H
+      sl_wide          : DC3 bị VETO SL ≥ 15% (ưu tiên hơn Gate 1 — lỗi bền)  → Chờ siết nền / kéo SL
+      flow_pending     : DC1 / DC4 trạng thái ⏳ CHỜ có 💥 dòng tiền (money_flow > 0) → Chờ Động cơ duyệt
+    exclude_symbols: mã đã hiện ở mục 1–4 (không lặp vào dòng DÒNG TIỀN CHỜ DUYỆT).
+    Mã dính chốt sinh tử (CẤP 3 / GÃY MA7 3D) không vào Watchlist."""
+    wl: Dict[str, List[Dict[str, Any]]] = {WATCH_OVEREXT: [], WATCH_BREAKOUT: [], WATCH_SL_WIDE: [],
+                                           WATCH_FLOW_WAIT: []}
+    for r in super_wave_results or []:
+        if r.get("mode") == "OVEREXTENDED":
+            wl[WATCH_OVEREXT].append({"symbol": r.get("symbol", ""), "score": _num(r.get("score")),
+                                      "dist_ma7_pct": _num(r.get("dist_ma7_pct"))})
+    for s in _dedupe_keep_first(sort_by_score([s for s in pool or [] if s.engine_source == "DC3"
+                                               and not is_fatal_error(s)])):
+        act = s.action_label or ""
+        m = _RE_SL_WIDE.search(act)
+        if m:
+            wl[WATCH_SL_WIDE].append({"symbol": s.symbol, "score": s.target_score, "sl_pct": -float(m.group(1))})
+        elif "Chờ đóng nến" in act:
+            wl[WATCH_BREAKOUT].append({"symbol": s.symbol, "score": s.target_score})
+    # Dòng 4: DÒNG TIỀN CHỜ DUYỆT — không lặp mã đã báo ở mục 1–4 / 3 dòng trên
+    taken = set(exclude_symbols) | {x["symbol"] for k in (WATCH_OVEREXT, WATCH_BREAKOUT, WATCH_SL_WIDE)
+                                    for x in wl[k]}
+    flow = [s for s in pool or [] if s.engine_source in WATCH_FLOW_ENGINES and s.action_status == STATUS_WAIT
+            and _num(s.money_flow) > 0 and not is_fatal_error(s) and s.symbol not in taken]
+    for s in _dedupe_keep_first(sorted(flow, key=lambda s: (_num(s.money_flow), _num(s.target_score)),
+                                       reverse=True))[:WATCH_FLOW_MAX]:
+        wl[WATCH_FLOW_WAIT].append({"symbol": s.symbol, "engine": s.engine_source, "score": s.target_score,
+                                    "money_flow": _num(s.money_flow)})
+    return wl
+
+
+def print_watchlist(wl: Dict[str, List[Dict[str, Any]]]) -> None:
+    print("=" * 100)
+    print("👀 DANH SÁCH ĐÁNG THEO DÕI (Chưa đạt chuẩn bóp cò):")
+    lines = [
+        ("XA RAY (Chờ pullback về MA7)", WATCH_OVEREXT, lambda x: f"{x['symbol']} (+{x['dist_ma7_pct']:.0f}%)"),
+        ("BREAKOUT (Chờ đóng nến 4H)", WATCH_BREAKOUT, lambda x: f"{x['symbol']} ({_fmt_score(x['score'])}đ)"),
+        ("SL RỘNG (Chờ siết nền)", WATCH_SL_WIDE, lambda x: f"{x['symbol']} (SL {x['sl_pct']:.1f}%)"),
+        ("DÒNG TIỀN CHỜ DUYỆT (DC1/DC4 ⏳ CHỜ)", WATCH_FLOW_WAIT,
+         lambda x: f"{x['symbol']} ({x['engine']} 💥{x['money_flow']:.1f}x)"),
+    ]
+    shown = False
+    for title, key, fmt in lines:
+        if wl.get(key):
+            print(f"• {title}: " + ", ".join(fmt(x) for x in wl[key]))
+            shown = True
+    if not shown:
+        print("• Không có mã nào kẹt chốt kiểm duyệt.")
+
+
+DEFAULT_BOARD_CONFIG = {"top_spot": 5, "top_grid_tp2": 3, "top_wide_grid": 2, "top_super_wave": 3,
+                        "fill_with_backup": True}
 
 
 def _board_config(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -521,7 +634,8 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
                            live_data_map: Optional[Dict[str, Any]] = None, df_summary=None,
                            warning_results: Optional[List[Dict[str, Any]]] = None,
                            config: Optional[Dict[str, Any]] = None,
-                           strict_3d_rejections: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+                           strict_3d_rejections: Optional[Dict[str, Dict[str, Any]]] = None,
+                           super_wave_results: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """In BẢNG TỔNG KẾT TỐI ƯU (kèm Mã Dự Phòng lấp đầy slot). Trả về dict kết quả để tầng khác tái sử dụng.
     config: block `summary_board` trong settings.json
         {"top_spot": 2, "top_grid_tp2": 3, "top_wide_grid": 2, "fill_with_backup": true}
@@ -552,25 +666,36 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
         tp2_symbols = [s.symbol for s in tp2_list]
 
         # 1. Spot (OCO) — BTC rủi ro cao: in cảnh báo khóa tín hiệu nhưng VẪN liệt kê ứng viên (Watchlist)
-        print(f"\n### 🎯 1. CHIẾN LƯỢC SPOT (Lướt sóng OCO / Bắn tỉa 1 điểm / Mã có dòng tiền bạo phát, R:R tối ưu) — Top 5")
+        print(f"\n### 🎯 1. CHIẾN LƯỢC SPOT (Lướt sóng OCO / Bắn tỉa 1 điểm / Mã có dòng tiền bạo phát, R:R tối ưu) "
+              f"— Top {cfg['top_spot']}")
         if btc_locked:
             print("   ⚠️ BTC RỦI RO CAO - TẠM KHÓA TÍN HIỆU SPOT")
-            
-        # Gom chung mã đạt chuẩn và dự phòng, loại trừ mã trùng với GRID TP2
-        all_spot = [s for s in b["spot_primary"] + b["spot_backup"] if s.symbol not in tp2_symbols]
-        all_spot = _dedupe_keep_first(sort_spot_primary(all_spot))[:5]
-        
+
+        # Gom chung mã đạt chuẩn và dự phòng (xếp Strict 3D → 💥 → Điểm), loại trừ mã trùng với GRID TP2.
+        # Số mã = config top_spot; fill_with_backup=False → primary có hàng thì KHÔNG trộn backup.
+        primary_spot = [s for s in b["spot_primary"] if s.symbol not in tp2_symbols]
+        backup_spot = [s for s in b["spot_backup"] if s.symbol not in tp2_symbols]
+        pool_spot = primary_spot if (primary_spot and not fill) else primary_spot + backup_spot
+        all_spot = _dedupe_keep_first(sort_spot_primary(pool_spot))[:cfg["top_spot"]]
+        primary_syms = {s.symbol for s in primary_spot}
+        spot_bk = {s.symbol for s in all_spot if s.symbol not in primary_syms}
+
         result["spot"] = all_spot
-        result["spot_backup_symbols"] = set()
-        print_formatted_table(all_spot, "SPOT", set())
+        result["spot_backup_symbols"] = spot_bk
+        print_formatted_table(all_spot, "SPOT", spot_bk)
 
         # Bổ sung nhóm mới: TOP 3 MÃ DÒNG TIỀN BẠO PHÁT CAO NHẤT
+        # Tách bạch: CHỈ mã được phép bóp cò (mf_gate_label allowed) — mã kẹt chốt chuyển xuống 👀 WATCHLIST;
+        # mã dính chốt sinh tử (CẤP 3 / GÃY MA7 3D) bị loại như mọi bảng khác.
         all_spot_syms = {s.symbol for s in all_spot}
-        top_mf_spot = [s for s in pool if s.symbol not in all_spot_syms and _num(getattr(s, "money_flow", 0)) > 0]
-        top_mf_spot = sorted(top_mf_spot, key=lambda s: _num(getattr(s, "money_flow", 0)), reverse=True)[:3]
+        top_mf_spot = [s for s in pool if s.symbol not in all_spot_syms and not is_fatal_error(s)
+                       and _num(getattr(s, "money_flow", 0)) > 0 and mf_gate_label(s)[1]]
+        top_mf_spot = _dedupe_keep_first(sorted(top_mf_spot, key=lambda s: _num(getattr(s, "money_flow", 0)),
+                                                reverse=True))[:3]
+        result["top_money_flow"] = top_mf_spot
         if top_mf_spot:
-            print("\n   🔥 TOP 3 MÃ DÒNG TIỀN BẠO PHÁT CAO NHẤT:")
-            print_formatted_table(top_mf_spot, "SPOT", set([s.symbol for s in top_mf_spot]))
+            print("\n   🔥 TOP 3 MÃ DÒNG TIỀN BẠO PHÁT CAO NHẤT (đã qua chốt bóp cò):")
+            print_formatted_table(top_mf_spot, "SPOT_MF", set())
 
         # 2. Grid TP2
         print(f"\n### 🥅 2. CHIẾN LƯỢC GRID TP2 (Lưới đón Pullback 2-5 ngày) — Top {cfg['top_grid_tp2']}")
@@ -585,6 +710,10 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
         result["wide_grid"], result["wide_grid_backup_symbols"] = wide_list, wide_bk
         print_formatted_table(wide_list, "WIDE_GRID_3D", wide_bk)
 
+        # 4. 🌊 Sóng 3D (Bảng 3B) — None → không in mục
+        if super_wave_results is not None:
+            result["super_wave"] = print_super_wave_summary(super_wave_results, cfg["top_super_wave"])
+
         # 4. Thống kê mã trượt cổng Strict 3D
         if strict_3d_rejections is not None:
             # print_strict_3d_rejections(strict_3d_rejections)  # Ẩn theo yêu cầu người dùng
@@ -594,6 +723,11 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
         for k in ("spot", "grid_tp2", "wide_grid"):
             result[f"{k}_is_backup"] = bool(result[f"{k}_backup_symbols"])
 
+        # 👀 WATCHLIST — tách bạch "mã bóp cò ngay" (mục 1–4) với "mã đưa vào tầm ngắm" (kẹt chốt kiểm duyệt)
+        shown = {s.symbol for k in ("spot", "top_money_flow", "grid_tp2", "wide_grid") for s in result.get(k) or []}
+        shown |= {r.get("symbol", "") for r in result.get("super_wave") or []}
+        result["watchlist"] = build_watchlist(pool, super_wave_results, exclude_symbols=shown)
+        print_watchlist(result["watchlist"])
         print("=" * 100)
     except Exception as e:
         print(f"Render Error (Summary Board): {e}")

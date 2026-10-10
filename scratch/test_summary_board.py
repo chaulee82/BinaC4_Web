@@ -53,11 +53,11 @@ ew = [{"symbol": "TON/USDT", "level": 3, "label": "💀 CẤP 3: KHẨN CẤP (G
 LEGACY = {"top_spot": 2, "top_grid_tp2": 2, "top_wide_grid": 2, "fill_with_backup": False}
 r = generate_summary_board(pool, "✅ BTC ổn định", live, df, ew, config=LEGACY)
 assert [s.symbol for s in r["grid_tp2"]] == ["VTHO", "CHIP"], r["grid_tp2"]   # 29.1x > 3.4x (Money Flow trước Điểm)
-assert [s.symbol for s in r["spot"]] == ["RAD", "ENA"], [s.symbol for s in r["spot"]]   # 💥 6.9x trước, rồi R:R
+assert [s.symbol for s in r["spot"]] == ["RAD", "S"], [s.symbol for s in r["spot"]]   # 💥 6.9x trước, rồi Điểm (S 110đ > ENA 85đ)
 assert [s.symbol for s in r["wide_grid"]] == ["QNT", "MUBARAK"], [s.symbol for s in r["wide_grid"]]
 
 r2 = generate_summary_board(pool, "⚠️ CẢNH BÁO: BTC gãy MA25 1H (RSI=41.1) — Fakeout Risk Cao", live, df, ew, config=LEGACY)
-assert r2["spot_btc_locked"] and [s.symbol for s in r2["spot"]] == ["RAD", "ENA"] and len(r2["grid_tp2"]) == 2
+assert r2["spot_btc_locked"] and [s.symbol for s in r2["spot"]] == ["RAD", "S"] and len(r2["grid_tp2"]) == 2
 assert r["spot_btc_locked"] is False
 assert r["spot_is_backup"] is False and r["grid_tp2_is_backup"] is False
 

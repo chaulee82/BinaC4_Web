@@ -118,6 +118,11 @@ class ScoreContext:
     entry_setup2: Optional[EntrySetupContext] = None
     grid_setup: Optional[GridContext] = None
 
+    # Quyền thực thi (Execution Gatekeeper): Engine có thể phủ quyết bóp cò dù điểm cao
+    # (VD DC3: chưa có Breakout trên nến ĐÃ ĐÓNG → False). Mặc định True để không ảnh hưởng Động cơ khác.
+    execution_allowed: bool = True
+    execution_veto_reason: str = ""
+
 @dataclass(slots=True, frozen=True)
 class SymbolState:
     """Object tối cao bao bọc toàn bộ trạng thái của một đồng coin"""

@@ -383,12 +383,24 @@ def main():
                 # =========================================================
                 # 5. KÍCH HOẠT THỰC THI (EXECUTION LAYER)
                 # =========================================================
-                # Dò tìm lệnh Breakout
+                # Dò tìm lệnh Breakout — Execution Gatekeeper: điểm ≥ 85 VÀ Breakout trên nến 4H ĐÃ ĐÓNG VÀ SL < 15%
+                from strategies.momentum_breakout import DC3_MAX_SL_PCT
                 for state in dc3_states:
-                    score = state.scores["DC3"].total_score
-                    if score >= 85:
-                        setup = state.scores["DC3"].entry_setup1
+                    ctx = state.scores["DC3"]
+                    if ctx.total_score >= 85:
+                        if not ctx.execution_allowed:
+                            logger.warning(f"[DC3 VETO] {state.symbol}: {ctx.total_score}đ nhưng không bóp cò — "
+                                           f"{ctx.execution_veto_reason or 'Chưa xác nhận Breakout nến đã đóng'}")
+                            continue
+                        setup = ctx.entry_setup1
                         if setup:
+                            # Phòng thủ lớp 2: kiểm lại độ rộng SL ngay trên setup sắp gửi sàn
+                            _e, _sl = getattr(setup, "entry_price", 0) or 0, getattr(setup, "sl_price", 0) or 0
+                            _sl_pct = (_e - _sl) / _e * 100 if _e > 0 and 0 < _sl < _e else None
+                            if _sl_pct is not None and round(_sl_pct, 6) >= DC3_MAX_SL_PCT:
+                                logger.warning(f"[DC3 VETO] {state.symbol}: Không bóp cò — SL quá rộng "
+                                               f"({_sl_pct:.1f}% ≥ {DC3_MAX_SL_PCT:.0f}%)")
+                                continue
                             executor.execute_entry_setup(symbol=state.symbol, amount=0.01, setup=setup)
                             
                 # Dò tìm lệnh Sniper
@@ -417,6 +429,7 @@ def main():
             if _renderer is not None:
                 from views.summary_board import generate_summary_board
                 from core.macro_levels import get_strict_3d_rejections
+                from strategies.super_trend_3d import get_last_super_wave_results
                 def _summary_hook():
                     generate_summary_board(
                         global_signals_pool=_renderer.signals_pool,
@@ -426,12 +439,14 @@ def main():
                         warning_results=_warning_results,
                         config=settings.get("summary_board"),
                         strict_3d_rejections=get_strict_3d_rejections(),
+                        super_wave_results=get_last_super_wave_results(),
                     )
 
             from core.coin_filter import print_final_tables
             print_final_tables(early_list, df_summary, current_time_str,
                                macro_levels_map=(macro_levels_map if 'macro_levels_map' in locals() else None),
-                               before_rebalance_hook=_summary_hook)
+                               before_rebalance_hook=_summary_hook,
+                               live_data_map=live_data_map)
             
             logger.info("Hoàn tất quét thị trường. Chương trình kết thúc.")
             

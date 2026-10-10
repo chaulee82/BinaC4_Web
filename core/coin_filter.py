@@ -1761,7 +1761,7 @@ def _print_b3_grid_tp2(sym, sym_ccxt, entry, grid_setup, box_floor, macro):
     except Exception as e:
         print(f"   ↳ 🎯 [GRID TP2] Render Error: {e}")
 
-def print_final_tables(early_list, df_summary, current_time_str, macro_levels_map=None, before_rebalance_hook=None):
+def print_final_tables(early_list, df_summary, current_time_str, macro_levels_map=None, before_rebalance_hook=None, live_data_map=None):
     if df_summary is None or df_summary.empty:
         summary_list = []
     else:
@@ -1895,6 +1895,13 @@ def print_final_tables(early_list, df_summary, current_time_str, macro_levels_ma
             _print_b3_grid_tp2(sym, sym_ccxt, gia, grid_setup, r.get('Box_Floor'), macro)
 
     print("=" * _TW3 + "\n")
+    # ── 🌊 BẢNG 3B - SIÊU SÓNG TĂNG 3D (mã đã kích hoạt trend, tách biệt Bảng 3A bắt đáy) ──
+    if live_data_map:
+        try:
+            from strategies.super_trend_3d import scan_super_wave_3d, print_super_wave_table
+            print_super_wave_table(scan_super_wave_3d(live_data_map))
+        except Exception as e:
+            print(f"Render Error (Bảng 3B): {e}")
     # ── 🏁 Hook in trước Bảng Rebalance (VD: BẢNG TỔNG KẾT TỐI ƯU) ──────────
     if before_rebalance_hook is not None:
         try:

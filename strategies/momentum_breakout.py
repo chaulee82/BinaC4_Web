@@ -16,6 +16,10 @@ import pandas as pd
 import numpy as np
 from core.indicator_engine import IndicatorEngine
 
+# [Execution Gatekeeper] SL cách Entry ≥ 15% → phủ quyết bóp cò (FOMO mua đuổi quá đà).
+# 15% (không phải 10%) để chừa chỗ thở cho Altcoin Mid/Low-cap vừa nổ Vol retest cản.
+DC3_MAX_SL_PCT = 15.0
+
 
 class MomentumBreakout:
     def __init__(self, exchange=None):
@@ -82,29 +86,46 @@ class MomentumBreakout:
     # =========================================================================
     # CỬA 1: ĐIỂM NỔ CẤU TRÚC GIÁ (PRICE ACTION BREAKOUT) — TỐI ĐA 30 ĐIỂM
     # =========================================================================
-    def evaluate_price_action(self, df: pd.DataFrame) -> dict:
-        past_highs = df['high'].iloc[-100:-1]
-        resistance = past_highs.max()
+    def evaluate_price_action(self, df: pd.DataFrame, timeframe: str = None) -> dict:
+        """
+        Breakout CHỈ được công nhận trên nến ĐÃ ĐÓNG (chống Đu đỉnh râu nến / Liquidity Grab):
+          1. Nến đã đóng gần nhất đóng trên kháng cự → 30 (sạch) / 15 (râu xả nhẹ) / 0 (râu dội ngược)
+          2. Nến ĐANG CHẠY vượt kháng cự (chưa đóng)  → tối đa 15đ "chờ đóng nến xác nhận"
+          3. Nến đã đóng chọc râu qua rồi đóng dưới cản → 0 (Fakeout)
+          4. Giá live trong 1% dưới kháng cự            → 15 (Tiệm cận)
+        Kháng cự = đỉnh cao nhất 100 nến TRƯỚC nến đã đóng được xét.
+        """
+        import time as _t
+        # Xác định nến cuối có đang chạy không (Binance luôn trả kèm nến đang mở)
+        last_running = True
+        if timeframe and 'timestamp' in df.columns:
+            from core.volume_projection import TIMEFRAME_MS
+            tf_ms = TIMEFRAME_MS.get(timeframe.lower())
+            if tf_ms:
+                last_running = float(df['timestamp'].iloc[-1]) + tf_ms > _t.time() * 1000
+        ci = -2 if last_running else -1                      # chỉ số nến đã đóng gần nhất
 
-        latest_candle = df.iloc[-1]
-        close_price = latest_candle['close']
-        high_price = latest_candle['high']
-        open_price = latest_candle['open']
+        resistance = df['high'].iloc[ci - 100:ci].max()
 
-        body = abs(close_price - open_price)
-        upper_wick = high_price - max(close_price, open_price)
+        closed = df.iloc[ci]
+        c_close, c_high, c_open = closed['close'], closed['high'], closed['open']
+        body = abs(c_close - c_open)
+        upper_wick = c_high - max(c_close, c_open)
+        live_close = df['close'].iloc[-1]
 
-        if close_price > resistance:
+        if c_close > resistance:
             if upper_wick >= body:
                 return {"score": 0, "status": "Fakeout (Râu bị dội ngược)", "resistance": resistance}
             elif upper_wick > body * 0.4:
                 return {"score": 15, "status": "Breakout (Có râu nến xả nhẹ)", "resistance": resistance}
             else:
                 return {"score": 30, "status": "Breakout Sạch (Đóng nến qua kháng cự)", "resistance": resistance}
-        elif high_price > resistance:
-            # Giá chọc râu qua nhưng đóng nến dưới kháng cự -> Fakeout
+        elif last_running and live_close > resistance:
+            return {"score": 15, "status": "Vượt cản nến đang chạy (Chờ đóng nến)", "resistance": resistance}
+        elif c_high > resistance:
+            # Nến đã đóng chọc râu qua nhưng đóng dưới kháng cự → Fakeout
             return {"score": 0, "status": "Fakeout (Chọc râu rút chân)", "resistance": resistance}
-        elif close_price >= resistance * 0.99:
+        elif live_close >= resistance * 0.99:
             return {"score": 15, "status": "Tiệm cận Kháng cự (Chờ Breakout)", "resistance": resistance}
         else:
             return {"score": 0, "status": "Chưa có dấu hiệu Breakout", "resistance": resistance}
@@ -112,21 +133,34 @@ class MomentumBreakout:
     # =========================================================================
     # CỬA 2: ĐỘT BIẾN KHỐI LƯỢNG (VOLUME ANOMALY) — TỐI ĐA 25 ĐIỂM
     # =========================================================================
-    def evaluate_volume(self, df: pd.DataFrame) -> dict:
+    def evaluate_volume(self, df: pd.DataFrame, timeframe: str = None) -> dict:
+        """
+        Vol nến đang chạy / MA20 (20 nến đã đóng).
+        Khung 4H / 1D: dùng Volume Dự Phóng theo tỷ trọng thời gian (core.volume_projection)
+        → không đánh trượt Breakout ở giờ đầu chân sóng. Khung 15M / 1H: Volume thực (chống Fakeout).
+        Dấu `*` sau tỷ lệ = đã nội suy.
+        """
         ma20_vol = df['volume'].iloc[-21:-1].mean()
         current_vol = df['volume'].iloc[-1]
 
         if ma20_vol == 0:
             return {"score": 0, "status": "Không có dữ liệu Volume"}
 
-        vol_ratio = current_vol / ma20_vol
+        proj = {"volume_proj": current_vol, "applied": False, "frac": None, "mult": 1.0}
+        if timeframe and 'timestamp' in df.columns:
+            from core.volume_projection import project_volume
+            proj = project_volume(current_vol, df['timestamp'].iloc[-1], timeframe)
+
+        vol_ratio = proj["volume_proj"] / ma20_vol
+        mark = "*" if proj.get("applied") else ""
+        out = {"vol_ratio": vol_ratio, "vol_ratio_raw": current_vol / ma20_vol, "projection": proj}
 
         if vol_ratio >= 3.0:
-            return {"score": 25, "status": f"Dòng tiền Bạo Phát ({vol_ratio:.1f}x MA20)"}
+            return {**out, "score": 25, "status": f"Dòng tiền Bạo Phát ({vol_ratio:.1f}x{mark} MA20)"}
         elif vol_ratio >= 2.5:
-            return {"score": 15, "status": f"Volume Đột Biến ({vol_ratio:.1f}x MA20)"}
+            return {**out, "score": 15, "status": f"Volume Đột Biến ({vol_ratio:.1f}x{mark} MA20)"}
         else:
-            return {"score": 0, "status": f"Volume Yếu ({vol_ratio:.1f}x MA20) - Bull Trap"}
+            return {**out, "score": 0, "status": f"Volume Yếu ({vol_ratio:.1f}x{mark} MA20) - Bull Trap"}
 
     # =========================================================================
     # CỬA 3: ĐỘNG NĂNG DUY TRÌ (TAKER BUY RATIO) — TỐI ĐA 20 ĐIỂM
@@ -234,8 +268,8 @@ class MomentumBreakout:
             # order_book = self.exchange.fetch_order_book(symbol, limit=100)
 
             # Chấm điểm 4 Gates
-            c1 = self.evaluate_price_action(df)
-            c2 = self.evaluate_volume(df)
+            c1 = self.evaluate_price_action(df, timeframe)
+            c2 = self.evaluate_volume(df, timeframe)
             c3 = self.evaluate_taker_buy(symbol)
             c4 = self.evaluate_risk(df, current_price)
 
@@ -306,16 +340,31 @@ class MomentumBreakout:
             # sort_score = total_score + rr_ratio (tiebreaker: cùng điểm thì R/R cao hơn lên trước)
             sort_score = total_score + rr_ratio
 
+            # [Execution Gatekeeper] Quyền bóp cò = điểm ≥ 85 VÀ Gate 1 ≥ 25 (Breakout trên nến ĐÃ ĐÓNG)
+            #                         VÀ SL < 15% (chừa chỗ thở cho Altcoin biên độ mạnh, chặt FOMO mua đuổi).
+            # Điểm / thứ hạng radar giữ nguyên — chỉ phủ quyết việc xuất lệnh.
+            is_real_breakout = (c1['score'] >= 25)
+            sl_dist_pct = ((entry_price - sl_price) / entry_price * 100
+                           if sl_price and entry_price and sl_price < entry_price else None)
+            sl_too_wide = sl_dist_pct is not None and round(sl_dist_pct, 6) >= DC3_MAX_SL_PCT
+            execution_allowed = total_score >= 85 and is_real_breakout and not sl_too_wide
+            veto_reason = ""
+
             action = "🔴 TỪ CHỐI"
-            if total_score >= 85:
+            if execution_allowed:
                 action = "🟢 BREAKOUT HÀNG THẬT: Bắn lệnh Hybrid Executor"
+            elif total_score >= 85 and sl_too_wide:
+                action = f"🔴 TỪ CHỐI — SL RỘNG {sl_dist_pct:.1f}% (≥ {DC3_MAX_SL_PCT:.0f}%)"
+                veto_reason = f"SL quá rộng ({sl_dist_pct:.1f}% ≥ {DC3_MAX_SL_PCT:.0f}%)"
+            elif total_score >= 85:
+                action = "🟡 THEO DÕI: Chờ đóng nến xác nhận Breakout"
+                veto_reason = f"Gate 1 = {c1['score']}đ < 25 — chưa có Breakout trên nến đã đóng"
             elif total_score >= 65:
                 action = "🟡 THEO DÕI: Cần tích lũy thêm Volume"
             if is_explosive:
                 action = f"{action} | {expl['tag']} → Trig đón nhúng"
 
             trade_setup = {}
-            is_real_breakout = (c1['score'] >= 25)
             # Mã có Dòng Tiền Bạo Phát luôn có setup để in đủ ⚙️ SETUP + 🎯 GRID TP2
             if total_score >= 65 or is_real_breakout or is_explosive:
                 trade_setup = {
@@ -334,6 +383,9 @@ class MomentumBreakout:
                 "rr_ratio": rr_ratio,
                 "sort_score": sort_score,
                 "action": action,
+                "breakout_confirmed": is_real_breakout,
+                "execution_allowed": execution_allowed,
+                "execution_veto_reason": veto_reason,
                 "details": {
                     "Gate_0_BTC": btc_gate.get("reason", ""),
                     "Gate_1_PriceAction": c1['status'],
