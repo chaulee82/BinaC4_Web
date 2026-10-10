@@ -358,7 +358,9 @@ class ConsoleRenderer:
                         tp2_pct = (setup.tp2_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
                         setup_line = f"   ↳ ⚙️ SETUP: In={self.fmt_price(setup.entry_price)} | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}"
                         print(setup_line)
-                        print(f"       📄 [MOCK] TP1={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | TP2={self.fmt_price(setup.tp2_price)}(+{tp2_pct:.1f}%)")
+                        mock_line = f"       📄 [MOCK] TP1={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | TP2={self.fmt_price(setup.tp2_price)}(+{tp2_pct:.1f}%)"
+                        print(mock_line)
+                        setup_line += f"\n{mock_line}"
                     else:
                         sl_pct = (setup.entry_price - setup.sl_price) / setup.entry_price * 100 if setup.entry_price else 0
                         tp1_pct = (setup.tp1_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0

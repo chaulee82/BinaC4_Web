@@ -38,6 +38,7 @@ from engines.dc4_hot_trend_engine import DC4HotTrendEngine
 from core.grid_calculator import GridCalculator
 from core.exchange_info_cache import ExchangeInfoCache
 from core.macro_levels import calculate_universal_macro_levels, get_3d_profile
+from core.history_logger import HistoryLogger
 
 # Thiết lập logging
 logging.basicConfig(
@@ -142,6 +143,10 @@ def main():
     dc3_engine = DC3BreakoutEngine(strategy=breakout)
     dc4_engine = DC4HotTrendEngine(strategy=hot_trend, grid_calc=grid_calc)
     dc5_engine = DC5PingpongUptrendEngine(strategy=pingpong)
+    
+    # Khởi tạo Bộ nhớ lịch sử
+    history_logger = HistoryLogger()
+    history_logger.clean_old_records(30)
     
     # Chạy 1 lần (Manual Scan Mode)
     if True:
@@ -427,6 +432,9 @@ def main():
             _warning_results = locals().get('warning_results')
             _summary_hook = None
             if _renderer is not None:
+                # Lưu tín hiệu vào DB trước khi lên bảng tổng kết
+                history_logger.save_signals(_renderer.signals_pool)
+                
                 from views.summary_board import generate_summary_board
                 from core.macro_levels import get_strict_3d_rejections
                 from strategies.super_trend_3d import get_last_super_wave_results
@@ -440,6 +448,7 @@ def main():
                         config=settings.get("summary_board"),
                         strict_3d_rejections=get_strict_3d_rejections(),
                         super_wave_results=get_last_super_wave_results(),
+                        history_logger=history_logger,
                     )
 
             from core.coin_filter import print_final_tables

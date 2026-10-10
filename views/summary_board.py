@@ -630,12 +630,117 @@ def _board_config(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return cfg
 
 
+def build_convergence_summary(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger) -> str:
+    """
+    Module Phân tích Hội tụ (Điểm Chạm Vàng)
+    """
+    if not history_logger:
+        return ""
+
+    current_symbols_engines = {}
+    for s in current_signals:
+        if s.symbol not in current_symbols_engines:
+            current_symbols_engines[s.symbol] = {}
+        current_symbols_engines[s.symbol][s.engine_source] = s
+
+    for r in (super_wave_results or []):
+        sym = r.get("symbol")
+        if sym:
+            if sym not in current_symbols_engines:
+                current_symbols_engines[sym] = {}
+            current_symbols_engines[sym]["3B"] = r
+
+    summary_lines = []
+    
+    for symbol, engines_map in current_symbols_engines.items():
+        current_engines = list(engines_map.keys())
+        if not ("DC3" in current_engines or "DC4" in current_engines or "DC5" in current_engines or "DC2" in current_engines):
+            continue
+            
+        history = history_logger.get_symbol_history(symbol, days=14)
+        history_counts = {}
+        for eng, ts in history:
+            history_counts[eng] = history_counts.get(eng, 0) + 1
+            
+        history_7_days = history_logger.get_symbol_history(symbol, days=7)
+        history_7_counts = {}
+        for eng, ts in history_7_days:
+            history_7_counts[eng] = history_7_counts.get(eng, 0) + 1
+
+        rank = None
+        phan_tich = ""
+        chien_luoc = ""
+        trigger = None
+        
+        # Priority 1: 🏆 [HẠNG S] VỤ NỔ VĨ MÔ
+        if ("DC3" in current_engines or "DC4" in current_engines):
+            if history_counts.get("3A", 0) >= 3 or history_counts.get("DC1", 0) >= 3:
+                rank = "🏆 [HẠNG S] VỤ NỔ VĨ MÔ"
+                trigger = "DC3" if "DC3" in current_engines else "DC4"
+                phan_tich = f"Đã tích lũy Darvas/3A trong 14 ngày qua. Hôm nay chính thức nổ Breakout {trigger}."
+                chien_luoc = "Mỏ vàng thức giấc. KHÔNG dùng OCO ngắn hạn. Đánh thẳng lệnh Limit hoặc Mở Wide Grid 3D để gồng ăn trọn chân sóng. SL cứng ngay nắp hộp Darvas cũ."
+        
+        # Priority 2: 🥇 [HẠNG A1] SIÊU PULLBACK
+        if not rank and ("DC2" in current_engines):
+            if "DC4" in current_engines or "3B" in current_engines:
+                rank = "🥇 [HẠNG A1] SIÊU PULLBACK"
+                trigger = "DC2"
+                phan_tich = "Hội tụ (Sóng 3D + DC4 Hot Trend + DC2 Sniper). Vừa rũ râu về hỗ trợ cứng."
+                chien_luoc = "Thiên thời địa lợi. Bắn ngay lệnh OCO của DC2 (SL cực ngắn). Kéo Stop-Loss về hòa vốn ngay khi giá nảy lên để triệt tiêu hoàn toàn rủi ro, gồng phần còn lại theo Trend."
+                
+        # Priority 3: 🥈 [HẠNG A2] TIẾP DIỄN XU HƯỚNG
+        if not rank and ("DC3" in current_engines):
+            if "3B" in current_engines:
+                rank = "🥈 [HẠNG A2] TIẾP DIỄN XU HƯỚNG"
+                trigger = "DC3"
+                phan_tich = "Đang ở giữa sóng lớn (3B), nghỉ ngơi tạo cờ (Flag) rồi nổ Breakout (DC3)."
+                chien_luoc = "Sóng đè sóng. Nếu chưa có hàng: Đánh Breakout thuận xu hướng. Nếu đã có hàng: Kích hoạt DCA Dương, nhồi thêm vốn và dời SL lên sát đáy nến Breakout."
+                
+        # Priority 4: 🥉 [HẠNG B] CỖ MÁY CASHFLOW
+        if not rank and ("DC5" in current_engines):
+            if history_7_counts.get("DC1", 0) >= 3:
+                rank = "🥉 [HẠNG B] CỖ MÁY CASHFLOW"
+                trigger = "DC5"
+                phan_tich = "Kẹp giữa 2 mức giá đều đặn (DC1 7 ngày qua) và nảy pingpong (DC5)."
+                chien_luoc = "Setup kẹp thịt: Cài lưới Bot Grid 24-35 lưới bám sát biên độ hộp Darvas để bào chênh lệch (Grid Profit). Cài SL an toàn cách 3% dưới đáy hộp."
+                
+        if rank:
+            info = ""
+            setup_text = ""
+            if trigger and trigger in engines_map:
+                sig = engines_map[trigger]
+                if hasattr(sig, 'target_score'):
+                    score = f"{sig.target_score:.0f}đ"
+                    act = (sig.action_label or "").strip()
+                    if act:
+                        info = f" ({trigger}: {score} - {act})"
+                    else:
+                        info = f" ({trigger}: {score})"
+                        
+                raw_setup = getattr(sig, 'raw_setup_string', '')
+                if raw_setup:
+                    setup_text = f"\n   ↳ Thông số: {raw_setup}"
+            
+            block = f"{rank}: {symbol}{info}\n   ↳ Phân tích: {phan_tich}\n   ↳ Chiến lược: {chien_luoc}{setup_text}"
+            summary_lines.append(block)
+            
+    res = "\n" + "=" * 100 + "\n"
+    res += "🌟 KẾT LUẬN TỐI ƯU: CÁC ĐIỂM CHẠM VÀNG (SỰ HỘI TỤ TÍN HIỆU)\n"
+    res += "=" * 100 + "\n"
+    if summary_lines:
+        res += "\n\n".join(summary_lines) + "\n"
+    else:
+        res += "   Không có mã nào đạt Điểm Chạm Vàng trong phiên này.\n"
+    res += "=" * 100 + "\n"
+    return res
+
 def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: str = "",
                            live_data_map: Optional[Dict[str, Any]] = None, df_summary=None,
                            warning_results: Optional[List[Dict[str, Any]]] = None,
                            config: Optional[Dict[str, Any]] = None,
                            strict_3d_rejections: Optional[Dict[str, Dict[str, Any]]] = None,
-                           super_wave_results: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                           super_wave_results: Optional[List[Dict[str, Any]]] = None,
+                           history_logger=None) -> Dict[str, Any]:
     """In BẢNG TỔNG KẾT TỐI ƯU (kèm Mã Dự Phòng lấp đầy slot). Trả về dict kết quả để tầng khác tái sử dụng.
     config: block `summary_board` trong settings.json
         {"top_spot": 2, "top_grid_tp2": 3, "top_wide_grid": 2, "fill_with_backup": true}
@@ -659,6 +764,11 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
         print("\n" + "=" * 100)
         print("================ 🏁 BẢNG TỔNG KẾT TỐI ƯU ================")
         print("=" * 100)
+
+        # Điểm Chạm Vàng
+        if history_logger:
+            convergence_text = build_convergence_summary(pool, super_wave_results, history_logger)
+            print(convergence_text)
 
         # Grid TP2 chọn trước → danh sách chống trùng cho Spot
         tp2_list, tp2_bk = pick_with_fallback(b["tp2_primary"], b["tp2_backup"], sort_grid_tp2, sort_grid_tp2,

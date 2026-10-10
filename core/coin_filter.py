@@ -1634,7 +1634,7 @@ def get_filtered_symbols(live_data_map):
     # Sắp xếp theo thanh khoản (quote_vol) cao nhất xuống để ưu tiên các "mỏ vàng" an toàn dễ đẩy
     _temp_early.sort(key=lambda x: x[1], reverse=True)
     early_symbols = [x[0] for x in _temp_early[:EARLY_TOP_N]]
-    # print(f"\n🌱 Đang quét Bảng 3 - Mỏ Vàng Ngủ Say ({len(early_symbols)} mã vol > ${EARLY_MIN_VOL_USDT // 1_000_000}M)...\n")
+    # print(f"\n🌱 Đang quét Bảng 3A - Mỏ Vàng Ngủ Say ({len(early_symbols)} mã vol > ${EARLY_MIN_VOL_USDT // 1_000_000}M)...\n")
 
     early_list = []
     if early_symbols:
@@ -1772,7 +1772,7 @@ def print_final_tables(early_list, df_summary, current_time_str, macro_levels_ma
         return _SEP.join(ljust_w(trunc_w(c, w), w) for c, w in zip(cells, _WCOLS3))
 
     print("=" * _TW3)
-    print("🌱 BẢNG 3: MỎ VÀNG NGỦ SAY (WATCHLIST VĨ MÔ 1D - THANG ĐIỂM 100 - TOP 5)")
+    print("🌱 BẢNG 3A: MỎ VÀNG NGỦ SAY (WATCHLIST VĨ MÔ 1D - THANG ĐIỂM 100 - TOP 5)")
     print("=" * _TW3)
 
     if not early_list:
