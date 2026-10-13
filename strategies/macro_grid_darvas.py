@@ -4,11 +4,21 @@ Dự án: CN4-Platform
 Mục đích: Động cơ 1 — Bộ Giáp Lưới Kép Darvas (Bê Tông Cốt Thép)
 Triết lý: Đo độ cứng Móng Bê Tông, không tìm đà tăng.
 
-Thang điểm 100 điểm (4 tiêu chí định lượng):
-  C1 (30đ) - Tần Suất Đỡ Đáy  : Đáy test nhiều lần mà không thủng → Lực kê của tạo lập uy tín
-  C2 (30đ) - Cạn Cung Tại Nền  : Vol đỏ khi giá ở nửa dưới hộp < 60% MA20 → Phe bán kiệt sức
-  C3 (20đ) - Đồng Thuận Vĩ Mô  : MA99 1D đi ngang/ngóc lên + giá trên MA99 → Không chống trend
-  C4 (20đ) - Biên Độ Ổn Định   : ATR 14 đang thu hẹp hoặc flat → Bình yên, không sắp bão
+BƯỚC 0 — CỔNG "CÓ HỘP DARVAS HAY KHÔNG?" (trượt → 0 điểm, TỪ CHỐI):
+  • Chỉ dùng nến 4H ĐÃ ĐÓNG (bỏ nến đang chạy) để dựng hộp.
+  • Trần = Close cao nhất; mốc trần = lần ĐẦU giá chạm vùng trần (±1.5%), phải cũ ≥ 12 nến (48h).
+  • Sàn  = Low thấp nhất HÌNH THÀNH SAU trần; mốc sàn phải cũ ≥ 6 nến (24h) không bị thủng mới.
+  • Hộp tồn tại ≥ 30 nến (5 ngày) tính từ mốc trần.
+  • Biên độ 4% ≤ (Trần − Sàn)/Sàn ≤ 25%  (hẹp quá → phí ăn lưới; rộng quá → trend/bơm-xả).
+  • Giá dao động qua lại giữa hộp ≥ 2 lần cắt đường giữa (loại kiểu xả trượt dài một chiều).
+  • Giá hiện tại phải nằm TRONG hộp (vượt trần → breakout, thủng sàn → phân phối).
+
+Thang điểm 100 điểm (5 tiêu chí định lượng, chỉ chấm khi đã qua cổng hộp):
+  C1 (25đ) - Tần Suất Đỡ Đáy  : Đáy test nhiều lần mà không thủng → Lực kê của tạo lập uy tín
+  C2 (25đ) - Cạn Cung Tại Nền  : Vol TB nến đỏ ở nửa dưới hộp so với Vol TRUNG VỊ nến xanh trong hộp
+  C3 (15đ) - Đồng Thuận Vĩ Mô  : MA99 1D đi ngang/ngóc lên + giá trên MA99 → Không chống trend
+  C4 (15đ) - Biên Độ Ổn Định   : ATR 14 đang thu hẹp hoặc flat → Bình yên, không sắp bão
+  C5 (20đ) - Độ Chặt Của Hộp   : Biên độ hộp càng hẹp → tích lũy càng chặt
 
 Kill-Switch tự động (bất kể điểm tổng cao đến đâu):
   KS-1: Supertrend 1D DOWNTREND  → REJECT (Gãy cấu trúc vĩ mô)
@@ -31,7 +41,15 @@ class MacroGridDarvas:
     DARVAS_LOOKBACK_4H   = 90      # ~15 ngày dữ liệu 4H để dựng hộp Darvas
     DARVAS_1D_LIMIT      = 120     # Số nến 1D để tính MA99 + Supertrend
     FLOOR_TEST_ZONE_PCT  = 0.02    # ±2% mép dưới hộp để đếm lần test đáy
-    VOL_DRYUP_THRESHOLD  = 0.60    # Vol đỏ phải < 60% MA20 khi ở nửa dưới hộp
+    # ── Cổng xác nhận Hộp Darvas ──
+    BOX_MIN_CANDLES      = 60      # Tối thiểu số nến đã đóng để xét hộp (mã mới list → bỏ)
+    BOX_EDGE_TOL_PCT     = 0.015   # Dung sai ±1.5% khi xác định lần chạm trần/sàn
+    CEIL_CONFIRM_BARS    = 12      # Trần phải đứng vững ≥ 12 nến 4H (48h)
+    FLOOR_CONFIRM_BARS   = 6       # Sàn phải đứng vững ≥ 6 nến 4H (24h)
+    BOX_MIN_BARS         = 30      # Hộp tồn tại ≥ 30 nến 4H (5 ngày)
+    BOX_MIN_AMP          = 0.04    # Biên độ hộp tối thiểu 4%
+    BOX_MAX_AMP          = 0.25    # Biên độ hộp tối đa 25%
+    BOX_MIN_MID_CROSSES  = 2       # Số lần Close cắt đường giữa hộp tối thiểu
     MA99_SLOPE_MAX_PCT   = 0.01    # Độ dốc MA99 ≤ ±1% → Đi ngang
     ATR_PERIOD           = 14      # Chu kỳ ATR
     ATR_SQUEEZE_COMPARE  = 7       # So sánh ATR vs trung bình 7 phiên trước
@@ -51,22 +69,74 @@ class MacroGridDarvas:
     # =========================================================================
     def _build_darvas_box(self, df: pd.DataFrame) -> dict:
         """
-        Xác định Hộp Darvas từ OHLCV 4H (~90 nến = 15 ngày).
-        - Trần: Close cao nhất (tránh nhiễu râu nến)
-        - Sàn:  Low thấp nhất (bắt điểm test đáy thực sự)
-        """
-        ceiling = float(df['close'].max())
-        floor   = float(df['low'].min())
+        Dựng & XÁC NHẬN Hộp Darvas từ nến 4H ĐÃ ĐÓNG (~90 nến = 15 ngày).
+        - Trần: Close cao nhất (tránh nhiễu râu nến); mốc = lần đầu chạm vùng trần (±tol)
+        - Sàn:  Low thấp nhất hình thành SAU mốc trần; mốc = lần đầu chạm vùng sàn (±tol)
 
-        if ceiling <= floor or floor <= 0:
-            logger.warning("Darvas box bất thường: floor=%.6f, ceiling=%.6f", floor, ceiling)
-            return {}
+        Trả về dict luôn có khóa "valid" (bool) và "reason" (str).
+        Khi valid=True: floor, ceiling, mid, amplitude, top_idx, df_box (đoạn nến thuộc hộp).
+        """
+        df = df.reset_index(drop=True)
+        n = len(df)
+        if n < self.BOX_MIN_CANDLES:
+            return {"valid": False, "reason": f"Thiếu dữ liệu ({n} < {self.BOX_MIN_CANDLES} nến 4H)"}
+
+        tol     = self.BOX_EDGE_TOL_PCT
+        closes  = df['close'].to_numpy(dtype=float)
+        lows    = df['low'].to_numpy(dtype=float)
+        ceiling = float(closes.max())
+
+        # Mốc trần: lần ĐẦU Close chạm vùng trần → các lần sau chỉ là test lại trần, không reset hộp
+        top_idx = int(np.argmax(closes >= ceiling * (1.0 - tol)))
+        bars_since_top = n - 1 - top_idx
+        if bars_since_top < self.CEIL_CONFIRM_BARS:
+            return {"valid": False,
+                    "reason": f"Trần chưa xác nhận (đang tạo đỉnh mới, {bars_since_top}/{self.CEIL_CONFIRM_BARS} nến)"}
+        if bars_since_top + 1 < self.BOX_MIN_BARS:
+            return {"valid": False,
+                    "reason": f"Hộp quá non ({bars_since_top + 1}/{self.BOX_MIN_BARS} nến từ mốc trần)"}
+
+        df_box   = df.iloc[top_idx:].reset_index(drop=True)
+        box_lows = lows[top_idx:]
+        floor    = float(box_lows.min())
+        if floor <= 0 or ceiling <= floor:
+            return {"valid": False, "reason": f"Hộp bất thường (floor={floor}, ceiling={ceiling})"}
+
+        # Mốc sàn: lần ĐẦU Low chạm vùng sàn sau mốc trần — phải đứng vững đủ lâu
+        floor_idx = int(np.argmax(box_lows <= floor * (1.0 + tol)))
+        bars_since_floor = len(box_lows) - 1 - floor_idx
+        if bars_since_floor < self.FLOOR_CONFIRM_BARS:
+            return {"valid": False,
+                    "reason": f"Sàn chưa xác nhận (vừa tạo đáy mới, {bars_since_floor}/{self.FLOOR_CONFIRM_BARS} nến)"}
+
+        amplitude = (ceiling - floor) / floor
+        if amplitude < self.BOX_MIN_AMP:
+            return {"valid": False,
+                    "reason": f"Hộp quá hẹp ({amplitude*100:.1f}% < {self.BOX_MIN_AMP*100:.0f}%) — phí ăn hết lưới"}
+        if amplitude > self.BOX_MAX_AMP:
+            return {"valid": False,
+                    "reason": f"Biên độ quá rộng ({amplitude*100:.1f}% > {self.BOX_MAX_AMP*100:.0f}%) — trend/bơm-xả, không phải tích lũy"}
+
+        # Giá phải dao động qua lại trong hộp, không trượt một chiều
+        mid   = (ceiling + floor) / 2.0
+        side  = np.sign(closes[top_idx:] - mid)
+        side  = side[side != 0]
+        mid_crosses = int(np.count_nonzero(np.diff(side))) if len(side) > 1 else 0
+        if mid_crosses < self.BOX_MIN_MID_CROSSES:
+            return {"valid": False,
+                    "reason": f"Giá không dao động trong hộp ({mid_crosses} lần cắt giữa hộp) — xu hướng một chiều"}
 
         return {
-            "floor":     floor,
-            "ceiling":   ceiling,
-            "mid":       (ceiling + floor) / 2.0,
-            "amplitude": (ceiling - floor) / floor,
+            "valid":       True,
+            "reason":      "✅ Hộp Darvas đã xác nhận",
+            "floor":       floor,
+            "ceiling":     ceiling,
+            "mid":         mid,
+            "amplitude":   amplitude,
+            "top_idx":     top_idx,
+            "box_bars":    len(df_box),
+            "mid_crosses": mid_crosses,
+            "df_box":      df_box,
         }
 
     # =========================================================================
@@ -79,9 +149,9 @@ class MacroGridDarvas:
         12 nến (48h) giữa các lần test hợp lệ.
 
         Thang điểm:
-          ≥ 3 lần → 30đ  (Sàn bê tông cốt thép)
-            2 lần → 20đ  (Sàn bê tông vững)
-            1 lần → 10đ  (Sàn cơ bản — cần thêm xác nhận)
+          ≥ 3 lần → 25đ  (Sàn bê tông cốt thép)
+            2 lần → 17đ  (Sàn bê tông vững)
+            1 lần →  8đ  (Sàn cơ bản — cần thêm xác nhận)
             0 lần →  0đ  (Chưa định hình đáy)
         """
         floor   = box["floor"]
@@ -105,13 +175,13 @@ class MacroGridDarvas:
                 last_test_idx = idx
 
         if test_count >= 3:
-            score  = 30
+            score  = 25
             status = f"🧱 Sàn bê tông cốt thép ({test_count} lần test vững không thủng)"
         elif test_count == 2:
-            score  = 20
+            score  = 17
             status = f"🧱 Sàn bê tông vững ({test_count} lần test thành công)"
         elif test_count == 1:
-            score  = 10
+            score  = 8
             status = f"⚠️ Sàn cơ bản (1 lần test — cần xác nhận thêm)"
         else:
             score  = 0
@@ -125,32 +195,24 @@ class MacroGridDarvas:
     # =========================================================================
     def _score_c2_volume_dryup(self, df: pd.DataFrame, box: dict) -> dict:
         """
-        Khi giá điều chỉnh về nửa dưới Hộp Darvas, Vol nến đỏ phải rất nhỏ
-        so với Max Volume của nến xanh bên trong hộp.
+        Khi giá điều chỉnh về nửa dưới Hộp Darvas, Vol TB nến đỏ phải nhỏ hơn
+        Vol TRUNG VỊ của nến xanh trong hộp (trung vị → miễn nhiễm nến bơm đột biến).
+        `df` là đoạn nến thuộc hộp (sau mốc trần).
 
         Thang điểm:
-          Vol đỏ < 50% Max Vol Xanh → 30đ  (Phe bán hoàn toàn kiệt sức)
-          Vol đỏ < 65% Max Vol Xanh → 20đ  (Cung đang cạn)
-          Vol đỏ < 80% Max Vol Xanh → 10đ  (Tín hiệu yếu)
-          Vol đỏ ≥ 80% Max Vol Xanh →  0đ  (Phe bán vẫn mạnh — Nguy hiểm)
+          Vol đỏ < 60%  Trung vị Vol Xanh → 25đ  (Phe bán hoàn toàn kiệt sức)
+          Vol đỏ < 80%  Trung vị Vol Xanh → 17đ  (Cung đang cạn)
+          Vol đỏ < 100% Trung vị Vol Xanh →  8đ  (Tín hiệu yếu)
+          Vol đỏ ≥ 100% Trung vị Vol Xanh →  0đ  (Phe bán vẫn mạnh — Nguy hiểm)
+          Giá chưa về nửa dưới hộp        →  0đ  (Nền chưa được kiểm chứng)
         """
         floor = box["floor"]
         mid   = box["mid"]
-        ceiling = box["ceiling"]
 
-        # Lấy các nến xanh trong hộp
-        green_candles = df[
-            (df['close'] > df['open']) &
-            (df['high'] <= ceiling * 1.05) & 
-            (df['low'] >= floor * 0.95)
-        ]
-        
-        if green_candles.empty:
-            max_green_vol = 0
-        else:
-            max_green_vol = float(green_candles['volume'].max())
+        green_candles = df[df['close'] > df['open']]
+        med_green_vol = float(green_candles['volume'].median()) if not green_candles.empty else 0.0
 
-        if max_green_vol <= 0:
+        if med_green_vol <= 0 or np.isnan(med_green_vol):
             return {"score": 0, "status": "⛔ Không có nến xanh hợp lệ để đối chiếu Volume"}
 
         lower_half_red = df[
@@ -161,24 +223,24 @@ class MacroGridDarvas:
 
         if lower_half_red.empty:
             return {
-                "score":  10,
+                "score":  0,
                 "status": "⚠️ Chưa có dữ liệu test vùng nền (giá chưa về nửa dưới hộp)"
             }
 
-        ratio = float(lower_half_red['volume'].mean()) / max_green_vol
+        ratio = float(lower_half_red['volume'].mean()) / med_green_vol
 
-        if ratio < 0.50:
-            score  = 30
-            status = f"💧 Cung cạn kiệt hoàn toàn (Vol đỏ chỉ {ratio*100:.0f}% Max Vol Xanh)"
-        elif ratio < 0.65:
-            score  = 20
-            status = f"💧 Cung đang cạn tại nền (Vol đỏ = {ratio*100:.0f}% Max Vol Xanh)"
+        if ratio < 0.60:
+            score  = 25
+            status = f"💧 Cung cạn kiệt hoàn toàn (Vol đỏ chỉ {ratio*100:.0f}% Trung vị Vol Xanh)"
         elif ratio < 0.80:
-            score  = 10
-            status = f"⚠️ Tín hiệu cạn cung yếu (Vol đỏ = {ratio*100:.0f}% Max Vol Xanh)"
+            score  = 17
+            status = f"💧 Cung đang cạn tại nền (Vol đỏ = {ratio*100:.0f}% Trung vị Vol Xanh)"
+        elif ratio < 1.00:
+            score  = 8
+            status = f"⚠️ Tín hiệu cạn cung yếu (Vol đỏ = {ratio*100:.0f}% Trung vị Vol Xanh)"
         else:
             score  = 0
-            status = f"⛔ Phe bán vẫn mạnh (Vol đỏ = {ratio*100:.0f}% Max Vol Xanh — Nguy hiểm)"
+            status = f"⛔ Phe bán vẫn mạnh (Vol đỏ = {ratio*100:.0f}% Trung vị Vol Xanh — Nguy hiểm)"
 
         return {"score": score, "vol_ratio": round(ratio, 3), "status": status}
 
@@ -191,13 +253,13 @@ class MacroGridDarvas:
         Giá hiện tại nằm trên MA99.
 
         Thang điểm:
-          MA99 tăng  + giá trên MA99 → 20đ
-          MA99 ngang + giá trên MA99 → 15đ
-          MA99 ngang + giá dưới MA99 →  5đ
+          MA99 tăng  + giá trên MA99 → 15đ
+          MA99 ngang + giá trên MA99 → 11đ
+          MA99 ngang + giá dưới MA99 →  4đ
           MA99 giảm                  →  0đ (Downtrend vĩ mô — cấm lưới)
         """
         if len(df_1d) < 100:
-            return {"score": 5, "status": "⚠️ Thiếu dữ liệu 1D để tính MA99"}
+            return {"score": 4, "status": "⚠️ Thiếu dữ liệu 1D để tính MA99"}
 
         ma99_series  = self.engine.get_ma(df_1d, 99)
         ma99_current = float(ma99_series.iloc[-1])
@@ -207,13 +269,13 @@ class MacroGridDarvas:
         above_ma99   = current_price >= ma99_current
 
         if slope_pct > self.MA99_SLOPE_MAX_PCT and above_ma99:
-            score  = 20
+            score  = 15
             status = f"📈 MA99 1D ngóc lên (+{slope_pct*100:.2f}%) & giá trên MA99 → Lý tưởng"
         elif abs(slope_pct) <= self.MA99_SLOPE_MAX_PCT and above_ma99:
-            score  = 15
+            score  = 11
             status = f"➡️ MA99 1D đi ngang ({slope_pct*100:+.2f}%) & giá trên MA99 → Ổn định"
         elif abs(slope_pct) <= self.MA99_SLOPE_MAX_PCT and not above_ma99:
-            score  = 5
+            score  = 4
             status = f"⚠️ MA99 1D đi ngang nhưng giá dưới MA99 → Trọng lực kéo xuống"
         else:
             score  = 0
@@ -232,36 +294,36 @@ class MacroGridDarvas:
         ATR 14 phiên đang thu hẹp (so với trung bình 7 phiên trước).
 
         Thang điểm:
-          ATR giảm > 20%   → 20đ  (Bão đã tan, sóng lặng)
-          ATR giảm 10-20%  → 15đ  (Biến động đang dịu)
-          ATR giảm 0-10%   → 10đ  (Ổn định nhẹ)
-          ATR tăng 0-15%   →  5đ  (Bão đang đến gần)
+          ATR giảm > 20%   → 15đ  (Bão đã tan, sóng lặng)
+          ATR giảm 10-20%  → 11đ  (Biến động đang dịu)
+          ATR giảm 0-10%   →  8đ  (Ổn định nhẹ)
+          ATR tăng 0-15%   →  4đ  (Bão đang đến gần)
           ATR tăng > 15%   →  0đ  (Bão đang nổi — cấm lưới)
         """
         min_len = self.ATR_PERIOD + self.ATR_SQUEEZE_COMPARE + 2
         if len(df) < min_len:
-            return {"score": 5, "status": "⚠️ Thiếu dữ liệu để tính ATR Squeeze"}
+            return {"score": 4, "status": "⚠️ Thiếu dữ liệu để tính ATR Squeeze"}
 
         atr_series   = self.engine.get_atr(df, self.ATR_PERIOD)
         atr_now      = float(atr_series.iloc[-1])
         atr_past_avg = float(atr_series.iloc[-(self.ATR_SQUEEZE_COMPARE + 1):-1].mean())
 
         if atr_past_avg <= 0 or pd.isna(atr_past_avg):
-            return {"score": 5, "status": "⚠️ ATR quá nhỏ, không đánh giá được"}
+            return {"score": 4, "status": "⚠️ ATR quá nhỏ, không đánh giá được"}
 
         change_pct = (atr_now - atr_past_avg) / atr_past_avg  # Âm = ATR thu hẹp = tốt
 
         if change_pct < -0.20:
-            score  = 20
+            score  = 15
             status = f"🌅 ATR thu hẹp mạnh ({change_pct*100:+.1f}%) → Sóng lặng, vào lưới tuyệt vời"
         elif change_pct < -0.10:
-            score  = 15
+            score  = 11
             status = f"😌 ATR đang dịu ({change_pct*100:+.1f}%) → Biến động giảm dần"
         elif change_pct < 0:
-            score  = 10
+            score  = 8
             status = f"🔔 ATR ổn định nhẹ ({change_pct*100:+.1f}%)"
         elif change_pct <= 0.15:
-            score  = 5
+            score  = 4
             status = f"⚠️ ATR đang nở ({change_pct*100:+.1f}%) → Bão đang đến gần"
         else:
             score  = 0
@@ -271,6 +333,33 @@ class MacroGridDarvas:
             "score": score, "atr_now": atr_now,
             "atr_past": atr_past_avg, "change_pct": change_pct, "status": status
         }
+
+    # =========================================================================
+    # C5 — ĐỘ CHẶT CỦA HỘP (20 ĐIỂM)
+    # =========================================================================
+    def _score_c5_box_tightness(self, box: dict) -> dict:
+        """
+        Biên độ hộp (đã qua cổng 4%–25%) càng hẹp → tích lũy càng chặt.
+
+        Thang điểm:
+          4–6%   → 10đ  (Quá mỏng — lãi mỗi ô lưới sát phí)
+          6–12%  → 20đ  (Nén chặt — vùng tối ưu cho lưới)
+          12–16% → 15đ  (Khá chặt)
+          16–20% → 10đ  (Trung bình)
+          20–25% →  5đ  (Lỏng — sát ngưỡng loại)
+        """
+        amp = box["amplitude"]
+        if amp < 0.06:
+            score, label = 10, "⚠️ Quá mỏng — lãi mỗi ô lưới sát phí"
+        elif amp <= 0.12:
+            score, label = 20, "🎯 Nén chặt — vùng tối ưu cho lưới"
+        elif amp <= 0.16:
+            score, label = 15, "✅ Khá chặt"
+        elif amp <= 0.20:
+            score, label = 10, "⚠️ Trung bình"
+        else:
+            score, label = 5, "⚠️ Lỏng — sát ngưỡng loại"
+        return {"score": score, "status": f"{label} (biên độ {amp*100:.1f}%)"}
 
     # =========================================================================
     # KILL-SWITCH — CẦU DAO TỰ ĐỘNG (Bất kể điểm tổng)
@@ -316,6 +405,7 @@ class MacroGridDarvas:
                 }
 
         # KS-3: Close xuyên đáy Hộp Darvas ──────────────────────────────────
+        # (Hộp dựng từ nến ĐÃ ĐÓNG, giá hiện tại là nến đang chạy → KS-3 giờ mới thực sự kích hoạt được)
         if floor > 0 and current_price < floor:
             pct_below = (floor - current_price) / floor * 100
             return {
@@ -345,10 +435,10 @@ class MacroGridDarvas:
         Điểm vào chính. Quét và chấm điểm một mã theo Bộ Giáp Darvas.
 
         Thứ tự xử lý:
-          1. Kéo dữ liệu 4H (90 nến) + 1D (120 nến)
-          2. Dựng Hộp Darvas
+          1. Kéo dữ liệu 4H (90 nến đã đóng) + 1D (120 nến)
+          2. Cổng Hộp Darvas — không có hộp xác nhận / giá đã vượt trần → REJECT
           3. Kill-Switch (ưu tiên tuyệt đối) — nếu triggered → REJECT ngay
-          4. Chấm điểm C1 + C2 + C3 + C4
+          4. Chấm điểm C1 + C2 + C3 + C4 + C5
           5. Tính thông số Lưới Kép (nếu tổng ≥ 60)
         """
         try:
@@ -360,17 +450,29 @@ class MacroGridDarvas:
             df_1d = pd.DataFrame(candles_1d, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
 
             current_price = float(df_4h['close'].iloc[-1])
-            df_darvas     = df_4h.tail(self.DARVAS_LOOKBACK_4H).copy()
+            # Chỉ dùng nến ĐÃ ĐÓNG để dựng hộp (nến cuối của fetch_ohlcv là nến đang chạy)
+            df_darvas     = df_4h.iloc[:-1].tail(self.DARVAS_LOOKBACK_4H).copy()
 
-            # ── 2. Dựng Hộp Darvas ────────────────────────────────────────────
+            # ── 2. Cổng Hộp Darvas ────────────────────────────────────────────
             box = self._build_darvas_box(df_darvas)
-            if not box:
+            if box.get("valid") and current_price > box["ceiling"] * (1.0 + self.BOX_EDGE_TOL_PCT):
+                pct_above = (current_price / box["ceiling"] - 1.0) * 100
+                box = {**box, "valid": False,
+                       "reason": f"Giá đã vượt trần hộp +{pct_above:.2f}% — Breakout (thuộc DC3, không chạy lưới)"}
+            if not box.get("valid"):
+                box_info = {}
+                if "floor" in box:
+                    box_info = {
+                        "Box_Floor":         round(box['floor'],   6),
+                        "Box_Ceiling":       round(box['ceiling'], 6),
+                        "Box_Amplitude_pct": round(box['amplitude'] * 100, 2),
+                    }
                 return {
                     "symbol": symbol, "price": current_price,
                     "total_score": 0,
-                    "action":      "🔴 TỪ CHỐI: Không thể dựng hộp Darvas hợp lệ",
+                    "action":      f"🔴 TỪ CHỐI (Không có Hộp Darvas): {box.get('reason', '')}",
                     "kill_switch": {"triggered": False, "reason": ""},
-                    "details": {}, "grid_setup": {}
+                    "details": {"Box_Gate": box.get("reason", ""), **box_info}, "grid_setup": {}
                 }
 
             # ── 3. Kill-Switch (ưu tiên tuyệt đối) ───────────────────────────
@@ -386,13 +488,15 @@ class MacroGridDarvas:
                     "grid_setup":  {}
                 }
 
-            # ── 4. Chấm điểm 4 tiêu chí ──────────────────────────────────────
-            c1 = self._score_c1_floor_testing(df_darvas, box)
-            c2 = self._score_c2_volume_dryup(df_darvas, box)
+            # ── 4. Chấm điểm 5 tiêu chí (C1/C2 chỉ trên đoạn nến thuộc hộp) ──────
+            df_box = box["df_box"]
+            c1 = self._score_c1_floor_testing(df_box, box)
+            c2 = self._score_c2_volume_dryup(df_box, box)
             c3 = self._score_c3_macro_alignment(df_1d, current_price)
             c4 = self._score_c4_atr_squeeze(df_4h)
+            c5 = self._score_c5_box_tightness(box)
 
-            total_score = c1['score'] + c2['score'] + c3['score'] + c4['score']
+            total_score = c1['score'] + c2['score'] + c3['score'] + c4['score'] + c5['score']
 
             # ── 5. Phân loại hành động ────────────────────────────────────────
             if total_score >= 80:
@@ -456,6 +560,9 @@ class MacroGridDarvas:
                     "C2_Volume_Dryup":    c2['status'],
                     "C3_Macro_Alignment": c3['status'],
                     "C4_ATR_Squeeze":     c4['status'],
+                    "C5_Box_Tightness":   c5['status'],
+                    "Box_Gate":           box['reason'],
+                    "Box_Bars":           box['box_bars'],
                     "Box_Floor":          round(box['floor'],   6),
                     "Box_Ceiling":        round(box['ceiling'], 6),
                     "Box_Amplitude_pct":  round(box['amplitude'] * 100, 2),
@@ -463,6 +570,7 @@ class MacroGridDarvas:
                     "C2_score":           c2['score'],
                     "C3_score":           c3['score'],
                     "C4_score":           c4['score'],
+                    "C5_score":           c5['score'],
                 },
                 "grid_setup": grid_setup,
             }

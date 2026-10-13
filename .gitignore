@@ -20,6 +20,7 @@ BinaC4_latest_log.txt
 main_output*.txt
 test_risk.txt
 out*.txt
+main_run*.txt
 
 # IDEs
 .idea/
