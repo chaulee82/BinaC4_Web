@@ -16,7 +16,7 @@ with contextlib.redirect_stdout(buf):
 out = buf.getvalue()
 i_hook = out.find("<<SUMMARY_BOARD>>")
 i_reb = out.find("BẢNG CHẤM ĐIỂM REBALANCE")
-i_b3 = out.find("BẢNG 3: MỎ VÀNG")
+i_b3 = out.find("BẢNG 3A")
 print("B3:", i_b3, "HOOK:", i_hook, "REBALANCE:", i_reb)
 assert 0 <= i_b3 < i_hook < i_reb, "Thứ tự sai"
 print("ORDER OK")

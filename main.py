@@ -92,6 +92,7 @@ def fmt_price(price: float) -> str:
     return formatted
 
 def main():
+    start_time = time.time()
     logger.info("Khởi động hệ thống giao dịch CN4-Platform...")
     
     # Load biến môi trường
@@ -430,15 +431,15 @@ def main():
             _renderer = locals().get('renderer')
             _btc_status = locals().get('btc_gate_label', '') or ''
             _warning_results = locals().get('warning_results')
-            _summary_hook = None
-            if _renderer is not None:
-                # Lưu tín hiệu vào DB trước khi lên bảng tổng kết
-                history_logger.save_signals(_renderer.signals_pool)
-                
-                from views.summary_board import generate_summary_board
-                from core.macro_levels import get_strict_3d_rejections
-                from strategies.super_trend_3d import get_last_super_wave_results
-                def _summary_hook():
+            
+            def _summary_hook():
+                if _renderer is not None:
+                    # Lưu tín hiệu vào DB trước khi lên bảng tổng kết
+                    history_logger.save_signals(_renderer.signals_pool)
+                    
+                    from views.summary_board import generate_summary_board
+                    from core.macro_levels import get_strict_3d_rejections
+                    from strategies.super_trend_3d import get_last_super_wave_results
                     generate_summary_board(
                         global_signals_pool=_renderer.signals_pool,
                         btc_status=_btc_status,
@@ -450,6 +451,21 @@ def main():
                         super_wave_results=get_last_super_wave_results(),
                         history_logger=history_logger,
                     )
+                
+                # 📊 BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM 14 NGÀY (HISTORICAL RATER) — in ngay TRƯỚC Bảng Rebalance
+                try:
+                    from core.historical_rater import print_14_day_summary_board
+                    from strategies.super_trend_3d import get_last_super_wave_results
+                    print_14_day_summary_board(
+                        db_path="data/binac4_history.db",
+                        df_summary=df_summary,
+                        early_list=early_list,
+                        super_wave_results=get_last_super_wave_results(),
+                        top_n=25
+                    )
+                except Exception as e:
+                    logger.error(f"Render Error (Bảng 14 Ngày): {e}")
+
 
             from core.coin_filter import print_final_tables
             print_final_tables(early_list, df_summary, current_time_str,
@@ -458,6 +474,10 @@ def main():
                                live_data_map=live_data_map)
             
             logger.info("Hoàn tất quét thị trường. Chương trình kết thúc.")
+            elapsed = time.time() - start_time
+            mins = int(elapsed // 60)
+            secs = int(elapsed % 60)
+            logger.info(f"⏱️ Thời gian chạy script: {mins} phút {secs} giây ({elapsed:.2f}s).")
             
         except Exception as e:
             logger.error(f"Lỗi hệ thống trong quá trình quét: {e}")
