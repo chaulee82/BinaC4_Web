@@ -100,6 +100,7 @@ class SignalRecord:
     wide_grid_line: str = ""          # Chuỗi gốc `🦅 [WIDE GRID 3D - ...`
     bounces: float = 0.0              # DC5: số lần nảy (B:{bounces}x{range}%)
     bounce_range: float = 0.0         # DC5: biên độ nảy %
+    convergence_rank: str = ""        # 🏆 [HẠNG S] | 🥇 [HẠNG A1] | 🥈 [HẠNG A2] | 🥉 [HẠNG B]
 
     @property
     def raw_setup_string(self) -> str:
@@ -292,9 +293,41 @@ def classify_pool(pool: List[SignalRecord], spot_enabled: bool = True) -> Dict[s
 
 
 # ── Hàm sắp xếp ──────────────────────────────────────────────────────────────
+def conv_tier_priority(rank: str) -> int:
+    """Ưu tiên Hạng: S (1) -> A1 (2) -> A2 (3) -> B (4). Không có hạng = 99."""
+    if not rank:
+        return 99
+    if "HẠNG S" in rank:
+        return 1
+    if "HẠNG A1" in rank:
+        return 2
+    if "HẠNG A2" in rank:
+        return 3
+    if "HẠNG B" in rank:
+        return 4
+    return 99
+
+
+def conv_rank_weight(rank_str: str) -> int:
+    """Trọng số Hạng để sắp xếp từ cao xuống thấp (S > A1 > A2 > B)."""
+    if not rank_str:
+        return 0
+    if "HẠNG S" in rank_str:
+        return 40
+    if "HẠNG A1" in rank_str:
+        return 30
+    if "HẠNG A2" in rank_str:
+        return 20
+    if "HẠNG B" in rank_str:
+        return 10
+    return 0
+
+
 def sort_spot_primary(lst):
-    """Spot: ưu tiên 1 = 3D Strict, ưu tiên 2 = Dòng Tiền Bạo Phát, ưu tiên 3 = Điểm Động cơ."""
+    """Spot: ưu tiên 1 = Hạng Hội Tụ (S -> A1 -> A2 -> B), ưu tiên 2 = 3D Strict,
+    ưu tiên 3 = Dòng Tiền Bạo Phát, ưu tiên 4 = Điểm Động cơ."""
     return sorted(lst, key=lambda s: (
+        conv_rank_weight(getattr(s, "convergence_rank", "")),
         max(strict_score_of(getattr(s, "grid_tp2_line", "")), strict_score_of(getattr(s, "wide_grid_line", ""))),
         _num(s.money_flow),
         _num(s.target_score)
@@ -302,29 +335,48 @@ def sort_spot_primary(lst):
 
 
 def sort_spot_backup(lst):
-    return sorted(lst, key=lambda s: (_num(s.money_flow), _num(s.rr_ratio), _num(s.target_score)), reverse=True)
+    return sorted(lst, key=lambda s: (
+        conv_rank_weight(getattr(s, "convergence_rank", "")),
+        _num(s.money_flow),
+        _num(s.rr_ratio),
+        _num(s.target_score)
+    ), reverse=True)
+
+
 def sort_by_score(lst):      return sorted(lst, key=lambda s: s.target_score, reverse=True)
 
 
 def sort_grid_tp2(lst):
-    """Bảng 2: ưu tiên 1 = Điểm Strict 3D (cấu trúc vĩ mô — siêu phẩm 100đ lên đầu),
-    ưu tiên 2 = 💥 Tiền Bạo Phát (đã chuẩn hóa, cùng ý nghĩa mọi Động cơ), ưu tiên 3 = Điểm Động cơ
-    (thang điểm DC2 / DC3 / DC4 khác hệ quy chiếu: DC4 dễ 95–115đ, DC3 ~60–85đ)."""
-    return sorted(lst, key=lambda s: (strict_score_of(s.grid_tp2_line), _num(s.money_flow), _num(s.target_score)),
-                  reverse=True)
+    """Bảng 2: ưu tiên 1 = Hạng Hội Tụ, ưu tiên 2 = Điểm Strict 3D (cấu trúc vĩ mô),
+    ưu tiên 3 = 💥 Tiền Bạo Phát, ưu tiên 4 = Điểm Động cơ."""
+    return sorted(lst, key=lambda s: (
+        conv_rank_weight(getattr(s, "convergence_rank", "")),
+        strict_score_of(s.grid_tp2_line),
+        _num(s.money_flow),
+        _num(s.target_score)
+    ), reverse=True)
 
 
 def sort_wide_primary(lst):
-    return sorted(lst, key=lambda s: (strict_score_of(s.wide_grid_line), s.bounces, s.bounce_range,
-                                      WIDE_GRID_ENGINE_PRIO.get(s.engine_source, 1), s.target_score),
-                  reverse=True)
+    return sorted(lst, key=lambda s: (
+        conv_rank_weight(getattr(s, "convergence_rank", "")),
+        strict_score_of(s.wide_grid_line),
+        s.bounces,
+        s.bounce_range,
+        WIDE_GRID_ENGINE_PRIO.get(s.engine_source, 1),
+        s.target_score
+    ), reverse=True)
 
 
 def sort_wide_backup(lst):
-    # Điểm Strict 3D → Điểm Rebalance (cột TỔNG) → ưu tiên tín hiệu DC1 → điểm Động cơ
-    return sorted(lst, key=lambda s: (strict_score_of(s.wide_grid_line), s.rebalance_score,
-                                      s.engine_source == "DC1", s.target_score),
-                  reverse=True)
+    # Hạng Hội Tụ → Điểm Strict 3D → Điểm Rebalance (cột TỔNG) → ưu tiên tín hiệu DC1 → điểm Động cơ
+    return sorted(lst, key=lambda s: (
+        conv_rank_weight(getattr(s, "convergence_rank", "")),
+        strict_score_of(s.wide_grid_line),
+        s.rebalance_score,
+        s.engine_source == "DC1",
+        s.target_score
+    ), reverse=True)
 
 
 def pick_with_fallback(primary: List[SignalRecord], backup: List[SignalRecord],
@@ -419,6 +471,16 @@ def print_formatted_table(signals_list: List[SignalRecord], kind: str, backup_sy
         macro_3d = getattr(signal, "macro_3d_signal", "") or ""
 
         components: List[str] = []
+        conv_rank = getattr(signal, "convergence_rank", "")
+        if conv_rank:
+            if "HẠNG S" in conv_rank:
+                components.append("🏆 HẠNG S")
+            elif "HẠNG A1" in conv_rank:
+                components.append("🥇 HẠNG A1")
+            elif "HẠNG A2" in conv_rank:
+                components.append("🥈 HẠNG A2")
+            elif "HẠNG B" in conv_rank:
+                components.append("🥉 HẠNG B")
         if engine:
             components.append(engine)
         if score:
@@ -631,7 +693,8 @@ def _board_config(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def get_convergence_ranks(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger=None) -> Dict[str, str]:
-    """Trả về dict {symbol: rank_str} cho các mã đạt Điểm Chạm Vàng (Hội tụ) và lưu vào database."""
+    """Trả về dict {symbol: rank_str} cho các mã đạt Điểm Chạm Vàng (Hội tụ) và lưu vào database.
+    Sắp xếp đa tầng: Hạng (S -> A1 -> A2 -> B) -> Dòng tiền bạo phát -> Strict 3D -> Điểm động cơ."""
     if history_logger is None:
         try:
             from core.history_logger import HistoryLogger
@@ -655,7 +718,7 @@ def get_convergence_ranks(current_signals: List[SignalRecord], super_wave_result
                 current_symbols_engines[sym] = {}
             current_symbols_engines[sym]["3B"] = r
 
-    ranks = {}
+    candidate_items = []
     for symbol, engines_map in current_symbols_engines.items():
         current_engines = list(engines_map.keys())
         if not ("DC3" in current_engines or "DC4" in current_engines or "DC5" in current_engines or "DC2" in current_engines):
@@ -672,23 +735,57 @@ def get_convergence_ranks(current_signals: List[SignalRecord], super_wave_result
             history_7_counts[eng] = history_7_counts.get(eng, 0) + 1
 
         rank = None
+        trigger = None
         if ("DC3" in current_engines or "DC4" in current_engines):
             if history_counts.get("3A", 0) >= 3 or history_counts.get("DC1", 0) >= 3:
                 rank = "🏆 [HẠNG S] VỤ NỔ VĨ MÔ"
+                trigger = "DC3" if "DC3" in current_engines else "DC4"
         if not rank and ("DC2" in current_engines):
             if "DC4" in current_engines or "3B" in current_engines:
                 rank = "🥇 [HẠNG A1] SIÊU PULLBACK"
+                trigger = "DC2"
         if not rank and ("DC3" in current_engines):
             if "3B" in current_engines:
                 rank = "🥈 [HẠNG A2] TIẾP DIỄN XU HƯỚNG"
+                trigger = "DC3"
         if not rank and ("DC5" in current_engines):
             if history_7_counts.get("DC1", 0) >= 3:
                 rank = "🥉 [HẠNG B] CỖ MÁY CASHFLOW"
+                trigger = "DC5"
 
         if rank:
-            clean_s = symbol.upper().replace('/USDT', '').replace('USDT', '').strip()
-            ranks[clean_s] = rank
-            ranks[symbol] = rank
+            sig = engines_map.get(trigger) if trigger else None
+            if not sig and current_engines:
+                sig = engines_map.get(current_engines[0])
+
+            mf = _num(getattr(sig, "money_flow", 0)) if sig else 0.0
+            target_sc = _num(getattr(sig, "target_score", 0)) if sig else 0.0
+            strict_sc = max(
+                strict_score_of(getattr(sig, "grid_tp2_line", "")),
+                strict_score_of(getattr(sig, "wide_grid_line", ""))
+            ) if sig else 0.0
+            rr = _num(getattr(sig, "rr_ratio", 0)) if sig else 0.0
+
+            candidate_items.append({
+                "symbol": symbol,
+                "rank": rank,
+                "tier_prio": conv_tier_priority(rank),
+                "money_flow": mf,
+                "strict_score": strict_sc,
+                "target_score": target_sc,
+                "rr_ratio": rr
+            })
+
+    # Sắp xếp đa tầng: Hạng (S -> A1 -> A2 -> B) -> Dòng tiền bạo phát -> Strict 3D -> Điểm động cơ -> R:R
+    candidate_items.sort(
+        key=lambda c: (c["tier_prio"], -c["money_flow"], -c["strict_score"], -c["target_score"], -c["rr_ratio"], c["symbol"])
+    )
+
+    ranks = {}
+    for item in candidate_items:
+        clean_s = item["symbol"].upper().replace('/USDT', '').replace('USDT', '').strip()
+        ranks[clean_s] = item["rank"]
+        ranks[item["symbol"]] = item["rank"]
 
     if ranks and history_logger and hasattr(history_logger, "save_convergence_signals"):
         try:
@@ -701,7 +798,8 @@ def get_convergence_ranks(current_signals: List[SignalRecord], super_wave_result
 
 def build_convergence_summary(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger=None) -> str:
     """
-    Module Phân tích Hội tụ (Điểm Chạm Vàng)
+    Module Phân tích Hội tụ (Điểm Chạm Vàng):
+    Sắp xếp đa tầng: Xếp theo Hạng (S -> A1 -> A2 -> B) -> Trong cùng Hạng xếp theo Dòng tiền bạo phát & Điểm động cơ.
     """
     if history_logger is None:
         try:
@@ -726,7 +824,7 @@ def build_convergence_summary(current_signals: List[SignalRecord], super_wave_re
                 current_symbols_engines[sym] = {}
             current_symbols_engines[sym]["3B"] = r
 
-    summary_lines = []
+    candidates = []
     
     for symbol, engines_map in current_symbols_engines.items():
         current_engines = list(engines_map.keys())
@@ -783,23 +881,56 @@ def build_convergence_summary(current_signals: List[SignalRecord], super_wave_re
         if rank:
             info = ""
             setup_text = ""
+            sig = engines_map.get(trigger) if trigger else None
+            if not sig and current_engines:
+                sig = engines_map.get(current_engines[0])
+
+            mf = _num(getattr(sig, "money_flow", 0)) if sig else 0.0
+            target_sc = _num(getattr(sig, "target_score", 0)) if sig else 0.0
+            strict_sc = max(
+                strict_score_of(getattr(sig, "grid_tp2_line", "")),
+                strict_score_of(getattr(sig, "wide_grid_line", ""))
+            ) if sig else 0.0
+            rr = _num(getattr(sig, "rr_ratio", 0)) if sig else 0.0
+
             if trigger and trigger in engines_map:
-                sig = engines_map[trigger]
-                if hasattr(sig, 'target_score'):
-                    score = f"{sig.target_score:.0f}đ"
-                    act = (sig.action_label or "").strip()
+                sig_trig = engines_map[trigger]
+                if hasattr(sig_trig, 'target_score'):
+                    score = f"{sig_trig.target_score:.0f}đ"
+                    act = (sig_trig.action_label or "").strip()
                     if act:
                         info = f" ({trigger}: {score} - {act})"
                     else:
                         info = f" ({trigger}: {score})"
                         
-                raw_setup = getattr(sig, 'raw_setup_string', '')
+                raw_setup = getattr(sig_trig, 'raw_setup_string', '')
                 if raw_setup:
                     setup_text = f"\n   ↳ Thông số: {raw_setup}"
             
             block = f"{rank}: {symbol}{info}\n   ↳ Phân tích: {phan_tich}\n   ↳ Chiến lược: {chien_luoc}{setup_text}"
-            summary_lines.append(block)
+            candidates.append({
+                "symbol": symbol,
+                "rank": rank,
+                "tier_prio": conv_tier_priority(rank),
+                "money_flow": mf,
+                "strict_score": strict_sc,
+                "target_score": target_sc,
+                "rr_ratio": rr,
+                "block": block
+            })
             
+    # Sắp xếp đa tầng:
+    # 1. Hạng (Tier: S -> A1 -> A2 -> B)
+    # 2. Dòng tiền bạo phát (Money Flow) giảm dần
+    # 3. Điểm vĩ mô Strict 3D giảm dần
+    # 4. Điểm số động cơ (Target Score) giảm dần
+    # 5. Tỷ lệ R:R giảm dần
+    candidates.sort(
+        key=lambda c: (c["tier_prio"], -c["money_flow"], -c["strict_score"], -c["target_score"], -c["rr_ratio"], c["symbol"])
+    )
+
+    summary_lines = [c["block"] for c in candidates]
+
     res = "\n" + "=" * 100 + "\n"
     res += "🌟 KẾT LUẬN TỐI ƯU: CÁC ĐIỂM CHẠM VÀNG (SỰ HỘI TỤ TÍN HIỆU)\n"
     res += "=" * 100 + "\n"
@@ -833,6 +964,15 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
         pool = list(global_signals_pool or [])
         _enrich(pool, live_data_map, df_summary, warning_results)
 
+        # Điểm Chạm Vàng (Tính toán và gán rank trước khi phân loại & sắp xếp các bảng)
+        conv_ranks = {}
+        if history_logger:
+            conv_ranks = get_convergence_ranks(pool, super_wave_results, history_logger)
+            result["convergence_ranks"] = conv_ranks
+            for s in pool:
+                clean_s = s.symbol.upper().replace('/USDT', '').replace('USDT', '').strip()
+                s.convergence_rank = conv_ranks.get(clean_s, "") or conv_ranks.get(s.symbol, "")
+
         btc_locked = bool(btc_status) and BTC_KILL_SWITCH_TEXT in btc_status
         result["spot_btc_locked"] = btc_locked
         b = classify_pool(pool, spot_enabled=True)
@@ -841,9 +981,8 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
         print("================ 🏁 BẢNG TỔNG KẾT TỐI ƯU ================")
         print("=" * 100)
 
-        # Điểm Chạm Vàng
+        # In Khối Điểm Chạm Vàng
         if history_logger:
-            result["convergence_ranks"] = get_convergence_ranks(pool, super_wave_results, history_logger)
             convergence_text = build_convergence_summary(pool, super_wave_results, history_logger)
             print(convergence_text)
 

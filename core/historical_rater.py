@@ -709,10 +709,83 @@ class HistoricalDataQuery:
 # GIAO DIỆN HIỂN THỊ BẢNG TÍN NHIỆM V2.0
 # ═════════════════════════════════════════════════════════════════════════════
 
+def calculate_tier_s_setups(symbol: str) -> Optional[Dict[str, Any]]:
+    """
+    Tính toán tự động bộ 3 thiết lập lệnh thực chiến (OCO, Grid TP2, Wide Grid 3D)
+    dành riêng cho các siêu mã đạt chuẩn 💎 Tier S (Kim Cương).
+    """
+    try:
+        from core.macro_levels import get_3d_profile, _build_wide_grid
+        from core.grid_tp2_builder import build_macro_grid_payload, _make_formatter
+        from core.exchange_info_cache import ExchangeInfoCache
+
+        d3 = get_3d_profile(symbol) or {}
+        raw = d3.get('_raw') or {}
+        close = float(raw.get('close_3d', 0.0) or 0.0)
+        ma7 = float(raw.get('ma7_3d', 0.0) or 0.0)
+        boll_up = float(raw.get('boll_up_3d', 0.0) or 0.0)
+
+        tick_size = 0.0001
+        try:
+            cache = ExchangeInfoCache()
+            t = cache.get_tick_size(f"{symbol}USDT")
+            if t and t > 0:
+                tick_size = t
+        except Exception:
+            pass
+
+        f = _make_formatter(tick_size)
+        if close <= 0:
+            return None
+
+        # 1. OCO Setup (Spot Swing)
+        # Entry: quanh MA7 3D (đón nhúng) hoặc sát giá hiện tại
+        entry = min(close, max(ma7 * 1.01, close * 0.98)) if ma7 > 0 else close
+        sl = ma7 * 0.96 if ma7 > 0 else entry * 0.95
+        tp = boll_up if boll_up > entry * 1.05 else entry * 1.15
+        sl_pct = (entry - sl) / entry * 100 if entry > 0 else 0
+        tp_pct = (tp - entry) / entry * 100 if entry > 0 else 0
+        rr = tp_pct / sl_pct if sl_pct > 0 else 2.5
+        oco_line = f"⚙️ SETUP OCO: Buy={f(entry)} | SL={f(sl)}(-{sl_pct:.1f}%) | TP={f(tp)}(+{tp_pct:.1f}%) | R:R=1:{rr:.1f}"
+
+        # 2. Grid TP2
+        grid_payload = build_macro_grid_payload(
+            symbol=symbol,
+            entry=entry,
+            sl_short=sl,
+            tp_target=tp,
+            macro_sl=sl * 0.96,
+            tick_size=tick_size
+        )
+        grid_line = grid_payload["display_line"].strip() if grid_payload else ""
+
+        # 3. Wide Grid 3D
+        wg = _build_wide_grid(close, ma7 if ma7 > 0 else close * 0.95, boll_up if boll_up > 0 else close * 1.15, tick_size)
+        wide_line = ""
+        if wg and wg.get("valid"):
+            wide_line = (
+                f"🦅 [WIDE GRID 3D - {symbol}] {f(wg['wide_low'])} - {f(wg['wide_up'])} | {wg['wide_grids']}L | "
+                f"Trig: {f(wg['wide_trig'])} | SL: {f(wg['wide_sl'])} | TP: {f(wg['wide_up'])} "
+                f"(Vốn {wg['capital']:.0f}$ ≈ {wg['per_grid_usdt']}$/lưới)"
+            )
+
+        return {
+            "symbol": symbol,
+            "close": close,
+            "oco": oco_line,
+            "grid_tp2": grid_line,
+            "wide_grid": wide_line
+        }
+    except Exception as e:
+        logger.error(f"Lỗi tính toán setup Tier S cho {symbol}: {e}")
+        return None
+
+
 def render_profiles_table(profiles: List[Dict[str, Any]], title: str = "BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM V2.0 (AGGRESSIVE DECAY & CASHFLOW MULTIPLIER)"):
     """
     In bảng hiển thị V2.0:
     - Bảng chi tiết: Các mã đạt chuẩn giao dịch (Tier S, Tier A, Tier B - Điểm >= 40.0).
+    - Thiết lập lệnh Tier S: Tính và in chi tiết OCO, Grid TP2, Wide Grid 3D cho các mã Tier S (Kim Cương).
     - Danh sách rút gọn: Liệt kê các mã Tier C (25–39đ) và Tier F (< 25đ) cách nhau bằng dấu phẩy.
     """
     if not profiles:
@@ -767,6 +840,29 @@ def render_profiles_table(profiles: List[Dict[str, Any]], title: str = "BẢNG T
         )
         print(row_str)
     print(sep)
+
+    # 💎 Thiết lập lệnh tự động cho các mã đạt Tier S (Kim Cương)
+    tier_s_profiles = [p for p in display_profiles if "Tier S" in p.get("tier", "")]
+    if tier_s_profiles:
+        print(f"\n💎 THIẾT LẬP LỆNH CHO CÁC MÃ ĐẠT TIÊU CHUẨN TIER S (KIM CƯƠNG) [{len(tier_s_profiles)} mã]:")
+        for sp in tier_s_profiles:
+            sym = sp["symbol"]
+            setups = calculate_tier_s_setups(sym)
+            if setups:
+                print(f"  ⭐ {sym} ({sp['total_score']:.1f}đ - {sp['tier']}) - Khuyến nghị: {sp.get('action_recommendation', 'Đánh Full Volume')}")
+                if setups.get("oco"):
+                    print(f"     ↳ {setups['oco']}")
+                if setups.get("grid_tp2"):
+                    line_tp2 = setups['grid_tp2'].strip()
+                    if line_tp2.startswith("↳"):
+                        line_tp2 = line_tp2[1:].strip()
+                    print(f"     ↳ {line_tp2}")
+                if setups.get("wide_grid"):
+                    line_wg = setups['wide_grid'].strip()
+                    if line_wg.startswith("↳"):
+                        line_wg = line_wg[1:].strip()
+                    print(f"     ↳ {line_wg}")
+        print(sep)
 
     if tier_c_symbols:
         c_str = ", ".join(tier_c_symbols)
