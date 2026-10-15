@@ -2,9 +2,45 @@ import gradio as gr
 import subprocess
 import sys
 import os
+import queue
+import threading
+
+# Quản lý tiến trình duy nhất (Single Instance Subprocess)
+_current_process = None
+_proc_lock = threading.Lock()
+
+def stop_binac4():
+    """Dừng tiến trình main.py đang chạy nếu có."""
+    global _current_process
+    with _proc_lock:
+        if _current_process is not None and _current_process.poll() is None:
+            pid = _current_process.pid
+            try:
+                _current_process.terminate()
+                try:
+                    _current_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    _current_process.kill()
+                _current_process = None
+                return f"\n🛑 [STOPPED] Đã chủ động dừng tiến trình bot (PID: {pid}).\n"
+            except Exception as e:
+                return f"\n⚠️ [ERROR] Không thể dừng tiến trình PID {pid}: {e}\n"
+        return "ℹ️ Hiện không có tiến trình bot nào đang chạy."
 
 def run_binac4():
     """Executes main.py and yields its output line by line to the Gradio UI."""
+    global _current_process
+    
+    # ── 1. Kiểm tra tiến trình đang chạy (Ngăn ngừa chạy trùng lặp ngốn RAM VPS) ──
+    with _proc_lock:
+        if _current_process is not None and _current_process.poll() is None:
+            busy_msg = (
+                f"⚠️ BOT ĐANG BẬN: Đang có một tiến trình quét đang chạy (PID: {_current_process.pid})!\n"
+                f"Vui lòng đợi lượt quét hiện tại hoàn tất hoặc nhấn nút [⏹️ Dừng Bot] trước khi bấm lại."
+            )
+            yield busy_msg, None
+            return
+
     script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'main.py')
     html_log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'BinaC4_latest_log.html')
     
@@ -32,22 +68,25 @@ def run_binac4():
     with open(html_log_file_path, 'w', encoding='utf-8') as f:
         f.write(html_header)
         
-    process = subprocess.Popen(
-        [sys.executable, "-u", script_path],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        universal_newlines=True,
-        env=env,
-        encoding='utf-8'
-    )
+    try:
+        process = subprocess.Popen(
+            [sys.executable, "-u", script_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True,
+            env=env,
+            encoding='utf-8'
+        )
+        with _proc_lock:
+            _current_process = process
+    except Exception as e:
+        yield f"❌ Lỗi khi khởi động main.py: {e}", None
+        return
     
-    output_str = "Đang khởi động BinaC4...\n" + "="*50 + "\n"
+    output_str = f"🚀 Đang khởi động BinaC4 (PID: {process.pid})...\n" + "="*50 + "\n"
     yield output_str, None
-    
-    import queue
-    import threading
     
     q = queue.Queue()
     def enqueue_output(out, q):
@@ -59,41 +98,44 @@ def run_binac4():
     t.daemon = True
     t.start()
     
-    while True:
-        try:
-            line = q.get(timeout=1.0)
-            if "✅ AN TOÀN" in line:
-                continue
+    try:
+        while True:
+            try:
+                line = q.get(timeout=1.0)
+                if "✅ AN TOÀN" in line:
+                    continue
+                    
+                output_str += line
                 
-            output_str += line
-            
-            # Append line to HTML file (escape < and > just in case)
-            safe_line = line.replace('<', '&lt;').replace('>', '&gt;')
-            with open(html_log_file_path, 'a', encoding='utf-8') as f:
-                f.write(safe_line)
+                # Append line to HTML file (escape < and > just in case)
+                safe_line = line.replace('<', '&lt;').replace('>', '&gt;')
+                with open(html_log_file_path, 'a', encoding='utf-8') as f:
+                    f.write(safe_line)
+                    
+                yield output_str, None
                 
-            yield output_str, None
-            
-        except queue.Empty:
-            # Process is still running but no output for 1 second.
-            # Yield to send a heartbeat and prevent reverse proxy timeout.
-            if process.poll() is not None:
-                break
-            yield output_str, None
-            
-    return_code = process.wait()
-    
-    if return_code != 0:
-        output_str += f"\n\n[ERROR] Quá trình kết thúc với mã lỗi {return_code}"
-    else:
-        output_str += f"\n\n[SUCCESS] Hoàn tất quá trình quét."
-    
-    # Write footer to HTML file
-    with open(html_log_file_path, 'a', encoding='utf-8') as f:
-        f.write(f"\nReturn code: {return_code}")
-        f.write(html_footer)
+            except queue.Empty:
+                if process.poll() is not None:
+                    break
+                yield output_str, None
+                
+        return_code = process.wait()
         
-    yield output_str, html_log_file_path
+        if return_code != 0:
+            output_str += f"\n\n[ERROR] Quá trình kết thúc với mã lỗi {return_code}"
+        else:
+            output_str += f"\n\n[SUCCESS] Hoàn tất quá trình quét."
+        
+        # Write footer to HTML file
+        with open(html_log_file_path, 'a', encoding='utf-8') as f:
+            f.write(f"\nReturn code: {return_code}")
+            f.write(html_footer)
+            
+        yield output_str, html_log_file_path
+    finally:
+        with _proc_lock:
+            if _current_process == process:
+                _current_process = None
 
 # Custom CSS to make the Textbox behave like a Terminal (Monospace, no wrapping)
 css = """
@@ -115,7 +157,8 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
     gr.Markdown("Giao diện này cho phép bạn kích hoạt bot `main.py` và theo dõi quá trình quét thị trường trực tiếp.")
     
     with gr.Row():
-        run_btn = gr.Button("▶️ Thực thi Bot (Run main.py)", variant="primary", size="lg")
+        run_btn = gr.Button("▶️ Thực thi Bot (Run main.py)", variant="primary", scale=3)
+        stop_btn = gr.Button("⏹️ Dừng Bot (Stop)", variant="stop", scale=1)
     
     with gr.Row():
         copy_btn = gr.Button("📋 Copy Kết Quả", size="sm")
@@ -134,8 +177,9 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
     with gr.Row():
         file_download = gr.File(label="Tải xuống File Log để gửi cho Gemini (.txt)", interactive=False)
     
-    # Connect run button to the generator function
+    # Connect run & stop buttons
     run_btn.click(fn=run_binac4, inputs=None, outputs=[output_box, file_download])
+    stop_btn.click(fn=stop_binac4, inputs=None, outputs=[output_box])
     
     # Javascript fallback for copying on HTTP (non-secure) connections
     js_copy_text = """
@@ -328,7 +372,10 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
     )
 
 if __name__ == "__main__":
-    # Launch with share=True to attempt generating a public link via Gradio
-    # Bind to 0.0.0.0 so it can be accessed directly via VPS IP
     demo.queue() # Enable queuing for streaming outputs
-    demo.launch(server_name="0.0.0.0", share=True, inbrowser=False)
+    # Mặc định share=False để loại bỏ triệt để các tiến trình frpc zombie gây ngốn RAM trên VPS.
+    # Muốn bật public link, hãy thêm GRADIO_SHARE=true trong file .env hoặc khi chạy script.
+    share_mode = os.getenv("GRADIO_SHARE", "false").lower() in ("true", "1", "yes")
+    port = int(os.getenv("GRADIO_PORT", 7860))
+    print(f"🚀 BinaC4 Web Server đang khởi chạy trên cổng {port} (share={share_mode})...")
+    demo.launch(server_name="0.0.0.0", server_port=port, share=share_mode, inbrowser=False)

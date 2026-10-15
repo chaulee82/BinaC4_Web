@@ -39,6 +39,53 @@ from core.grid_calculator import GridCalculator
 from core.exchange_info_cache import ExchangeInfoCache
 from core.macro_levels import calculate_universal_macro_levels, get_3d_profile
 from core.history_logger import HistoryLogger
+from core.klines_cache import clear_klines_cache
+import atexit
+import gc
+
+LOCK_FILE = os.path.join(os.path.dirname(__file__), 'data', 'binac4_main.lock')
+
+def _is_pid_running(pid: int) -> bool:
+    """Kiểm tra xem PID có đang thực sự tồn tại và chạy trên OS hay không."""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+def acquire_lock() -> bool:
+    """Đảm bảo chỉ có duy nhất 1 tiến trình main.py được phép chạy cùng lúc."""
+    os.makedirs(os.path.dirname(LOCK_FILE), exist_ok=True)
+    if os.path.exists(LOCK_FILE):
+        try:
+            with open(LOCK_FILE, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if content:
+                    old_pid = int(content)
+                    if _is_pid_running(old_pid):
+                        return False
+        except Exception:
+            pass
+    try:
+        with open(LOCK_FILE, 'w', encoding='utf-8') as f:
+            f.write(str(os.getpid()))
+        return True
+    except Exception as e:
+        logger.warning(f"Không thể tạo file lock {LOCK_FILE}: {e}")
+        return True
+
+def release_lock():
+    """Giải phóng file lock khi tiến trình kết thúc."""
+    try:
+        if os.path.exists(LOCK_FILE):
+            with open(LOCK_FILE, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if content and int(content) == os.getpid():
+                    os.remove(LOCK_FILE)
+    except Exception:
+        pass
 
 # Thiết lập logging
 logging.basicConfig(
@@ -92,6 +139,14 @@ def fmt_price(price: float) -> str:
     return formatted
 
 def main():
+    if not acquire_lock():
+        msg = f"[SINGLE_INSTANCE] ⚠️ Đã có một tiến trình main.py khác đang chạy. Bỏ qua lượt quét này để bảo vệ RAM VPS!"
+        print(msg)
+        logger.warning(msg)
+        sys.exit(0)
+
+    atexit.register(release_lock)
+
     start_time = time.time()
     logger.info("Khởi động hệ thống giao dịch CN4-Platform...")
     
@@ -159,6 +214,7 @@ def main():
             
             # Chạy lọc mã trực tiếp ra màn hình (không ẩn log) để thấy tiến độ
             watchlist, safety_map, early_list, df_summary, current_time_str = get_filtered_symbols(live_data_map)
+            gc.collect() # Giải phóng RAM ngay sau bước lọc mã toàn thị trường
             
             # Gán rỗng vì output đã được in trực tiếp
             _coin_filter_output = ""
@@ -241,6 +297,7 @@ def main():
 
                 with ThreadPoolExecutor(max_workers=10) as _ew_pool:
                     warning_results = list(_ew_pool.map(_check_ew, watchlist))
+                gc.collect() # Dọn dẹp RAM sau ma trận cảnh báo sớm
                 original_watchlist = list(watchlist)
                 safe_watchlist = [r['symbol'] for r in warning_results if r.get('level', 0) < 2]
                 
@@ -484,6 +541,10 @@ def main():
             
         except Exception as e:
             logger.error(f"Lỗi hệ thống trong quá trình quét: {e}")
+        finally:
+            clear_klines_cache()
+            gc.collect()
+            release_lock()
 
 if __name__ == "__main__":
     main()

@@ -20,7 +20,7 @@ logger = logging.getLogger("KlinesCache")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 _CACHE_TTL = 900   # 900 giây (15 phút) — Đảm bảo cache sống sót qua toàn bộ quá trình quét của tất cả Động Cơ
-_MAX_ITEMS = 4000  # Tối đa 4000 entries (symbol × interval combinations) - Đủ cho toàn bộ thị trường
+_MAX_ITEMS = 600   # Tối đa 600 entries (đủ cho 100+ coin × 4 timeframes, tránh phình to RAM trên VPS nhỏ)
 
 # ── Fetch limits mặc định cho từng interval ──────────────────────────────────
 # Lấy dư để phục vụ nhiều module với limit khác nhau mà không fetch lại
@@ -50,6 +50,14 @@ def reset_api_call_count():
     global _api_call_count
     _api_call_count = 0
 
+def clear_klines_cache():
+    """Xóa toàn bộ cache nến trong RAM và giải phóng bộ nhớ (Garbage Collector)."""
+    with _lock:
+        _cache.clear()
+        _fetched_limit.clear()
+    import gc
+    gc.collect()
+
 
 def _fetch_from_binance(symbol: str, interval: str, fetch_limit: int) -> Optional[pd.DataFrame]:
     """
@@ -75,25 +83,39 @@ def _fetch_from_binance(symbol: str, interval: str, fetch_limit: int) -> Optiona
     if not isinstance(data, list) or len(data) == 0:
         return None
 
+    # Tối ưu RAM: Chỉ giữ 8 cột cần dùng, bỏ Close_Time, Trades, Taker_Buy_Base, Ignore
     df = pd.DataFrame(data, columns=[
         'Open_Time', 'Open', 'High', 'Low', 'Close', 'Volume',
         'Close_Time', 'Quote_Volume', 'Trades',
         'Taker_Buy_Base', 'Taker_Buy_Quote', 'Ignore'
     ])
+    df = df[['Open_Time', 'Open', 'High', 'Low', 'Close', 'Volume', 'Quote_Volume', 'Taker_Buy_Quote']]
+
+    # Ép kiểu float32 thay vì float64 mặc định để giảm 50% dung lượng RAM trên VPS
     for col in ['Open', 'High', 'Low', 'Close', 'Volume', 'Quote_Volume', 'Taker_Buy_Quote']:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
+        df[col] = pd.to_numeric(df[col], errors='coerce').astype('float32')
 
     return df
 
 
 def _cleanup_if_needed(now: float):
-    """Dọn dẹp cache nếu quá lớn — chỉ gọi trong lock."""
+    """Dọn dẹp cache nếu vượt quá giới hạn — chỉ gọi trong lock."""
     if len(_cache) > _MAX_ITEMS:
+        # 1. Xóa các mục đã hết hạn TTL
         expired = [k for k, (t, _) in _cache.items() if now - t > _CACHE_TTL]
         for k in expired:
             del _cache[k]
             _fetched_limit.pop(k, None)
-        logger.debug(f"[KlinesCache] Evicted {len(expired)} entries. Remaining: {len(_cache)}")
+        
+        # 2. Nếu vẫn còn vượt quá _MAX_ITEMS, xóa các mục cũ nhất
+        if len(_cache) > _MAX_ITEMS:
+            sorted_items = sorted(_cache.items(), key=lambda item: item[1][0])
+            to_remove = len(_cache) - _MAX_ITEMS
+            for k, _ in sorted_items[:to_remove]:
+                del _cache[k]
+                _fetched_limit.pop(k, None)
+
+        logger.debug(f"[KlinesCache] Cleaned up cache. Remaining: {len(_cache)}")
 
 
 def get_klines_cached(symbol: str, interval: str, limit: int = 100) -> Optional[pd.DataFrame]:
