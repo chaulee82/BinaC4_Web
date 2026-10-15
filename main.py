@@ -44,68 +44,45 @@ import atexit
 import gc
 
 LOCK_FILE = os.path.join(os.path.dirname(__file__), 'data', 'binac4_main.lock')
-_lock_file_handle = None
 
-def acquire_lock() -> bool:
-    """
-    Đảm bảo chỉ có duy nhất 1 tiến trình main.py được phép chạy cùng lúc.
-    Sử dụng OS Kernel-level File Lock (fcntl trên Linux / msvcrt trên Windows).
-    Ưu điểm: Khi tiến trình bị 'kill -9' hoặc crash, Linux Kernel TỰ ĐỘNG giải phóng lock ngay lập tức,
-    không bao giờ bị kẹt stale lock file như cơ chế đọc PID thông thường.
-    """
-    global _lock_file_handle
-    os.makedirs(os.path.dirname(LOCK_FILE), exist_ok=True)
-    try:
-        _lock_file_handle = open(LOCK_FILE, 'a+')
-
-        # 1. Linux/Unix VPS: Sử dụng fcntl (Kernel File Lock)
+def get_concurrent_main_pids() -> list:
+    """Trả về danh sách PID của các tiến trình main.py khác đang chạy song song."""
+    my_pid = os.getpid()
+    other_pids = []
+    
+    # 1. Quét /proc trên Linux VPS
+    if os.path.exists('/proc'):
         try:
-            import fcntl
-            fcntl.flock(_lock_file_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return True
-        except ImportError:
-            pass  # Đang chạy trên Windows, chuyển sang msvcrt bên dưới
-        except (IOError, OSError, BlockingIOError):
-            # Tiến trình main.py khác đang giữ lock thực sự!
-            return False
-
-        # 2. Windows: Sử dụng msvcrt
-        try:
-            import msvcrt
-            _lock_file_handle.seek(0)
-            if _lock_file_handle.tell() == 0:
-                _lock_file_handle.write("1\n")
-                _lock_file_handle.flush()
-            _lock_file_handle.seek(0)
-            msvcrt.locking(_lock_file_handle.fileno(), msvcrt.LK_NBLCK, 1)
-            return True
-        except Exception:
-            return False
-
-    except Exception as e:
-        logger.warning(f"Lỗi kiểm tra lock: {e}")
-        return True
-
-def release_lock():
-    """Giải phóng Kernel File Lock khi tiến trình kết thúc."""
-    global _lock_file_handle
-    if _lock_file_handle is not None:
-        try:
-            try:
-                import fcntl
-                fcntl.flock(_lock_file_handle.fileno(), fcntl.LOCK_UN)
-            except Exception:
-                pass
-            try:
-                import msvcrt
-                _lock_file_handle.seek(0)
-                msvcrt.locking(_lock_file_handle.fileno(), msvcrt.LK_UNLCK, 1)
-            except Exception:
-                pass
-            _lock_file_handle.close()
+            for entry in os.listdir('/proc'):
+                if entry.isdigit():
+                    pid = int(entry)
+                    if pid == my_pid:
+                        continue
+                    try:
+                        with open(f"/proc/{pid}/cmdline", "rb") as f:
+                            raw = f.read().decode("utf-8", errors="ignore")
+                            if "main.py" in raw and ("python" in raw or "venv" in raw):
+                                other_pids.append(pid)
+                    except (FileNotFoundError, PermissionError, ProcessLookupError):
+                        continue
+            return other_pids
         except Exception:
             pass
-        _lock_file_handle = None
+
+    # 2. Fallback bằng lệnh pgrep trên Unix
+    if sys.platform != 'win32':
+        try:
+            import subprocess
+            out = subprocess.check_output(['pgrep', '-f', 'main.py'], text=True)
+            for line in out.strip().splitlines():
+                if line.isdigit():
+                    p = int(line)
+                    if p != my_pid and p not in other_pids:
+                        other_pids.append(p)
+        except Exception:
+            pass
+
+    return other_pids
 
 
 # Thiết lập logging
@@ -160,13 +137,22 @@ def fmt_price(price: float) -> str:
     return formatted
 
 def main():
-    if not acquire_lock():
-        msg = f"[SINGLE_INSTANCE] ⚠️ Đã có một tiến trình main.py khác đang chạy. Bỏ qua lượt quét này để bảo vệ RAM VPS!"
-        print(msg)
-        logger.warning(msg)
-        sys.exit(0)
-
-    atexit.register(release_lock)
+    # ── Kiểm tra và cảnh báo tiến trình song song (vẫn ưu tiên chạy tiếp) ──
+    other_pids = get_concurrent_main_pids()
+    if other_pids:
+        warn_msg = (
+            f"\n"
+            f"╔══════════════════════════════════════════════════════════════════════════════╗\n"
+            f"║ ⚠️  CẢNH BÁO TÀI NGUYÊN: CÓ {len(other_pids)} TIẾN TRÌNH main.py ĐANG CHẠY SONG SONG           ║\n"
+            f"╠══════════════════════════════════════════════════════════════════════════════╣\n"
+            f"║ • PIDs đang chạy ngầm: {other_pids}\n"
+            f"║ • Khuyến nghị: Bạn nên tắt bớt trên VPS (chạy: kill -9 {' '.join(map(str, other_pids))})\n"
+            f"║   để giải phóng RAM cho VPS và tránh bị nghẽn hệ thống.\n"
+            f"║ ⚡ ƯU TIÊN TIẾP TỤC: Bot vẫn tiếp tục phiên quét này theo yêu cầu...         ║\n"
+            f"╚══════════════════════════════════════════════════════════════════════════════╝\n"
+        )
+        print(warn_msg)
+        logger.warning(f"Phát hiện {len(other_pids)} tiến trình main.py khác đang chạy (PIDs: {other_pids}). Tiếp tục phiên quét.")
 
     start_time = time.time()
     logger.info("Khởi động hệ thống giao dịch CN4-Platform...")
@@ -565,7 +551,6 @@ def main():
         finally:
             clear_klines_cache()
             gc.collect()
-            release_lock()
 
 if __name__ == "__main__":
     main()

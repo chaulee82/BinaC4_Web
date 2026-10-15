@@ -31,15 +31,11 @@ def run_binac4():
     """Executes main.py and yields its output line by line to the Gradio UI."""
     global _current_process
     
-    # ── 1. Kiểm tra tiến trình đang chạy (Ngăn ngừa chạy trùng lặp ngốn RAM VPS) ──
+    # ── 1. Kiểm tra tiến trình cũ (Chỉ cảnh báo, vẫn ưu tiên tiếp tục chạy dù chậm) ──
+    prev_pid = None
     with _proc_lock:
         if _current_process is not None and _current_process.poll() is None:
-            busy_msg = (
-                f"⚠️ BOT ĐANG BẬN: Đang có một tiến trình quét đang chạy (PID: {_current_process.pid})!\n"
-                f"Vui lòng đợi lượt quét hiện tại hoàn tất hoặc nhấn nút [⏹️ Dừng Bot] trước khi bấm lại."
-            )
-            yield busy_msg, None
-            return
+            prev_pid = _current_process.pid
 
     script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'main.py')
     html_log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'BinaC4_latest_log.html')
@@ -85,7 +81,15 @@ def run_binac4():
         yield f"❌ Lỗi khi khởi động main.py: {e}", None
         return
     
-    output_str = f"🚀 Đang khởi động BinaC4 (PID: {process.pid})...\n" + "="*50 + "\n"
+    output_str = ""
+    if prev_pid:
+        output_str += (
+            f"⚠️ [CẢNH BÁO TÀI NGUYÊN] Tiến trình quét trước (PID: {prev_pid}) vẫn đang chạy ngầm!\n"
+            f"💡 Khuyến nghị: Bạn có thể nhấn [⏹️ Dừng Bot] để tắt tiến trình cũ giúp giảm tải RAM VPS.\n"
+            f"⚡ Ưu tiên tiếp tục khởi tạo phiên quét mới này (PID: {process.pid})...\n"
+            + "="*60 + "\n"
+        )
+    output_str += f"🚀 Đang khởi động BinaC4 (PID: {process.pid})...\n" + "="*50 + "\n"
     yield output_str, None
     
     q = queue.Queue()
