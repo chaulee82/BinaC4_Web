@@ -134,13 +134,11 @@ def auto_scan():
     running_proc = find_running_main_proc()
     if running_proc:
         pid_info = f" (PID: {running_proc['pid']} | {running_proc['cmd']})"
-        print(f"[{timestamp}] ⚠️ [AUTO-RUNNER] Phát hiện main.py đang chạy{pid_info}. Bỏ qua phiên quét này để tránh xung đột tài nguyên!")
-        return
-
-    # Dọn dẹp stale lock nếu có
-    clean_stale_lock()
-
-    print(f"[{timestamp}] 🚀 [AUTO-RUNNER] Hệ thống rảnh. Bắt đầu kích hoạt phiên quét tự động...")
+        print(f"[{timestamp}] ⚠️ [AUTO-RUNNER] CẢNH BÁO: Phát hiện main.py đang chạy{pid_info}. Vẫn tiếp tục thực thi phiên quét theo yêu cầu...")
+    else:
+        # Dọn dẹp stale lock nếu hệ thống hoàn toàn rảnh
+        clean_stale_lock()
+        print(f"[{timestamp}] 🚀 [AUTO-RUNNER] Hệ thống rảnh. Bắt đầu kích hoạt phiên quét tự động...")
 
     # 2. Gọi main.py độc lập qua subprocess
     try:
