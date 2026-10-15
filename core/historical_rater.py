@@ -357,6 +357,185 @@ class HistoricalDataQuery:
             conn.commit()
             return len(records)
 
+    def backfill_from_log_files(self, log_paths: Optional[List[str]] = None, auto_scan: bool = True) -> Dict[str, Any]:
+        """
+        Quét và bóc tách các tag [3D STRICT] cùng các tín hiệu liên quan từ các file log text cũ
+        (như main_run*.txt, main_output*.txt, *.log), sau đó nạp trực tiếp vào daily_metrics
+        và signal_logs để khôi phục lịch sử 14 ngày cho Scoring Engine V2.0.
+        """
+        import glob
+        import re
+
+        files_to_scan = []
+        if log_paths:
+            for p in log_paths:
+                if os.path.isdir(p):
+                    files_to_scan.extend(glob.glob(os.path.join(p, "*.txt")))
+                    files_to_scan.extend(glob.glob(os.path.join(p, "*.log")))
+                elif os.path.isfile(p):
+                    files_to_scan.append(p)
+        elif auto_scan:
+            for pat in ["*.txt", "*.log", "logs/*.txt", "logs/*.log"]:
+                for f in glob.glob(pat):
+                    base = os.path.basename(f).lower()
+                    if base in ["requirements.txt", "headers.txt", "pol_result.json"]:
+                        continue
+                    files_to_scan.append(f)
+
+        files_to_scan = sorted(list(set(files_to_scan)))
+        if not files_to_scan:
+            return {"files_scanned": 0, "records_imported": 0, "dates": []}
+
+        re_strict = re.compile(r"\[3D STRICT[^\]]*\]\s*(\d+)", re.IGNORECASE)
+        re_table_sym = re.compile(r"^([A-Z0-9]{2,12})(?:/USDT|USDT)?\s*\|\s*[\d\.\+\-]+", re.IGNORECASE)
+        re_grid_sym = re.compile(r"\[(?:GRID TP2|WIDE GRID 3D|DUAL|GRID)\s*[-–—:]\s*([A-Z0-9]+)\]", re.IGNORECASE)
+        re_summary_line = re.compile(r"#\d+\s+([A-Z0-9]{2,12})\s*\|\s*([A-Z0-9]+)\s*\|.*\[3D STRICT[^\]]*\]\s*(\d+)", re.IGNORECASE)
+
+        ignore_words = {"MỨC", "LEVEL", "TÍN", "DANH", "MÃ", "SYMBOL", "TOTAL", "PRICE", "ACTION", "SCORE", "LOW", "UP"}
+
+        def clean_sym(s: str) -> str:
+            if not s:
+                return ""
+            s = s.upper().strip()
+            if s.endswith("/USDT"):
+                s = s[:-5]
+            elif s.endswith("USDT") and len(s) > 4:
+                s = s[:-4]
+            return s
+
+        def read_lines(file_path: str) -> List[str]:
+            for enc in ['utf-8-sig', 'utf-16', 'utf-8', 'cp1252', 'latin-1']:
+                try:
+                    with open(file_path, 'r', encoding=enc) as f:
+                        return f.readlines()
+                except (UnicodeDecodeError, Exception):
+                    continue
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    return f.readlines()
+            except Exception:
+                return []
+
+        imported_total = 0
+        dates_set = set()
+
+        for file_path in files_to_scan:
+            lines = read_lines(file_path)
+            if not lines:
+                continue
+
+            if not any("[3D STRICT" in l for l in lines):
+                continue
+
+            # 1. Tìm ngày của file log
+            date_str = None
+            for line in lines[:150]:
+                m_date = re.search(r"(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}", line)
+                if m_date:
+                    date_str = m_date.group(1)
+                    break
+            if not date_str:
+                date_str = datetime.fromtimestamp(os.path.getmtime(file_path)).strftime('%Y-%m-%d')
+
+            dates_set.add(date_str)
+            file_results = {}
+            current_sym = None
+
+            for idx, line in enumerate(lines):
+                clean_line = line.strip()
+
+                m_sym = re_table_sym.match(clean_line)
+                if m_sym:
+                    cand = clean_sym(m_sym.group(1))
+                    if cand not in ignore_words and len(cand) >= 2:
+                        current_sym = cand
+
+                m_sum = re_summary_line.search(clean_line)
+                if m_sum:
+                    sym = clean_sym(m_sum.group(1))
+                    eng = m_sum.group(2).upper()
+                    sc = float(m_sum.group(3))
+                    if sym not in ignore_words:
+                        file_results[sym] = max(file_results.get(sym, 0.0), sc)
+                    continue
+
+                m_strict = re_strict.search(clean_line)
+                if m_strict:
+                    strict_sc = float(m_strict.group(1))
+                    sym = None
+                    m_g = re_grid_sym.search(clean_line)
+                    if m_g:
+                        sym = clean_sym(m_g.group(1))
+                    elif current_sym:
+                        sym = current_sym
+                    else:
+                        for back_idx in range(max(0, idx - 4), idx):
+                            b_line = lines[back_idx].strip()
+                            m_b = re_table_sym.match(b_line)
+                            if m_b:
+                                cand = clean_sym(m_b.group(1))
+                                if cand not in ignore_words:
+                                    sym = cand
+                                    break
+
+                    if sym and sym not in ignore_words and sym not in {"USDT", "GRID", "WIDE", "DUAL"}:
+                        file_results[sym] = max(file_results.get(sym, 0.0), strict_sc)
+
+            if not file_results:
+                continue
+
+            # 2. Ghi nhận dữ liệu vào DB (daily_metrics và signal_logs)
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                for sym, sc_strict in file_results.items():
+                    if sc_strict >= 70:
+                        raw_base = 25.0
+                        p_ok, ma_ok, st_ok = 1, 1, 1
+                    elif sc_strict >= 50:
+                        raw_base = 15.0
+                        p_ok, ma_ok, st_ok = 1, 0, 1
+                    else:
+                        raw_base = 0.0
+                        p_ok, ma_ok, st_ok = 0, 0, 0
+
+                    cursor.execute("""
+                        INSERT INTO daily_metrics (
+                            date, symbol, strict_3d_score, raw_base_score,
+                            price_above_ma7_3d, ma7_gt_ma99_3d, st_4h_green
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(date, symbol) DO UPDATE SET
+                            strict_3d_score = MAX(excluded.strict_3d_score, daily_metrics.strict_3d_score),
+                            raw_base_score = CASE 
+                                WHEN daily_metrics.raw_base_score <= 0 THEN excluded.raw_base_score 
+                                ELSE daily_metrics.raw_base_score 
+                            END,
+                            price_above_ma7_3d = MAX(excluded.price_above_ma7_3d, daily_metrics.price_above_ma7_3d),
+                            ma7_gt_ma99_3d = MAX(excluded.ma7_gt_ma99_3d, daily_metrics.ma7_gt_ma99_3d),
+                            st_4h_green = MAX(excluded.st_4h_green, daily_metrics.st_4h_green)
+                    """, (date_str, sym, sc_strict, raw_base, p_ok, ma_ok, st_ok))
+
+                    cursor.execute("""
+                        INSERT INTO signal_logs (timestamp, symbol, engine, score, action, details)
+                        VALUES (?, ?, '3D_STRICT', ?, ?, ?)
+                    """, (
+                        f"{date_str} 12:00:00",
+                        sym,
+                        sc_strict,
+                        f"🛡️ [3D STRICT] {int(sc_strict)}đ",
+                        json.dumps({"source": "backfill_from_log", "file": os.path.basename(file_path)})
+                    ))
+                    imported_total += 1
+                conn.commit()
+
+        # Đồng bộ lại từ signal_logs
+        self.sync_from_signal_logs()
+
+        return {
+            "files_scanned": len(files_to_scan),
+            "records_imported": imported_total,
+            "dates": sorted(list(dates_set))
+        }
+
     def get_latest_convergence_tier(self, symbol: str) -> str:
         """Lấy kết luận tối ưu (Hội tụ) gần nhất của mã từ signal_logs hoặc daily_metrics."""
         clean_sym = symbol.upper().replace('/USDT', '').replace('USDT', '').strip()
@@ -908,6 +1087,24 @@ def print_14_day_summary_board(
 
 
 if __name__ == "__main__":
-    rater = HistoricalDataQuery("data/binac4_history.db")
+    db_path = "data/binac4_history.db"
+    rater = HistoricalDataQuery(db_path)
+
+    args = sys.argv[1:]
+    custom_files = [a for a in args if not a.startswith("--")]
+
+    print("=" * 80)
+    print("🚀 BINA C4 - CÔNG CỤ CHẤM ĐIỂM TÍN NHIỆM & SUY HAO VĨ MÔ V2.0")
+    print("=" * 80)
+
+    print("\n🔍 Đang kiểm tra và nạp điểm từ các file log cũ (quét các tag [3D STRICT])...")
+    res = rater.backfill_from_log_files(log_paths=custom_files if custom_files else None, auto_scan=True)
+    if res["records_imported"] > 0:
+        print(f"✅ Đã nạp thành công {res['records_imported']} bản ghi [3D STRICT] từ {res['files_scanned']} file log (Ngày: {', '.join(res['dates'])}).")
+    else:
+        print(f"ℹ️ Không có bản ghi mới cần nạp từ log (hoặc database đã đồng bộ).")
+
+    print("\n📊 Đang truy vấn và tính toán Hồ Sơ Tín Nhiệm 14 ngày (Aggressive Decay & Cashflow Multiplier)...")
     profiles = rater.query_all_14_day_profiles()
-    render_profiles_table(profiles[:25])
+    render_profiles_table(profiles, f"BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM V2.0 (TỔNG {len(profiles)} MÃ)")
+
