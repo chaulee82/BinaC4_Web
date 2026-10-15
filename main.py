@@ -44,48 +44,69 @@ import atexit
 import gc
 
 LOCK_FILE = os.path.join(os.path.dirname(__file__), 'data', 'binac4_main.lock')
-
-def _is_pid_running(pid: int) -> bool:
-    """Kiểm tra xem PID có đang thực sự tồn tại và chạy trên OS hay không."""
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
+_lock_file_handle = None
 
 def acquire_lock() -> bool:
-    """Đảm bảo chỉ có duy nhất 1 tiến trình main.py được phép chạy cùng lúc."""
+    """
+    Đảm bảo chỉ có duy nhất 1 tiến trình main.py được phép chạy cùng lúc.
+    Sử dụng OS Kernel-level File Lock (fcntl trên Linux / msvcrt trên Windows).
+    Ưu điểm: Khi tiến trình bị 'kill -9' hoặc crash, Linux Kernel TỰ ĐỘNG giải phóng lock ngay lập tức,
+    không bao giờ bị kẹt stale lock file như cơ chế đọc PID thông thường.
+    """
+    global _lock_file_handle
     os.makedirs(os.path.dirname(LOCK_FILE), exist_ok=True)
-    if os.path.exists(LOCK_FILE):
-        try:
-            with open(LOCK_FILE, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                if content:
-                    old_pid = int(content)
-                    if _is_pid_running(old_pid):
-                        return False
-        except Exception:
-            pass
     try:
-        with open(LOCK_FILE, 'w', encoding='utf-8') as f:
-            f.write(str(os.getpid()))
-        return True
+        _lock_file_handle = open(LOCK_FILE, 'a+')
+
+        # 1. Linux/Unix VPS: Sử dụng fcntl (Kernel File Lock)
+        try:
+            import fcntl
+            fcntl.flock(_lock_file_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except ImportError:
+            pass  # Đang chạy trên Windows, chuyển sang msvcrt bên dưới
+        except (IOError, OSError, BlockingIOError):
+            # Tiến trình main.py khác đang giữ lock thực sự!
+            return False
+
+        # 2. Windows: Sử dụng msvcrt
+        try:
+            import msvcrt
+            _lock_file_handle.seek(0)
+            if _lock_file_handle.tell() == 0:
+                _lock_file_handle.write("1\n")
+                _lock_file_handle.flush()
+            _lock_file_handle.seek(0)
+            msvcrt.locking(_lock_file_handle.fileno(), msvcrt.LK_NBLCK, 1)
+            return True
+        except Exception:
+            return False
+
     except Exception as e:
-        logger.warning(f"Không thể tạo file lock {LOCK_FILE}: {e}")
+        logger.warning(f"Lỗi kiểm tra lock: {e}")
         return True
 
 def release_lock():
-    """Giải phóng file lock khi tiến trình kết thúc."""
-    try:
-        if os.path.exists(LOCK_FILE):
-            with open(LOCK_FILE, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                if content and int(content) == os.getpid():
-                    os.remove(LOCK_FILE)
-    except Exception:
-        pass
+    """Giải phóng Kernel File Lock khi tiến trình kết thúc."""
+    global _lock_file_handle
+    if _lock_file_handle is not None:
+        try:
+            try:
+                import fcntl
+                fcntl.flock(_lock_file_handle.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
+            try:
+                import msvcrt
+                _lock_file_handle.seek(0)
+                msvcrt.locking(_lock_file_handle.fileno(), msvcrt.LK_UNLCK, 1)
+            except Exception:
+                pass
+            _lock_file_handle.close()
+        except Exception:
+            pass
+        _lock_file_handle = None
+
 
 # Thiết lập logging
 logging.basicConfig(
