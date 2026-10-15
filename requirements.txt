@@ -8,3 +8,4 @@ requests
 pandas_ta
 gradio
 scipy
+psutil
