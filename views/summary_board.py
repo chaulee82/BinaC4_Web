@@ -630,10 +630,86 @@ def _board_config(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return cfg
 
 
-def build_convergence_summary(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger) -> str:
+def get_convergence_ranks(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger=None) -> Dict[str, str]:
+    """Trả về dict {symbol: rank_str} cho các mã đạt Điểm Chạm Vàng (Hội tụ) và lưu vào database."""
+    if history_logger is None:
+        try:
+            from core.history_logger import HistoryLogger
+            history_logger = HistoryLogger("data/binac4_history.db")
+        except Exception:
+            history_logger = None
+
+    if not history_logger:
+        return {}
+
+    current_symbols_engines = {}
+    for s in current_signals:
+        if s.symbol not in current_symbols_engines:
+            current_symbols_engines[s.symbol] = {}
+        current_symbols_engines[s.symbol][s.engine_source] = s
+
+    for r in (super_wave_results or []):
+        sym = r.get("symbol")
+        if sym:
+            if sym not in current_symbols_engines:
+                current_symbols_engines[sym] = {}
+            current_symbols_engines[sym]["3B"] = r
+
+    ranks = {}
+    for symbol, engines_map in current_symbols_engines.items():
+        current_engines = list(engines_map.keys())
+        if not ("DC3" in current_engines or "DC4" in current_engines or "DC5" in current_engines or "DC2" in current_engines):
+            continue
+
+        history = history_logger.get_symbol_history(symbol, days=14)
+        history_counts = {}
+        for eng, ts in history:
+            history_counts[eng] = history_counts.get(eng, 0) + 1
+
+        history_7_days = history_logger.get_symbol_history(symbol, days=7)
+        history_7_counts = {}
+        for eng, ts in history_7_days:
+            history_7_counts[eng] = history_7_counts.get(eng, 0) + 1
+
+        rank = None
+        if ("DC3" in current_engines or "DC4" in current_engines):
+            if history_counts.get("3A", 0) >= 3 or history_counts.get("DC1", 0) >= 3:
+                rank = "🏆 [HẠNG S] VỤ NỔ VĨ MÔ"
+        if not rank and ("DC2" in current_engines):
+            if "DC4" in current_engines or "3B" in current_engines:
+                rank = "🥇 [HẠNG A1] SIÊU PULLBACK"
+        if not rank and ("DC3" in current_engines):
+            if "3B" in current_engines:
+                rank = "🥈 [HẠNG A2] TIẾP DIỄN XU HƯỚNG"
+        if not rank and ("DC5" in current_engines):
+            if history_7_counts.get("DC1", 0) >= 3:
+                rank = "🥉 [HẠNG B] CỖ MÁY CASHFLOW"
+
+        if rank:
+            clean_s = symbol.upper().replace('/USDT', '').replace('USDT', '').strip()
+            ranks[clean_s] = rank
+            ranks[symbol] = rank
+
+    if ranks and history_logger and hasattr(history_logger, "save_convergence_signals"):
+        try:
+            history_logger.save_convergence_signals(ranks)
+        except Exception as e:
+            logger.error(f"Lỗi lưu convergence signals vào DB: {e}")
+
+    return ranks
+
+
+def build_convergence_summary(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger=None) -> str:
     """
     Module Phân tích Hội tụ (Điểm Chạm Vàng)
     """
+    if history_logger is None:
+        try:
+            from core.history_logger import HistoryLogger
+            history_logger = HistoryLogger("data/binac4_history.db")
+        except Exception:
+            history_logger = None
+
     if not history_logger:
         return ""
 
@@ -767,6 +843,7 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
 
         # Điểm Chạm Vàng
         if history_logger:
+            result["convergence_ranks"] = get_convergence_ranks(pool, super_wave_results, history_logger)
             convergence_text = build_convergence_summary(pool, super_wave_results, history_logger)
             print(convergence_text)
 

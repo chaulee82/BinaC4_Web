@@ -261,12 +261,12 @@ class PullbackSniper:
     # =========================================================================
     # CHẾ ĐỘ: DEEP PANIC SNIPER (NHÁNH BẮT DAO RƠI HOẢNG LOẠN)
     # =========================================================================
-    def check_deep_panic(self, symbol: str) -> dict:
+    def check_deep_panic(self, symbol: str, skip_rsi_check: bool = False) -> dict:
         """
         Nhánh logic song song chuyên trị Flash Crash:
         - Giá đâm thủng mép dưới Bollinger Bands (BOLL DN) ít nhất 1-2%
         - Cột Volume nổ đột biến (gấp 3-5 lần MA20 Volume) ở khung 15m
-        - RSI 15M rớt thẳng xuống vùng siêu bán (dưới 20)
+        - RSI 15M rớt thẳng xuống vùng siêu bán (dưới 20) — được miễn kiểm duyệt nếu skip_rsi_check=True
         """
         try:
             candles_15m = self.exchange.fetch_ohlcv(symbol, '15m', limit=100)
@@ -299,13 +299,14 @@ class PullbackSniper:
             # Điều kiện 2: Volume nổ đột biến (> 3x MA20 Volume)
             is_volume_capitulation = current_vol >= (3 * vol_ma20)
             
-            # Điều kiện 3: RSI 15m < 20
-            is_rsi_oversold = rsi_15m < 20
+            # Điều kiện 3: RSI 15m < 20 (hoặc skip_rsi_check=True)
+            is_rsi_oversold = True if skip_rsi_check else (rsi_15m < 20)
             
             if is_price_dumped and is_volume_capitulation and is_rsi_oversold:
+                rsi_str = f"RSI 15m = {rsi_15m:.1f} (Miễn kiểm duyệt)" if skip_rsi_check else f"RSI 15m = {rsi_15m:.1f}"
                 return {
                     "is_panic": True,
-                    "status": f"Panic Sell: Giá {current_price} < BB_Low {bb_lower:.4f}, Vol {current_vol/vol_ma20:.1f}x > 3x MA20, RSI 15m = {rsi_15m:.1f}"
+                    "status": f"Panic Sell: Giá {current_price} < BB_Low {bb_lower:.4f}, Vol {current_vol/vol_ma20:.1f}x > 3x MA20, {rsi_str}"
                 }
             
             return {"is_panic": False, "status": "Không có dấu hiệu Flash Crash"}
@@ -317,12 +318,15 @@ class PullbackSniper:
     # [DC2-4] Tích hợp Gate 0 Macro 1D: hard reject ngay đầu nếu downtrend dài hạn
     # =========================================================================
     def evaluate_candidate(self, symbol: str, timeframe: str = '4h',
-                           macro_gate: dict = None) -> dict:
+                           macro_gate: dict = None,
+                           early_warning_status: str = "") -> dict:
         """
         Quy trình chấm điểm toàn diện cho 1 mã tài sản.
 
         macro_gate: Kết quả từ check_macro_trend_1d() — truyền vào để tránh gọi API nhiều lần.
                     Nếu None, tự gọi nội bộ (chỉ dùng khi test đơn lẻ).
+        early_warning_status: Nhãn trạng thái Early Warning từ Bảng Cảnh Báo Sớm.
+                              Nếu chứa 'Miễn Cấp 3' -> Kích hoạt Fast-track Bắt đáy (+20đ, skip RSI check).
         """
         try:
             # ==============================================================
@@ -392,8 +396,9 @@ class PullbackSniper:
             c4 = self.calculate_rr_ratio(entry, stop_loss, take_profit)
 
             # 4.5 NHÁNH DEEP PANIC SNIPER (Bắt dao rơi)
-            # Nếu thị trường có Flash Crash, sẽ ghi đè Cửa 1 và Cửa 2 bằng điểm tuyệt đối
-            panic_check = self.check_deep_panic(symbol)
+            # Nếu mã đang có nhãn "Miễn Cấp 3 - Uptrend 3D" -> kích hoạt Skip_RSI_Check
+            is_washout_exempt = "Miễn Cấp 3" in (early_warning_status or "")
+            panic_check = self.check_deep_panic(symbol, skip_rsi_check=is_washout_exempt)
             if panic_check.get("is_panic", False):
                 c1 = {"score": 30, "confluence_count": 0, "status": "🔥 KÍCH HOẠT DEEP PANIC SNIPER (Ghi đè hội tụ)"}
                 c2 = {"score": 25, "vol_ratio": 0, "status": panic_check["status"]}
@@ -403,6 +408,9 @@ class PullbackSniper:
             # 4.6 C0 — Macro Momentum Bonus (ưu tiên mã có xu hướng nền khỏe)
             c0 = self.calc_macro_momentum_bonus(df, timeframe, macro_gate)
 
+            # Đặc quyền Bắt Đáy Vĩ Mô (Wash-out Fast-track)
+            washout_bonus = 20 if is_washout_exempt else 0
+
             # 4.7 [3D ROUTER] Chiến thuật 4 — Gãy đường ray MA7 3D: −30đ vào C0 & CẤM APPROVED
             d3 = None
             try:
@@ -411,12 +419,14 @@ class PullbackSniper:
             except Exception:
                 d3 = None
             is_broken_3d = bool(d3 and d3.get("is_3d_broken_ma7"))
-            macro_bonus = c0['score'] - 30 if is_broken_3d else c0['score']
+            macro_bonus = c0['score'] - 30 if is_broken_3d else c0['score'] + washout_bonus
             total_score = min(100, base_score + macro_bonus)
 
             # 5. Phân tầng hành động
             if is_broken_3d:
                 action = f"⛔ GÃY MA7 3D ({d3['ma7_3d']}) — TỪ CHỐI"
+            elif is_washout_exempt:
+                action = "🛡️ ƯU TIÊN BẮT ĐÁY (Siêu Pullback - Đã rũ bỏ 3D)"
             elif total_score >= 85:
                 action = "🟢 LOẠI A: Kích hoạt 100% Volume (Full Limit OCO)"
             elif total_score >= 70:
@@ -431,6 +441,7 @@ class PullbackSniper:
                 "base_score": base_score,
                 "macro_bonus": macro_bonus,
                 "action": action,
+                "skip_rsi_check": is_washout_exempt,
                 "details": {
                     "Gate_0_Macro1D": macro_gate,
                     "Gate_0_MacroBonus": c0,

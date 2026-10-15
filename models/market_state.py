@@ -122,6 +122,7 @@ class ScoreContext:
     # (VD DC3: chưa có Breakout trên nến ĐÃ ĐÓNG → False). Mặc định True để không ảnh hưởng Động cơ khác.
     execution_allowed: bool = True
     execution_veto_reason: str = ""
+    skip_rsi_check: bool = False
 
 @dataclass(slots=True, frozen=True)
 class SymbolState:

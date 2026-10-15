@@ -335,8 +335,8 @@ def main():
                 # =========================================================
                 logger.info("[DC2] Kiem tra Macro Trend 1D truoc khi cham diem Pullback...")
                 avg_vola_24h = cache.get_avg_vola_24h()
-                
-                dc2_states = dc2_engine.run(dc2_watchlist, live_data_map, avg_vola_24h, timeframe=timeframe, safety_map=safety_map, macro_levels_map=macro_levels_map)
+                ew_label_map = {r.get('symbol', ''): r.get('label', '') for r in warning_results}
+                dc2_states = dc2_engine.run(dc2_watchlist, live_data_map, avg_vola_24h, timeframe=timeframe, safety_map=safety_map, macro_levels_map=macro_levels_map, ew_label_map=ew_label_map)
                 renderer.render_pullback_sniper(dc2_states)
 
                 # Kích hoạt thực thi cho các mã đạt điểm
@@ -440,7 +440,7 @@ def main():
                     from views.summary_board import generate_summary_board
                     from core.macro_levels import get_strict_3d_rejections
                     from strategies.super_trend_3d import get_last_super_wave_results
-                    generate_summary_board(
+                    _summary_board_res = generate_summary_board(
                         global_signals_pool=_renderer.signals_pool,
                         btc_status=_btc_status,
                         live_data_map=live_data_map,
@@ -456,11 +456,14 @@ def main():
                 try:
                     from core.historical_rater import print_14_day_summary_board
                     from strategies.super_trend_3d import get_last_super_wave_results
+                    _conv_ranks = _summary_board_res.get('convergence_ranks') if '_summary_board_res' in locals() and isinstance(_summary_board_res, dict) else None
                     print_14_day_summary_board(
                         db_path="data/binac4_history.db",
                         df_summary=df_summary,
                         early_list=early_list,
                         super_wave_results=get_last_super_wave_results(),
+                        warning_results=_warning_results,
+                        convergence_ranks=_conv_ranks,
                         top_n=25
                     )
                 except Exception as e:

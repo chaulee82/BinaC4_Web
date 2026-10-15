@@ -71,6 +71,16 @@ class EarlyWarningMatrix:
             latest_4h = df_4h.iloc[-1]
             latest_1h = df_1h.iloc[-1]
 
+            # Xác định trạng thái Supertrend 4H (Green/Red)
+            st_dir_col_4h = [col for col in df_4h.columns if col.startswith('SUPERTd_')]
+            st_col_4h = [col for col in df_4h.columns if col.startswith('SUPERT_')]
+            if st_dir_col_4h:
+                st_4h_green = (latest_4h[st_dir_col_4h[0]] == 1)
+            elif st_col_4h:
+                st_4h_green = (latest_4h['close'] > latest_4h[st_col_4h[0]])
+            else:
+                st_4h_green = False
+
             # CẤP 3: KHẨN CẤP (Gãy Trend 1D)
             supertrend_col_1d = [col for col in df_1d.columns if 'SUPERT_' in col]
             st_1d = latest_1d[supertrend_col_1d[0]] if supertrend_col_1d else 0
@@ -81,13 +91,15 @@ class EarlyWarningMatrix:
                         "level": 1,
                         "label": "⚠️ CẤP 1: THEO DÕI (Miễn Cấp 3 - Uptrend 3D)",
                         "trigger": "Thủng ST 1D nhưng trên MA7 3D & ST 3D 🟢",
-                        "action": "Giữ vị thế theo khung 3D. Dừng mua đuổi 1H."
+                        "action": "Giữ vị thế theo khung 3D. Dừng mua đuổi 1H.",
+                        "st_4h_green": st_4h_green
                     }
                 return {
                     "level": 3,
                     "label": "💀 CẤP 3: KHẨN CẤP (Gãy Trend 1D)",
                     "trigger": "Giá thủng Supertrend mốc 1D",
-                    "action": "Kích hoạt cắt lỗ. Hủy mọi lệnh mua."
+                    "action": "Kích hoạt cắt lỗ. Hủy mọi lệnh mua.",
+                    "st_4h_green": st_4h_green
                 }
 
             # CẤP 2: NGUY HIỂM (Thủng BB Dưới 4H kèm Vol xả)
@@ -100,7 +112,8 @@ class EarlyWarningMatrix:
                     "level": 2,
                     "label": "🛑 CẤP 2: NGUY HIỂM (Cảnh Báo 4H)",
                     "trigger": "Xuyên thủng Đáy BB(20) 4H kèm Volume xả",
-                    "action": "Hủy ngay lệnh Limit sóng hồi. Cấm bắt dao rơi."
+                    "action": "Hủy ngay lệnh Limit sóng hồi. Cấm bắt dao rơi.",
+                    "st_4h_green": st_4h_green
                 }
 
             # CẤP 1: THEO DÕI (Gãy MA ngắn hạn 1H)
@@ -114,7 +127,8 @@ class EarlyWarningMatrix:
                     "level": 1,
                     "label": "⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm 1H)",
                     "trigger": "Giá cắt xuống dưới cụm MA(7) & EMA(7) 1H",
-                    "action": "Dừng mua đuổi. Đưa vào tầm ngắm giám sát."
+                    "action": "Dừng mua đuổi. Đưa vào tầm ngắm giám sát.",
+                    "st_4h_green": st_4h_green
                 }
 
             # CẤP 0: AN TOÀN
@@ -122,11 +136,12 @@ class EarlyWarningMatrix:
                 "level": 0,
                 "label": "✅ AN TOÀN",
                 "trigger": "Cấu trúc ổn định đa khung",
-                "action": "Hoạt động bình thường."
+                "action": "Hoạt động bình thường.",
+                "st_4h_green": st_4h_green
             }
 
         except Exception as e:
-            return {"level": 0, "status": f"Lỗi tính toán EW: {str(e)}"}
+            return {"level": 0, "status": f"Lỗi tính toán EW: {str(e)}", "st_4h_green": False}
 
     # =========================================================================
     # =========================================================================

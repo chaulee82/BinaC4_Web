@@ -17,14 +17,17 @@ class DC2SniperEngine(BaseEngine):
         self.entry_calc = entry_calc
         self.repo = repo
 
-    def run(self, watchlist: List[str], live_data_map: Dict[str, Any], avg_vola_24h: float, timeframe: str = '4h', safety_map: Dict[str, str] = None, macro_levels_map: Optional[Dict[str, MacroLevels]] = None, **kwargs) -> List[SymbolState]:
+    def run(self, watchlist: List[str], live_data_map: Dict[str, Any], avg_vola_24h: float, timeframe: str = '4h', safety_map: Dict[str, str] = None, macro_levels_map: Optional[Dict[str, MacroLevels]] = None, ew_label_map: Optional[Dict[str, str]] = None, **kwargs) -> List[SymbolState]:
         if safety_map is None:
             safety_map = {}
+        if ew_label_map is None:
+            ew_label_map = kwargs.get('ew_label_map') or {}
             
         sniper_results = []
         for symbol in watchlist:
             macro_gate = self.strategy.check_macro_trend_1d(symbol)
-            result = self.strategy.evaluate_candidate(symbol, timeframe, macro_gate=macro_gate)
+            ew_status = ew_label_map.get(symbol) or ew_label_map.get(symbol.replace('/', '')) or ew_label_map.get(symbol + "USDT", "")
+            result = self.strategy.evaluate_candidate(symbol, timeframe, macro_gate=macro_gate, early_warning_status=ew_status)
             sniper_results.append(result)
 
         # Sắp xếp theo điểm tổng giảm dần và chỉ lấy Top 5
@@ -143,7 +146,8 @@ class DC2SniperEngine(BaseEngine):
                 bonus_score=c0,
                 early_warning=ew_ctx,
                 entry_setup1=setup1,
-                entry_setup2=setup2
+                entry_setup2=setup2,
+                skip_rsi_check=bool(res.get('skip_rsi_check', False))
             )
             
             state = SymbolState(

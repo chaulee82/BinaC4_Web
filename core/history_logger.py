@@ -3,6 +3,7 @@ import sqlite3
 import json
 import logging
 from datetime import datetime, timedelta
+from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger("HistoryLogger")
 
@@ -114,3 +115,59 @@ class HistoryLogger:
                 conn.commit()
         except Exception as e:
             logger.error(f"Lỗi dọn dẹp DB: {e}")
+
+    def save_convergence_signals(self, convergence_map: Dict[str, Any]):
+        """
+        Lưu kết quả Bảng Kết Luận Tối Ưu (Điểm Chạm Vàng) vào database signal_logs.
+        convergence_map: dict symbol -> rank string hoặc dict chi tiết
+        """
+        if not convergence_map:
+            return
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        records = []
+        for sym, item in convergence_map.items():
+            clean_sym = sym.replace('/USDT', '').replace('USDT', '').strip()
+            if not clean_sym:
+                continue
+            if isinstance(item, dict):
+                rank = item.get('rank', '')
+                details = item
+            else:
+                rank = str(item)
+                details = {"rank": rank}
+            score = 10.0 if "HẠNG S" in rank else (5.0 if any(t in rank for t in ["HẠNG A", "HẠNG B"]) else 0.0)
+            records.append({
+                "timestamp": now_str,
+                "symbol": clean_sym,
+                "engine": "OPTIMAL_CONVERGENCE",
+                "score": score,
+                "action": rank,
+                "details": details
+            })
+        self.save_signals(records)
+
+    def get_latest_convergence_tier(self, symbol: str, before_timestamp: Optional[str] = None) -> str:
+        """
+        Lấy nhãn kết luận tối ưu gần nhất (phiên trước hoặc phiên hiện tại) từ database.
+        """
+        clean_sym = symbol.replace('/USDT', '').replace('USDT', '').strip()
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                if before_timestamp:
+                    cursor.execute("""
+                        SELECT action FROM signal_logs
+                        WHERE symbol = ? AND engine = 'OPTIMAL_CONVERGENCE' AND timestamp < ?
+                        ORDER BY timestamp DESC LIMIT 1
+                    """, (clean_sym, before_timestamp))
+                else:
+                    cursor.execute("""
+                        SELECT action FROM signal_logs
+                        WHERE symbol = ? AND engine = 'OPTIMAL_CONVERGENCE'
+                        ORDER BY timestamp DESC LIMIT 1
+                    """, (clean_sym,))
+                row = cursor.fetchone()
+                return row[0] if row else ""
+        except Exception as e:
+            logger.error(f"Lỗi lấy lịch sử kết luận tối ưu cho {symbol}: {e}")
+            return ""

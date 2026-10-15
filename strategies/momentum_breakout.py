@@ -20,6 +20,27 @@ from core.indicator_engine import IndicatorEngine
 # 15% (không phải 10%) để chừa chỗ thở cho Altcoin Mid/Low-cap vừa nổ Vol retest cản.
 DC3_MAX_SL_PCT = 15.0
 
+# [Module 2: Fast-Track Momentum Breakout Constants]
+DC3_FAST_VOL_MULT = 3.0
+DC3_FAST_TAKER_MIN = 0.55
+DC3_FAST_RSI15_MAX = 85.0
+
+def dc3_breakout_trigger(price_live: float, box_top: float, current_vol: float, ma20_vol: float, taker_buy_ratio: float, rsi_15m: float):
+    """
+    [MODULE 2: LOGIC BÓP CÒ NHANH & KHÓA FOMO - SPEC 2.0]
+    Dual-Confirmation: Giá live >= box_top VÀ Vol >= 3.0x MA20 VÀ Taker Buy >= 55%
+    Anti-FOMO: RSI 15M > 85 -> Veto 'RSI Climax'
+    """
+    if price_live >= box_top:
+        vol_multi = current_vol / ma20_vol if ma20_vol > 0 else 0.0
+        if vol_multi >= DC3_FAST_VOL_MULT and taker_buy_ratio >= DC3_FAST_TAKER_MIN:
+            if rsi_15m > DC3_FAST_RSI15_MAX:
+                return False, "🔴 TỪ CHỐI BÓP CÒ: RSI Climax - Chuyển sang chờ Pullback"
+            return True, f"🚀 BÓP CÒ NGAY: Tiền bạo phát (Vol {round(vol_multi, 1)}x, Taker {round(taker_buy_ratio*100)}%)"
+        return False, f"⏳ CHỜ XÁC NHẬN: Volume yếu ({round(vol_multi, 1)}x) - Nguy cơ Fakeout"
+    return False, "Giá chưa chạm nắp hộp"
+
+
 
 class MomentumBreakout:
     def __init__(self, exchange=None):
@@ -227,6 +248,70 @@ class MomentumBreakout:
             return {"score": 0, "status": f"🚫 HỦY SETUP (R/R {rr_ratio:.1f} < 2.0 quá rủi ro)", "sl": sl, "rr": rr_ratio}
 
     # =========================================================================
+    # [MODULE 2: DC3 FAST TRIGGER V2.0] — DUAL CONFIRMATION KHUNG 5M
+    # =========================================================================
+    def evaluate_fast_trigger(self, symbol: str, current_price: float, box_top: float) -> tuple:
+        """
+        Quét khung 5M (Volume nổ >= 3.0x MA20 & Taker Buy >= 55%).
+        Khóa an toàn Anti-FOMO: RSI 15M > 85 -> VETO.
+        """
+        try:
+            binance_symbol = symbol.replace("/", "").replace("-", "")
+            raw_klines = self.exchange.publicGetKlines({
+                "symbol": binance_symbol,
+                "interval": "5m",
+                "limit": 25
+            })
+            if not raw_klines or len(raw_klines) < 21:
+                return False, "Thiếu dữ liệu nến 5M", {}
+
+            last_k = raw_klines[-1]
+            current_vol = float(last_k[5])
+            taker_buy_vol = float(last_k[9])
+            quote_vol = float(last_k[7])
+            taker_buy_quote = float(last_k[10])
+
+            taker_buy_ratio = (taker_buy_quote / quote_vol) if quote_vol > 0 else (taker_buy_vol / current_vol if current_vol > 0 else 0.0)
+            ma20_vol = sum(float(k[5]) for k in raw_klines[-21:-1]) / 20.0
+            vol_multi = current_vol / ma20_vol if ma20_vol > 0 else 0.0
+
+            # Tính RSI 15m nếu có dấu hiệu chạm cản & vol nổ
+            rsi_15m = 50.0
+            if current_price >= box_top and vol_multi >= DC3_FAST_VOL_MULT and taker_buy_ratio >= DC3_FAST_TAKER_MIN:
+                try:
+                    candles_15m = self.exchange.fetch_ohlcv(symbol, '15m', limit=30)
+                    if candles_15m and len(candles_15m) >= 15:
+                        df_15m = pd.DataFrame(candles_15m, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                        delta = df_15m['close'].diff()
+                        gain = delta.where(delta > 0, 0).ewm(alpha=1/14, adjust=False).mean()
+                        loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+                        rs = gain / loss
+                        rsi_series = 100 - (100 / (1 + rs))
+                        rsi_15m = float(rsi_series.iloc[-1])
+                except Exception:
+                    rsi_15m = 50.0
+
+            is_trigger, reason = dc3_breakout_trigger(
+                price_live=current_price,
+                box_top=box_top,
+                current_vol=current_vol,
+                ma20_vol=ma20_vol,
+                taker_buy_ratio=taker_buy_ratio,
+                rsi_15m=rsi_15m
+            )
+            detail = {
+                "vol_5m": current_vol,
+                "ma20_vol_5m": ma20_vol,
+                "vol_multi_5m": round(vol_multi, 2),
+                "taker_buy_ratio_5m": round(taker_buy_ratio, 3),
+                "rsi_15m": round(rsi_15m, 1),
+                "reason": reason
+            }
+            return is_trigger, reason, detail
+        except Exception as e:
+            return False, f"Lỗi Fast Trigger: {str(e)[:40]}", {}
+
+    # =========================================================================
     # HÀM CHÍNH: CHẤM ĐIỂM TOÀN DIỆN
     # =========================================================================
     def evaluate_breakout(self, symbol: str, timeframe: str = '1h',
@@ -340,32 +425,51 @@ class MomentumBreakout:
             # sort_score = total_score + rr_ratio (tiebreaker: cùng điểm thì R/R cao hơn lên trước)
             sort_score = total_score + rr_ratio
 
-            # [Execution Gatekeeper] Quyền bóp cò = điểm ≥ 85 VÀ Gate 1 ≥ 25 (Breakout trên nến ĐÃ ĐÓNG)
-            #                         VÀ SL < 15% (chừa chỗ thở cho Altcoin biên độ mạnh, chặt FOMO mua đuổi).
-            # Điểm / thứ hạng radar giữ nguyên — chỉ phủ quyết việc xuất lệnh.
-            is_real_breakout = (c1['score'] >= 25)
+            # [MODULE 2: DC3 FAST TRIGGER V2.0]
+            box_top = c1.get('resistance', 0.0)
+            fast_triggered = False
+            fast_reason = ""
+            fast_detail = {}
+            if total_score >= 65 and box_top > 0 and current_price >= box_top * 0.99:
+                fast_triggered, fast_reason, fast_detail = self.evaluate_fast_trigger(symbol, current_price, box_top)
+
+            # [Execution Gatekeeper] Quyền bóp cò = (điểm ≥ 85 VÀ Breakout nến ĐÃ ĐÓNG) HOẶC (Fast Trigger 5M bạo phát)
+            #                         VÀ SL < 15% (chặt FOMO mua đuổi).
+            # Khóa an toàn Anti-FOMO: RSI 15M > 85 -> VETO.
+            is_real_breakout = (c1['score'] >= 25) or fast_triggered
             sl_dist_pct = ((entry_price - sl_price) / entry_price * 100
                            if sl_price and entry_price and sl_price < entry_price else None)
             sl_too_wide = sl_dist_pct is not None and round(sl_dist_pct, 6) >= DC3_MAX_SL_PCT
-            execution_allowed = total_score >= 85 and is_real_breakout and not sl_too_wide
+            is_rsi_climax = ("RSI Climax" in fast_reason)
+
+            execution_allowed = (total_score >= 85 or fast_triggered) and is_real_breakout and not sl_too_wide and not is_rsi_climax
             veto_reason = ""
 
             action = "🔴 TỪ CHỐI"
-            if execution_allowed:
-                action = "🟢 BREAKOUT HÀNG THẬT: Bắn lệnh Hybrid Executor"
-            elif total_score >= 85 and sl_too_wide:
+            if is_rsi_climax:
+                action = fast_reason
+                veto_reason = "RSI 15M > 85 (RSI Climax - Quá nóng, chuyển sang chờ Pullback)"
+            elif execution_allowed:
+                if fast_triggered:
+                    action = fast_reason
+                else:
+                    action = "🟢 BREAKOUT HÀNG THẬT: Bắn lệnh Hybrid Executor"
+            elif (total_score >= 85 or fast_triggered) and sl_too_wide:
                 action = f"🔴 TỪ CHỐI — SL RỘNG {sl_dist_pct:.1f}% (≥ {DC3_MAX_SL_PCT:.0f}%)"
                 veto_reason = f"SL quá rộng ({sl_dist_pct:.1f}% ≥ {DC3_MAX_SL_PCT:.0f}%)"
             elif total_score >= 85:
                 action = "🟡 THEO DÕI: Chờ đóng nến xác nhận Breakout"
                 veto_reason = f"Gate 1 = {c1['score']}đ < 25 — chưa có Breakout trên nến đã đóng"
             elif total_score >= 65:
-                action = "🟡 THEO DÕI: Cần tích lũy thêm Volume"
+                if fast_reason and not fast_triggered:
+                    action = fast_reason
+                else:
+                    action = "🟡 THEO DÕI: Cần tích lũy thêm Volume"
             if is_explosive:
                 action = f"{action} | {expl['tag']} → Trig đón nhúng"
 
             trade_setup = {}
-            # Mã có Dòng Tiền Bạo Phát luôn có setup để in đủ ⚙️ SETUP + 🎯 GRID TP2
+            # Mã có Dòng Tiền Bạo Phát hoặc đủ điểm luôn có setup để in đủ ⚙️ SETUP + 🎯 GRID TP2
             if total_score >= 65 or is_real_breakout or is_explosive:
                 trade_setup = {
                     "entry": entry_price,
@@ -386,12 +490,14 @@ class MomentumBreakout:
                 "breakout_confirmed": is_real_breakout,
                 "execution_allowed": execution_allowed,
                 "execution_veto_reason": veto_reason,
+                "fast_trigger": fast_detail,
                 "details": {
                     "Gate_0_BTC": btc_gate.get("reason", ""),
                     "Gate_1_PriceAction": c1['status'],
                     "Gate_2_Volume": c2['status'],
                     "Gate_3_OrderBook": c3['status'],
                     "Gate_4_RR": c4['status'],
+                    "Gate_5_FastTrigger": fast_detail.get("reason", "N/A"),
                     "Bonus_TakerBuy": " ".join(bonus_parts) if bonus_parts else "-",
                 },
                 "trade_setup": trade_setup,

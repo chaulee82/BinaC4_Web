@@ -1,7 +1,8 @@
 """
 File: scratch/test_historical_rater.py
-Mục đích: Kiểm thử độc lập và hiển thị BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM 14 NGÀY (PHIÊN BẢN CHI TIẾT NỀN MÓNG)
-Chứa đầy đủ các mã case study: ZK, STX, FIL, ARPA, CTK.
+Mục đích: Kiểm thử độc lập và hiển thị BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM V2.0
+(AGGRESSIVE DECAY & CASHFLOW MULTIPLIER)
+Chứa đầy đủ các mã case study: ZK, STX, FIL, ARPA, CTK, WAL.
 """
 
 import sys
@@ -9,7 +10,10 @@ import os
 from datetime import datetime, timedelta
 
 if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -23,59 +27,61 @@ def test_historical_rater():
     rater = HistoricalDataQuery(test_db)
     today = datetime.now()
     d0 = today.strftime('%Y-%m-%d')
+    d1 = (today - timedelta(days=1)).strftime('%Y-%m-%d')
+    d2 = (today - timedelta(days=2)).strftime('%Y-%m-%d')
+    d3 = (today - timedelta(days=3)).strftime('%Y-%m-%d')
     
-    # 1. ZK: Reb 53.7 (8.0đ), 3D 79.0 (11.8đ), 3B 75.0 (7.5đ) -> Móng 27.3đ | Đẩy 35.0đ | Tiền 16.2đ -> Tổng 78.5đ
-    # dc2=4 (10đ), dc3=4 (12đ), dc4=4.33 (13đ) -> 35đ | dc5=8.1 (16.2đ)
-    rater.record_daily_metric(d0, "ZK", {
-        "b3a_score": 0.0, "b3b_score": 75.0,
-        "rebalance_score": 53.7, "strict_3d_score": 79.0,
-        "dc2_sniper_count": 4, "dc3_breakout_count": 4, "dc4_hottrend_count": 4, # Đẩy 10 + 12 + 13 = 35đ (được round)
-        "dc5_pingpong_score": 8, # 16đ (round ~16.2)
-        "penalty_level_3": 0, "penalty_xaray": 0, "penalty_fakeout": 0
-    })
+    # 1. ZK: Siêu phẩm giữ vững 4 ngày (Móng 40đ, Đẩy 35đ, Tiền 18đ -> Multiplier x1.2 -> 100đ)
+    for d in [d0, d1, d2, d3]:
+        rater.record_daily_metric(d, "ZK", {
+            "raw_base_score": 40.0,
+            "dc2_sniper_count": 4, "dc3_breakout_count": 4, "dc4_hottrend_count": 4,
+            "dc5_pingpong_score": 6,
+            "optimal_tier": "🏆 [HẠNG S] VỤ NỔ VĨ MÔ"
+        })
 
-    # 2. STX: Reb 60.0 (9.0đ), 3D 80.0 (12.0đ), 3B 40.0 (4.0đ) -> Móng 25.0đ | Đẩy 32.0đ | Tiền 17.0đ -> Tổng 74.0đ
-    rater.record_daily_metric(d0, "STX", {
-        "b3a_score": 40.0, "b3b_score": 0.0,
-        "rebalance_score": 60.0, "strict_3d_score": 80.0,
-        "dc2_sniper_count": 4, "dc3_breakout_count": 4, "dc4_hottrend_count": 3, # Đẩy 10 + 12 + 10 = 32đ
-        "dc5_pingpong_score": 8
-    })
+    # 2. STX: Tích lũy ổn định (Móng 25đ, Đẩy 32đ, Tiền 17đ -> Multiplier x1.2 -> 88.8đ)
+    for d in [d0, d1, d2, d3]:
+        rater.record_daily_metric(d, "STX", {
+            "raw_base_score": 25.0,
+            "dc2_sniper_count": 4, "dc3_breakout_count": 4, "dc4_hottrend_count": 3,
+            "dc5_pingpong_score": 6
+        })
 
-    # 3. FIL: Reb 68.0 (10.2đ), 3D 80.0 (12.0đ), 3A 80.0 (8.0đ) -> Móng 30.2đ | Đẩy 25.0đ | Tiền 13.0đ -> Tổng 68.2đ
-    rater.record_daily_metric(d0, "FIL", {
-        "b3a_score": 80.0, "b3b_score": 0.0,
-        "rebalance_score": 68.0, "strict_3d_score": 80.0,
-        "dc2_sniper_count": 2, "dc3_breakout_count": 3, "dc4_hottrend_count": 3, # Đẩy: 5 + 9 + 11 = 25đ
-        "dc5_pingpong_score": 7
-    })
+    # 3. FIL: Móng 30đ, Đẩy 25đ, Tiền 10đ -> Multiplier x1.0 -> 65đ (Tier A Xu Hướng)
+    for d in [d0, d1, d2, d3]:
+        rater.record_daily_metric(d, "FIL", {
+            "raw_base_score": 30.0,
+            "dc2_sniper_count": 2, "dc3_breakout_count": 3, "dc4_hottrend_count": 3,
+            "dc5_pingpong_score": 4
+        })
 
-    # 4. ARPA: Reb 20.0 (3.0đ), 3D 13.0 (2.0đ), 3A/3B 0.0 -> Móng 5.0đ | Đẩy 27.0đ | Tiền 0.0đ -> Tổng 32.0đ (Tier F Rủi Ro)
-    rater.record_daily_metric(d0, "ARPA", {
-        "b3a_score": 0.0, "b3b_score": 0.0,
-        "rebalance_score": 20.0, "strict_3d_score": 13.33,
-        "dc2_sniper_count": 4, "dc3_breakout_count": 3, "dc4_hottrend_count": 3, # Đẩy: 10 + 9 + 8 = 27đ
-        "dc5_pingpong_score": 0
-    })
+    # 4. ARPA: Móng 15đ, Đẩy 20đ, Tiền 3đ (<= 5) -> Multiplier x0.5 (Trừng phạt) -> 19đ (Tier F)
+    for d in [d0, d1, d2, d3]:
+        rater.record_daily_metric(d, "ARPA", {
+            "raw_base_score": 15.0,
+            "dc2_sniper_count": 2, "dc3_breakout_count": 2, "dc4_hottrend_count": 2,
+            "dc5_pingpong_score": 1
+        })
 
-    # 5. CTK: Reb 6.6 (1.0đ), 3D 0.0 (0.0đ), 3A/3B 0.0 -> Móng 1.0đ | Đẩy 17.5đ | Tiền 0.0đ -> Tổng 18.5đ (Tier F Rủi Ro)
+    # 5. CTK: Dính NÉ GRID, mất thanh khoản -> 0đ
     rater.record_daily_metric(d0, "CTK", {
-        "b3a_score": 0.0, "b3b_score": 0.0,
-        "rebalance_score": 6.67, "strict_3d_score": 0.0,
-        "dc2_sniper_count": 3, "dc3_breakout_count": 2, "dc4_hottrend_count": 1, # Đẩy: 7.5 + 6 + 4 = 17.5đ
+        "raw_base_score": 0.0,
+        "grid_status": "⛔ NÉ GRID",
+        "dc2_sniper_count": 1, "dc3_breakout_count": 1, "dc4_hottrend_count": 0,
         "dc5_pingpong_score": 0
     })
 
-    # 6. WAL (FOMO Trend): Móng 10đ (<15đ) nhưng Đẩy 37đ + Tiền 14đ = 61đ -> Tier A- (FOMO Trend)
-    rater.record_daily_metric(d0, "WAL", {
-        "b3a_score": 0.0, "b3b_score": 0.0,
-        "rebalance_score": 40.0, "strict_3d_score": 26.67, # Móng = 6 + 4 = 10đ
-        "dc2_sniper_count": 4, "dc3_breakout_count": 5, "dc4_hottrend_count": 4, # Đẩy 37đ
-        "dc5_pingpong_score": 7 # Tiền 14đ -> 61đ
-    })
+    # 6. WAL: FOMO Trend (Móng 10đ, Đẩy 37đ, Tiền 14đ -> Multiplier x1.0 -> 61đ, Tier A- FOMO)
+    for d in [d0, d1, d2, d3]:
+        rater.record_daily_metric(d, "WAL", {
+            "raw_base_score": 10.0,
+            "dc2_sniper_count": 4, "dc3_breakout_count": 5, "dc4_hottrend_count": 4,
+            "dc5_pingpong_score": 5
+        })
 
     profiles = rater.query_all_14_day_profiles()
-    render_profiles_table(profiles, "BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM 14 NGÀY (PHIÊN BẢN CHI TIẾT NỀN MÓNG)")
+    render_profiles_table(profiles, "BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM V2.0 (AGGRESSIVE DECAY & CASHFLOW MULTIPLIER)")
 
 if __name__ == "__main__":
     test_historical_rater()
