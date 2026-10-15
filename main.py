@@ -521,7 +521,7 @@ def main():
                     from core.historical_rater import print_14_day_summary_board
                     from strategies.super_trend_3d import get_last_super_wave_results
                     _conv_ranks = _summary_board_res.get('convergence_ranks') if '_summary_board_res' in locals() and isinstance(_summary_board_res, dict) else None
-                    print_14_day_summary_board(
+                    _v2_profiles = print_14_day_summary_board(
                         db_path="data/binac4_history.db",
                         df_summary=df_summary,
                         early_list=early_list,
@@ -530,8 +530,31 @@ def main():
                         convergence_ranks=_conv_ranks,
                         top_n=25
                     )
+
+                    # -------------------------------------------------------------------------
+                    # BƯỚC TÍCH HỢP: LƯU VẾT & PHÂN TÍCH DELTA AUDIT (MOD-TRUST-HIST-01)
+                    # -------------------------------------------------------------------------
+                    if _v2_profiles:
+                        try:
+                            from trust_history import record_and_analyze, print_delta_tables
+                            scores_payload = []
+                            for item in _v2_profiles:
+                                bdown = item.get('breakdown', {})
+                                scores_payload.append({
+                                    'symbol': item['symbol'],
+                                    'tier': item.get('tier', ''),
+                                    'total': float(item.get('total_score', 0.0)),
+                                    'mong': float(bdown.get('foundation_40', 0.0)),
+                                    'day': float(bdown.get('momentum_40', 0.0)),
+                                    'tien': float(bdown.get('cashflow_20', 0.0))
+                                })
+                            top_gainers, top_losers = record_and_analyze(scores_payload, keep_snapshots=24)
+                            print_delta_tables(top_gainers, top_losers)
+                        except Exception as err:
+                            import logging
+                            logging.getLogger("CN4-Controller").error(f"Lỗi phân tích Trust History: {err}", exc_info=True)
                 except Exception as e:
-                    logger.error(f"Render Error (Bảng 14 Ngày): {e}")
+                    logger.error(f"Render Error (Bảng 14 Ngày / Delta Audit): {e}")
 
 
             from core.coin_filter import print_final_tables
