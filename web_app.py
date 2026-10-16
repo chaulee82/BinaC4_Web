@@ -36,24 +36,6 @@ def get_latest_log_data():
             pass
     return "ℹ️ Chưa có dữ liệu phiên quét nào. Vui lòng bấm [▶️ Thực thi Bot] để bắt đầu.", None
 
-def stop_binac4():
-    """Dừng tiến trình main.py đang chạy nếu có."""
-    global _current_process
-    with _proc_lock:
-        if _current_process is not None and _current_process.poll() is None:
-            pid = _current_process.pid
-            try:
-                _current_process.terminate()
-                try:
-                    _current_process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    _current_process.kill()
-                _current_process = None
-                return f"\n🛑 [STOPPED] Đã chủ động dừng tiến trình bot (PID: {pid}).\n"
-            except Exception as e:
-                return f"\n⚠️ [ERROR] Không thể dừng tiến trình PID {pid}: {e}\n"
-        return "ℹ️ Hiện không có tiến trình bot nào đang chạy."
-
 def run_binac4():
     """Executes main.py and yields its output in throttled batches to the Gradio UI."""
     global _current_process
