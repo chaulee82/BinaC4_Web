@@ -36,23 +36,7 @@ def get_latest_log_data():
             pass
     return "ℹ️ Chưa có dữ liệu phiên quét nào. Vui lòng bấm [▶️ Thực thi Bot] để bắt đầu.", None
 
-def stop_binac4():
-    """Dừng tiến trình main.py đang chạy nếu có."""
-    global _current_process
-    with _proc_lock:
-        if _current_process is not None and _current_process.poll() is None:
-            pid = _current_process.pid
-            try:
-                _current_process.terminate()
-                try:
-                    _current_process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    _current_process.kill()
-                _current_process = None
-                return f"\n🛑 [STOPPED] Đã chủ động dừng tiến trình bot (PID: {pid}).\n"
-            except Exception as e:
-                return f"\n⚠️ [ERROR] Không thể dừng tiến trình PID {pid}: {e}\n"
-        return "ℹ️ Hiện không có tiến trình bot nào đang chạy."
+
 
 def run_binac4():
     """Executes main.py and yields its output in throttled batches to the Gradio UI."""
@@ -105,7 +89,6 @@ def run_binac4():
     if prev_pid:
         output_str += (
             f"⚠️ [CẢNH BÁO TÀI NGUYÊN] Tiến trình quét trước (PID: {prev_pid}) vẫn đang chạy ngầm!\n"
-            f"💡 Khuyến nghị: Bạn có thể nhấn [⏹️ Dừng Bot] để tắt tiến trình cũ giúp giảm tải RAM VPS.\n"
             f"⚡ Ưu tiên tiếp tục khởi tạo phiên quét mới này (PID: {process.pid})...\n"
             + "="*60 + "\n"
         )
@@ -201,7 +184,7 @@ def run_binac4():
             if _current_process == process:
                 _current_process = None
 
-# Custom CSS to make the Textbox behave like a Terminal (Monospace, no wrapping)
+# Custom CSS to make the Textbox behave like a Terminal and enhance mobile buttons
 css = """
 #terminal-output textarea {
     font-family: 'Consolas', 'Courier New', 'Monaco', monospace !important;
@@ -213,23 +196,26 @@ css = """
     background-color: #1e1e1e !important;
     color: #d4d4d4 !important;
 }
+.mobile-btn {
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    min-height: 50px !important;
+    border-radius: 8px !important;
+}
 """
 
 # Build the Gradio interface
-with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
+with gr.Blocks(title="BinaC4 Web Interface") as demo:
     initial_text, initial_file = get_latest_log_data()
 
     gr.Markdown("# 🚀 BinaC4 Trading Bot Web Interface")
     gr.Markdown("Giao diện này cho phép bạn kích hoạt bot `main.py` và theo dõi quá trình quét thị trường trực tiếp.")
     
     with gr.Row():
-        run_btn = gr.Button("▶️ Thực thi Bot (Run main.py)", variant="primary", scale=3)
-        refresh_btn = gr.Button("🔄 Tải Log Gần Nhất", scale=1)
-        stop_btn = gr.Button("⏹️ Dừng Bot (Stop)", variant="stop", scale=1)
+        run_btn = gr.Button("▶️ Thực thi Bot (Run main.py)", variant="primary", size="lg", elem_classes=["mobile-btn"])
     
     with gr.Row():
-        copy_btn = gr.Button("📋 Copy Kết Quả", size="sm")
-        summary_copy_btn = gr.Button("✂️ Copy Tóm Tắt (Gửi Điện Thoại)", size="sm")
+        copy_btn = gr.Button("📋 Copy Kết Quả", variant="secondary", size="lg", elem_classes=["mobile-btn"])
     
     with gr.Row():
         output_box = gr.Textbox(
@@ -249,10 +235,11 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
             interactive=False
         )
     
-    # Connect run, refresh & stop buttons
+    # Connect run button
     run_btn.click(fn=run_binac4, inputs=None, outputs=[output_box, file_download])
-    refresh_btn.click(fn=get_latest_log_data, inputs=None, outputs=[output_box, file_download])
-    stop_btn.click(fn=stop_binac4, inputs=None, outputs=[output_box])
+
+    # Tự động đọc dữ liệu log mới nhất từ file khi load hoặc refresh trang
+    demo.load(fn=get_latest_log_data, inputs=None, outputs=[output_box, file_download])
     
     # Javascript fallback for copying on HTTP (non-secure) connections
     js_copy_text = """
@@ -273,175 +260,12 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
         }
     }
     """
-    
-    js_copy_summary = """
-    (text) => {
-        let lines = text.split('\\n');
-        let summaryLines = [];
-        let captureMode = '';
-        
-        for (let i = 0; i < lines.length; i++) {
-            let line = lines[i].trim();
-            if (!line) continue;
-            
-            if (line.includes('⏰ Thời điểm cập nhật')) {
-                summaryLines.push(line);
-                continue;
-            }
-            if (line.includes('BẢNG CHẤM ĐIỂM REBALANCE')) {
-                captureMode = 'REBALANCE';
-                summaryLines.push('');
-                summaryLines.push('🏆 BẢNG CHẤM ĐIỂM REBALANCE / SPOT GRID');
-                summaryLines.push('Hạng | Mã | TỔNG | Phân Loại Grid | Tín Hiệu Cảnh Báo');
-                continue;
-            }
-            if (line.includes('BẢNG THAM SỐ GRID CHUẨN') || line.includes('BẢNG THAM SỐ GRID TỰ ĐỘNG')) {
-                captureMode = 'GRID_PARAMS';
-                summaryLines.push('');
-                summaryLines.push('🏆 BẢNG THAM SỐ GRID CHUẨN');
-                continue;
-            }
-            if (line.includes('BẢNG 3: BẮT SỚM NỀN TĂNG')) {
-                captureMode = 'EARLY_BIRD';
-                summaryLines.push('');
-                summaryLines.push('🌱 BẢNG 3: BẮT SỚM NỀN TĂNG');
-                summaryLines.push('Mã | Điểm | Rút Chân | Giật 4H');
-                continue;
-            }
-            if (line.includes('ĐỘNG CƠ 1: DARVAS GRID') || line.includes('BẢNG CHẤM ĐIỂM MACRO GRID DARVAS')) {
-                captureMode = 'DARVAS';
-                summaryLines.push('');
-                summaryLines.push('📦 ĐỘNG CƠ 1: DARVAS GRID');
-                summaryLines.push('Mã | Điểm | Trạng Thái | Hành Động');
-                continue;
-            }
-            if (line.includes('ĐỘNG CƠ 2 - TÌM LỆNH THỰC THI CHÍNH XÁC')) {
-                captureMode = 'SNIPER';
-                summaryLines.push('');
-                summaryLines.push('🎯 ĐỘNG CƠ 2: PULLBACK SNIPER');
-                summaryLines.push('Mã | Điểm | Trạng Thái | Hành Động');
-                continue;
-            }
-            if (line.includes('ĐỘNG CƠ 3 - SĂN BỨT PHÁ ĐỘNG LƯỢNG')) {
-                captureMode = 'BREAKOUT';
-                summaryLines.push('');
-                summaryLines.push('🚀 ĐỘNG CƠ 3: MOMENTUM BREAKOUT');
-                summaryLines.push('Mã | Điểm | Hành Động');
-                continue;
-            }
-            if (line.includes('ĐỘNG CƠ 4 - SĂN ĐIỂM VÀO LỆNH PULLBACK')) {
-                captureMode = 'HOT_TREND';
-                summaryLines.push('');
-                summaryLines.push('🔥 ĐỘNG CƠ 4: HOT TREND PULLBACK');
-                summaryLines.push('Mã | Điểm | Hành Động');
-                continue;
-            }
-            
-            if (line.startsWith('====') || line.startsWith('----') && captureMode) {
-                continue;
-            }
-            if (line.includes('KẾT QUẢ PHÂN TÍCH THỊ TRƯỜNG')) {
-                captureMode = '';
-                continue;
-            }
-            
-            if (captureMode === 'DARVAS') {
-                if (line.includes('|') && !line.includes('Mã (Symbol)')) {
-                    let parts = line.split('|').map(s => s.trim());
-                    if (parts.length >= 4) {
-                        summaryLines.push(`${parts[0]} | ${parts[1]} | ${parts[2].replace(/✅ |⚠️ /g, '')} | ${parts[3]}`);
-                    }
-                }
-            } else if (captureMode === 'SNIPER') {
-                if (line.includes('|') && !line.includes('Mã (Symbol)')) {
-                    let parts = line.split('|').map(s => s.trim());
-                    if (parts.length >= 8) {
-                        summaryLines.push(`${parts[0]} | ${parts[1]} | ${parts[2].replace(/✅ |⚠️ /g, '')} | ${parts[7]}`);
-                    }
-                } else if (line.includes('↳ ⚙️ SETUP:')) {
-                    summaryLines.push('  ' + line.replace('↳ ⚙️ SETUP:', '↳').replace(/\\s+/g, ' '));
-                }
-            } else if (captureMode === 'BREAKOUT') {
-                if (line.includes('|') && !line.includes('Mã (Symbol)')) {
-                    let parts = line.split('|').map(s => s.trim());
-                    if (parts.length >= 6) {
-                        let hanhDong = '';
-                        if (i + 1 < lines.length && lines[i+1].includes('↳ Hành Động:')) {
-                            hanhDong = lines[i+1].split('↳ Hành Động:')[1].trim();
-                        }
-                        summaryLines.push(`${parts[0]} | ${parts[1]} | ${hanhDong}`);
-                    }
-                }
-            } else if (captureMode === 'HOT_TREND') {
-                if (line.includes('|') && !line.includes('Mã (Symbol)')) {
-                    let parts = line.split('|').map(s => s.trim());
-                    if (parts.length >= 8) {
-                        // Col 0: Mã, Col 1: Điểm, Col 7: Hành Động
-                        let hanhDong = parts[7].replace(/✅ |⚠️ |🟡 |🛑 |🚀 |⏳ /g, '');
-                        summaryLines.push(`${parts[0]} | ${parts[1]} | ${hanhDong}`);
-                    }
-                } else if (line.includes('↳ ⚙️ SETUP:')) {
-                    summaryLines.push('  ' + line.replace('↳ ⚙️ SETUP:', '↳').replace(/\\s+/g, ' '));
-                }
-            } else if (captureMode === 'REBALANCE') {
-                if (line.includes('|') && !line.includes('Mã')) {
-                    let parts = line.split('|').map(s => s.trim());
-                    if (parts.length >= 7) {
-                        let rank = parts[0];
-                        let sym = parts[1];
-                        let phanLoai = parts[3];
-                        let tong = parts[4];
-                        let canhBao = parts[6];
-                        summaryLines.push(`${rank} | ${sym} | ${tong} | ${phanLoai} | ${canhBao}`);
-                    }
-                }
-            } else if (captureMode === 'GRID_PARAMS') {
-                if (line.includes('↳ ⚙️')) {
-                    summaryLines.push('  ' + line.trim().replace(/\\s+/g, ' '));
-                }
-            } else if (captureMode === 'EARLY_BIRD') {
-                if (line.includes('|') && !line.includes('Mã')) {
-                    let parts = line.split('|').map(s => s.trim());
-                    if (parts.length >= 5) {
-                        summaryLines.push(`${parts[0]} | ${parts[2]} | ${parts[3]} | ${parts[4]}`);
-                    }
-                }
-            }
-        }
-        
-        let summaryText = summaryLines.join('\\n');
-        
-        if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(summaryText.trim());
-            alert('Đã copy Tóm Tắt Ngắn Gọn!');
-        } else {
-            let textArea = document.createElement("textarea");
-            textArea.value = summaryText.trim();
-            textArea.style.position = "fixed";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            document.execCommand('copy');
-            textArea.remove();
-            alert('Đã copy Tóm Tắt Ngắn Gọn bằng chế độ tương thích!');
-        }
-    }
-    """
-    
     # Connect copy button using Javascript
     copy_btn.click(
         fn=None,
         inputs=[output_box],
         outputs=[],
         js=js_copy_text
-    )
-    
-    # Connect summary copy button using Javascript
-    summary_copy_btn.click(
-        fn=None,
-        inputs=[output_box],
-        outputs=[],
-        js=js_copy_summary
     )
 
 if __name__ == "__main__":
@@ -451,4 +275,4 @@ if __name__ == "__main__":
     share_mode = os.getenv("GRADIO_SHARE", "false").lower() in ("true", "1", "yes")
     port = int(os.getenv("GRADIO_PORT", 7860))
     print(f"🚀 BinaC4 Web Server đang khởi chạy trên cổng {port} (share={share_mode})...")
-    demo.launch(server_name="0.0.0.0", server_port=port, share=share_mode, inbrowser=False)
+    demo.launch(server_name="0.0.0.0", server_port=port, share=share_mode, inbrowser=False, css=css)

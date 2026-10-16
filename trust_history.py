@@ -160,6 +160,7 @@ def record_and_analyze(
         delta_list.append({
             'symbol': sym,
             'tier': item.get('tier', ''),
+            'action_recommendation': item.get('action_recommendation', ''),
             'current': curr,
             'prev_1': p1,
             'delta_1': d1,
@@ -261,4 +262,47 @@ def print_delta_tables(
             c1 = _format_delta_cell(item['delta_1'])
             c4 = _format_delta_cell(item['delta_4'])
             print(f"{item['symbol']:<8} | {item['tier']:<22} | {item['current']:<9.1f} | {c1} | {c4} | {item['eval']:<20}")
-    print("=" * 110 + "\n")
+    print("=" * 110)
+
+    # 🚀 Thiết lập lệnh tự động cho Top 3 mã tăng nhiều nhất (tương tự như Thiết lập lệnh Tier S)
+    top_3_gainers = top_gainers[:3] if top_gainers else []
+    if top_3_gainers:
+        try:
+            from core.historical_rater import calculate_tier_s_setups
+        except Exception:
+            calculate_tier_s_setups = None
+
+        if calculate_tier_s_setups:
+            print(f"\n🚀 THIẾT LẬP LỆNH CHO TOP 3 MÃ TĂNG NHIỀU NHẤT (DÒNG TIỀN GIA TỐC) [{len(top_3_gainers)} mã]:")
+            for item in top_3_gainers:
+                sym = item["symbol"]
+                setups = calculate_tier_s_setups(sym)
+                if setups:
+                    score_val = item.get("current", 0.0)
+                    tier_str = item.get("tier", "")
+                    rec = item.get("action_recommendation")
+                    if not rec:
+                        if "Tier S" in tier_str or score_val >= 80.0:
+                            rec = "🟢 DUYỆT TỰ ĐỘNG (Đánh Full Volume)"
+                        elif "Tier A" in tier_str or score_val >= 60.0:
+                            rec = "🟢 DUYỆT TỰ ĐỘNG (Cấu trúc ổn định)"
+                        elif "Tier B" in tier_str or score_val >= 40.0:
+                            rec = "🟠 ĐÁNH 30% VOL (Bắt Pullback hoặc ăn ngắn)"
+                        else:
+                            rec = "👀 THEO DÕI"
+
+                    print(f"  ⭐ {sym} ({score_val:.1f}đ - {tier_str}) - Khuyến nghị: {rec}")
+                    if setups.get("oco"):
+                        print(f"     ↳ {setups['oco']}")
+                    if setups.get("grid_tp2"):
+                        line_tp2 = setups['grid_tp2'].strip()
+                        if line_tp2.startswith("↳"):
+                            line_tp2 = line_tp2[1:].strip()
+                        print(f"     ↳ {line_tp2}")
+                    if setups.get("wide_grid"):
+                        line_wg = setups['wide_grid'].strip()
+                        if line_wg.startswith("↳"):
+                            line_wg = line_wg[1:].strip()
+                        print(f"     ↳ {line_wg}")
+            print("=" * 110)
+    print("\n")

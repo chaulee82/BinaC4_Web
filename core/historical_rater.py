@@ -612,18 +612,10 @@ class HistoricalDataQuery:
                     "raw_base": day_base
                 }
 
-        valid_mong = [s for s in history_mong if s > 0]
-        valid_day = [s for s in history_day if s > 0]
-        valid_tien = [s for s in history_tien if s > 0]
+        diem_mong = calculate_aggressive_decay(history_mong)
+        diem_day = calculate_aggressive_decay(history_day)
+        diem_tien = calculate_aggressive_decay(history_tien)
 
-        if len(metrics_by_date) >= 3:
-            diem_mong = calculate_aggressive_decay(history_mong)
-            diem_day = calculate_aggressive_decay(history_day)
-            diem_tien = calculate_aggressive_decay(history_tien)
-        else:
-            diem_mong = calculate_aggressive_decay(valid_mong) if valid_mong else 0.0
-            diem_day = calculate_aggressive_decay(valid_day) if valid_day else 0.0
-            diem_tien = calculate_aggressive_decay(valid_tien) if valid_tien else 0.0
 
         multiplier = 1.0
         if diem_tien >= 15.0:
@@ -931,11 +923,14 @@ def render_profiles_table(
         print(row_str)
     print(sep)
 
-    # 💎 Thiết lập lệnh tự động cho các mã đạt Tier S (Kim Cương)
+    # 💎 Thiết lập lệnh tự động cho các mã đạt Tier S (Kim Cương) (giới hạn tối đa Top 3 mã điểm cao nhất)
     tier_s_profiles = [p for p in display_profiles if "Tier S" in p.get("tier", "")]
     if tier_s_profiles:
-        print(f"\n💎 THIẾT LẬP LỆNH CHO CÁC MÃ ĐẠT TIÊU CHUẨN TIER S (KIM CƯƠNG) [{len(tier_s_profiles)} mã]:")
-        for sp in tier_s_profiles:
+        top_tier_s = tier_s_profiles[:3]
+        total_s_count = len(tier_s_profiles)
+        limit_str = f" [Top 3/{total_s_count} mã]" if total_s_count > 3 else f" [{total_s_count} mã]"
+        print(f"\n💎 THIẾT LẬP LỆNH CHO CÁC MÃ ĐẠT TIÊU CHUẨN TIER S (KIM CƯƠNG){limit_str}:")
+        for sp in top_tier_s:
             sym = sp["symbol"]
             setups = calculate_tier_s_setups(sym)
             if setups:

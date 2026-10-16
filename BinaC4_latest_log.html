@@ -9,268 +9,367 @@
     </style>
 </head>
 <body>
-<pre>2026-08-20 11:56:10,875 - CN4-Controller - INFO - Khởi động hệ thống giao dịch CN4-Platform...
-2026-08-20 11:56:10,876 - CN4-Controller - WARNING - Chưa cấu hình API Key và Secret Key trong file .env! Hệ thống sẽ chạy ở chế độ MOCK (Chỉ quét, không vào lệnh thực).
-2026-08-20 11:56:10,876 - CN4-Controller - INFO - Timeframe: 4h
-2026-08-20 11:56:10,887 - core.exchange_factory - INFO - Đang kiểm tra kết nối tới sàn: BINANCE...
-2026-08-20 11:56:11,447 - core.exchange_factory - INFO - ✅ Đã kết nối thành công tới BINANCE
-2026-08-20 11:56:11,462 - core.exchange_factory - INFO - Đang kiểm tra kết nối tới sàn: BINANCE...
-2026-08-20 11:56:11,955 - core.exchange_factory - INFO - ✅ Đã kết nối thành công tới BINANCE
-2026-08-20 11:56:11,966 - core.exchange_factory - INFO - Đang kiểm tra kết nối tới sàn: BINANCE...
-2026-08-20 11:56:12,460 - core.exchange_factory - INFO - ✅ Đã kết nối thành công tới BINANCE
-2026-08-20 11:56:12,469 - core.exchange_factory - INFO - Đang kiểm tra kết nối tới sàn: BINANCE...
-2026-08-20 11:56:12,955 - core.exchange_factory - INFO - ✅ Đã kết nối thành công tới BINANCE
-2026-08-20 11:56:12,956 - CN4-Controller - INFO - Đang chạy module coin_filter để quét các mã tiềm năng...
-🔍 Đang gọi Binance LIVE API (Thuật Toán Điểm Tuyến Tính Tỉ Lệ Thuận/Nghịch)... 
+<pre>🚀 Đang khởi động BinaC4 (PID: 9692)...
+==================================================
+2026-10-17 01:18:01,982 - CN4-Controller - INFO - Khởi động hệ thống giao dịch CN4-Platform...
+2026-10-17 01:18:01,982 - CN4-Controller - WARNING - Chưa cấu hình API Key và Secret Key trong file .env! Hệ thống sẽ chạy ở chế độ MOCK (Chỉ quét, không vào lệnh thực).
+2026-10-17 01:18:02,032 - ExchangeInfoCache - INFO - [ExchangeInfoCache] Đang fetch exchangeInfo từ Binance (1 lần duy nhất)...
+2026-10-17 01:18:04,361 - ExchangeInfoCache - INFO - [ExchangeInfoCache] Đã cache tick_size cho 511 mã USDT.
+2026-10-17 01:18:04,381 - CN4-Controller - INFO - Timeframe: 4h
+2026-10-17 01:18:04,382 - TradeExecutionService - INFO - 🛡️ [Execution] Đang chạy ở chế độ DRY-RUN (Mock Mode). Lệnh sẽ không được gửi lên sàn.
+2026-10-17 01:18:06,053 - CN4-Controller - INFO - Đang chạy module coin_filter để quét các mã tiềm năng...
+2026-10-17 01:18:06,054 - CacheService - INFO - [CacheService] Đang cập nhật live_data_map từ Binance...
+2026-10-17 01:18:07,114 - CacheService - INFO - [CacheService] Đã cập nhật thành công 708 mã.
+🎯 TỔNG CỘNG CÓ 80 MÃ ĐƯỢC ĐƯĂ VÀO BẢNG CHẤM ĐIỂM MOMENTUM!
 
-🎯 TỔNG CỘNG CÓ 100 MÃ ĐƯỢC ĐƯA VÀO BẢNG CHẤM ĐIỂM MOMENTUM!
+⏳ Hệ thống đang bắt đầu tính toán GRID và chấm điểm (Vui lòng đợi 1-2 phút)...
+
+⏳ Đang tải dữ liệu nến song song (warm cache)...
+2026-10-17 01:18:07,116 - KlinesCache - INFO - [KlinesCache] Warm cache: Cần fetch 320 cặp (symbol×interval) song song...
+2026-10-17 01:18:32,496 - KlinesCache - INFO - [KlinesCache] Warm cache xong: 320 thanh cong, 0 that bai.
+✅ Pre-fetch xong: 320 API calls trong 25.4s
+
+📋 Danh mục watchlist: 81 mã đủ điều kiện vào động cơ phân tích.
+
+2026-10-17 01:18:43,769 - CN4-Controller - INFO - Dang kich hoat He thong Canh bao Som (Early Warning Matrix)...
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+🚨 HỆ THỐNG CẢNH BÁO SỚM & RỦI RO SẬP
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+| Mức Độ (Level)                 | Tín Hiệu                  | Danh Sách Mã
+|--------------------------------|---------------------------|--------------------
+| ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm 1H) (43/81) | Giá cắt xuống dưới cụm MA(7) & EMA(7) 1H | APT, NEAR, INJ, ZRO, DOT, FIL, ASTER, ARB, SEI, TIA, AVAX, WLD, ETHFI, ZK, CHIP, PROM, PLUME, RAY, FET, WAL, QNT, TRUMP, ANIME, OP, S, XRP, KAITO, AERO, TUT, LINK, ICP, PYTH, VELODROME, SUI, AAVE, ONDO, BTC, ZAMA, SUPER, TAO, XPL, BAT, GENIUS
+| 💀 CẤP 3: KHẨN CẤP (Gãy Trend 1D) (35/81) | Giá thủng Supertrend mốc 1D | TON, ZIL, KORUB, SOXLB, W, SNXXB, PUMP, TQQQB, INTCB, MSTRB, SKHYB, NXPC, SPCXB, SNDKB, TSLAB, MUB, ZEC, RE, ADA, XLM, ENA, DOGE, HBAR, QQQB, PEPE, PENGU, HYPE, UNI, ETH, LTC, SOL, DASH, GRAM, CRCLB, BCH
+| ⚠️ CẤP 1: THEO DÕI (Miễn Cấp 3 - Uptrend 3D) (1/81) | Thủng ST 1D nhưng trên MA7 3D & ST 3D 🟢 | STRK
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+================================================================================
+📦 ĐỘNG CƠ 1: DARVAS GRID
+================================================================================
+Mã         | Điểm   | Trạng Thái                                 | Hành Động
+| --- | --- | --- | --- |
+ASTER      | 49     | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạn | 🔴 TỪ CHỐI: Móng xốp hoặc cấu trúc chưa đủ điều kiện
+    ↳ [Macro 4H] Entry: 0.701      | SL Cứng: 0.6495     | TP 1H: 0.7212     | TP 4H: 0.7259     | [3D: MA7=0.7136 MA99=0.6712 BOLL_UP=0.7678 ST=🟢0.6116 -&gt; ➖ [3D: TRUNG TÍNH]]
+BTC        | 34     | ⚠️ Gãy Cấu Trúc 4H                         | ⛔ GÃY MA7 3D (MA7_3D=83675.6) — TỪ CHỐI
+    ↳ [Macro 4H] Entry: 81583.83   | SL Cứng: 78075.52   | TP 1H: 82940.81   | TP 4H: 84352.0    | [3D: MA7=83675.6 MA99=74031.64 BOLL_UP=87805.0 ST=🟢73542.42 -&gt; ⛔ [3D: GÃY ĐƯỜNG RAY MA7 3D - CẤM VÀO]]
+DOT        | 32     | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạn | 🔴 TỪ CHỐI: Móng xốp hoặc cấu trúc chưa đủ điều kiện
+    ↳ [Macro 4H] Entry: 1.134      | SL Cứng: 0.986      | TP 1H: 1.213      | TP 4H: 1.284      | [3D: MA7=1.181 MA99=1.239 BOLL_UP=1.337 ST=🟢0.842 -&gt; ➖ [3D: TRUNG TÍNH]]
+AERO       | 26     | ⚠️ Gãy Cấu Trúc 4H                         | 🔴 TỪ CHỐI: Móng xốp hoặc cấu trúc chưa đủ điều kiện
+    ↳ [Macro 4H] Entry: 0.8925     | SL Cứng: 0.7668     | TP 1H: 0.9807     | TP 4H: 0.9807     | [3D: MA7=0.8576 EMA50*=0.5878 BOLL_UP=0.9987 ST=🟢0.587 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+VELODROME  | 17     | ⚠️ Gãy Cấu Trúc 4H                         | 🔴 TỪ CHỐI: Móng xốp hoặc cấu trúc chưa đủ điều kiện
+    ↳ [Macro 4H] Entry: 0.0399     | SL Cứng: 0.03244    | TP 1H: 0.04841    | TP 4H: 0.04841    | [3D: MA7=0.03719 MA99=0.01976 BOLL_UP=0.0431 ST=🟢0.02547 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+================================================================================
+2026-10-17 01:19:02,413 - CN4-Controller - INFO - [DC2] Kiem tra Macro Trend 1D truoc khi cham diem Pullback...
+
+====================================================================================================
+🎯 PULLBACK SNIPER (ĐỘNG CƠ 2)
+====================================================================================================
+Mã       | Điểm  | Trạng Thái                               | C0   | C1   | C2   | C3   | C4   | Hành Động
+STRK     | 80    | ⚠️ Gãy Cấu Trúc 4H                       | +30  | 0    | 25   | 15   | 10   | 🛡️ ƯU TIÊN BẮT ĐÁY (Siêu Pullback - Đã rũ bỏ 3D)
+   ↳ [STRK] 🛡️ EW: 🔴 EW CẤP 1 — FATAL RISK: REJECT LỆNH | PB=60 | W=0 D=25 M=25 TB=10
+   ↳ [STRK] ⛔ [EW1 REJ] ⛔ EW1-A: Supertrend 1D DOWNTREND — Gãy xu hướng dài hạn
+   ↳ [STRK] OCO-1: Buy=0.07191 | SL=0.06472(-10.0%) | TP=0.08989(+25.0%) | R/R=1:2.5
+    ↳ [STRK] [Macro 4H] Entry: 0.0927     | SL Cứng: 0.06086    | TP 1H: 0.09032    | TP 4H: 0.1265     | [3D: MA7=0.06462 MA99=0.04322 BOLL_UP=0.08525 ST=🟢0.05628 -&gt; 🦅 [3D: CỘT CỜ CAO - WIDE GRID 28L]]
+   ↳ 🎯 [GRID TP2 - STRK] 0.06279 - 0.08989 | 24L | Trig: 0.07191 | SL: 0.06086 | TP: 0.08989 | 🟡 [3D STRICT ⚠️] 58đ (✗T2,T3)
+   ↳ 🦅 [WIDE GRID 3D - STRK] 0.06720 - 0.09547 | 28L | Trig: 0.07042 | SL: 0.06204 | TP: 0.09547 (Vốn 1000$ ≈ 35.71$/lưới) | 🟡 [3D STRICT ⚠️] 58đ (✗T2,T3)
+----------------------------------------------------------------------------------------------------
+FIL      | 65    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành M | +10  | 30   | 15   | 0    | 10   | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
+    ↳ [FIL] [Macro 4H] Entry: 1.107      | SL Cứng: 0.9243     | TP 1H: 1.2013     | TP 4H: 1.2764     | [3D: MA7=1.088 MA99=0.9469 BOLL_UP=1.2366 ST=🟢0.682 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🦅 [WIDE GRID 3D - FIL] 1.0771 - 1.3850 | 28L | Trig: 1.1093 | SL: 1.0233 | TP: 1.3850 (Vốn 1000$ ≈ 35.71$/lưới) | 🛡️ [3D STRICT ✅] 79đ (✗T2)
+ZK       | 60    | ⚠️ Tiền Sử Xả Dốc 7D                     | +15  | 20   | 25   | 0    | 0    | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
+    ↳ [ZK] [Macro 4H] Entry: 0.0162     | SL Cứng: 0.01209    | TP 1H: 0.01885    | TP 4H: 0.01885    | [3D: MA7=0.01394 MA99=0.01613 BOLL_UP=0.01628 ST=🟢0.01015 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+S        | 60    | ⚠️ Gãy Cấu Trúc 4H                       | +15  | 10   | 25   | 0    | 10   | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
+    ↳ [S] [Macro 4H] Entry: 0.06017    | SL Cứng: 0.04732    | TP 1H: 0.06       | TP 4H: 0.07393    | [3D: MA7=0.04543 MA99=0.04197 BOLL_UP=0.05446 ST=🟢0.03548 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+AERO     | 50    | ⚠️ Gãy Cấu Trúc 4H                       | +10  | 0    | 15   | 15   | 10   | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
+    ↳ [AERO] [Macro 4H] Entry: 0.8925     | SL Cứng: 0.7668     | TP 1H: 0.9807     | TP 4H: 0.9807     | [3D: MA7=0.8576 EMA50*=0.5878 BOLL_UP=0.9987 ST=🟢0.587 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+====================================================================================================
+
+🔍 [DC3] Kiểm tra BTC 1H Gate trước khi quét Breakout...
+✅ [DC3] BTC Gate mở: ⚠️ CẢNH BÁO: BTC gãy MA25 1H (RSI=39.5) — Fakeout Risk Cao
+
+====================================================================================================
+🚀 MOMENTUM BREAKOUT (ĐỘNG CƠ 3) | BTC: ⚠️ CẢNH BÁO: BTC gãy MA25 1H (RSI=39.5) — Fakeout Risk Cao
+====================================================================================================
+Mã       | Điểm  | C1(PA)     | C2(Vol)    | C3(OB)     | C4(R/R)    | Bonus  | Hành Động
+S        | 65    | Chưa có dấu hiệu Breakout | Volume Yếu (0.2x* MA20) - | Phe Mua Áp Đảo (Taker Buy | R/R Tối Ưu (5.8) — SL Sát | 🚀+20   | 🟡 THEO DÕI: Cần tích lũy thêm Volume
+   ↳ ⚙️ SETUP: In=0.05421 | SL=0.0478157143(-11.8%) | R/R=1:5.8
+       📄 [MOCK] TP1=0.09126(+68.3%) | TP2=0.109785(+102.5%)
+    ↳ [Macro 4H] Entry: 0.06017    | SL Cứng: 0.04732    | TP 1H: 0.06       | TP 4H: 0.07393    | [3D: MA7=0.04543 MA99=0.04197 BOLL_UP=0.05446 ST=🟢0.03548 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - S] 0.04757 - 0.10979 | 24L | Trig: 0.05421 | SL: 0.04732 | TP: 0.10979 | 🛡️ [3D STRICT ✅] 79đ (✗T2)
+----------------------------------------------------------------------------------------------------
+AMP      | 65    | Chưa có dấu hiệu Breakout | Dòng tiền Bạo Phát (4.4x* | Phe Mua Áp Đảo (Taker Buy | 🚫 HỦY SETUP (R/R 1.8 &lt; 2. | 💥+20   | 🟡 THEO DÕI: Cần tích lũy thêm Volume | 💥 TIỀN BẠO PHÁT (5.9x) → Trig đón nhúng
+   ↳ ⚙️ SETUP: In=0.000774 | SL=0.0006315714(-18.4%) | R/R=1:2.0
+       📄 [MOCK] TP1=0.0010588571(+36.8%) | TP2=0.0012012857(+55.2%)
+    ↳ [Macro 4H] Entry: 0.000723   | SL Cứng: 0.000548   | TP 1H: 0.000849   | TP 4H: 0.000849   | [3D: MA7=0.000665 MA99=0.000948 BOLL_UP=0.000753 ST=🟢0.000441 -&gt; ⚠️ [3D: ĐỤNG CẢN VĨ MÔ - KHÓA TRẦN TP2]] [3D: ⚠️ CẢN ĐÈ MA99_3D=0.000948 -&gt; Khóa TP]
+   ↳ 🎯 [GRID TP2 - AMP] 0.000590 - 0.000962 | 24L | Trig: 0.000774 | SL: 0.000548 | TP: 0.000962 [🔒 Khóa TP2 ≤ MA99_3D×1.015] | 🛡️ [3D STRICT ✅] 79đ (✗T2)
+----------------------------------------------------------------------------------------------------
+VELODROME | 60    | Chưa có dấu hiệu Breakout | Volume Yếu (1.0x* MA20) - | Phe Mua Áp Đảo (Taker Buy | R/R Tối Ưu (3.1) — SL Sát | 💥+15   | 🔴 TỪ CHỐI | 💥 TIỀN BẠO PHÁT (3.3x) → Trig đón nhúng
+   ↳ ⚙️ SETUP: In=0.03681 | SL=0.0329714286(-10.4%) | R/R=1:4.1
+       📄 [MOCK] TP1=0.052582(+42.8%) | TP2=0.060468(+64.3%)
+    ↳ [Macro 4H] Entry: 0.0399     | SL Cứng: 0.03244    | TP 1H: 0.04841    | TP 4H: 0.04841    | [3D: MA7=0.03719 MA99=0.01976 BOLL_UP=0.0431 ST=🟢0.02547 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - VELODROME] 0.03271 - 0.06047 | 24L | Trig: 0.03681 | SL: 0.03244 | TP: 0.06047 | 🟡 [3D STRICT ⚠️] 74đ (✗T3)
+----------------------------------------------------------------------------------------------------
+TUT      💰x2.3🔴 | 45    | Chưa có dấu hiệu Breakout | Volume Yếu (1.2x* MA20) - | Phe Mua Áp Đảo (Taker Buy | R/R Tối Ưu (5.5) — SL Sát | -      | 🔴 TỪ CHỐI
+    ↳ [Macro 4H] Entry: 0.02017    | SL Cứng: 0.01817    | TP 1H: 0.02041    | TP 4H: 0.02259    | [3D: MA7=0.02277 MA99=0.01744 BOLL_UP=0.04947 ST=🔴0.04999 -&gt; ⛔ [3D: GÃY ĐƯỜNG RAY MA7 3D - CẤM VÀO]]
+----------------------------------------------------------------------------------------------------
+KAITO    | 45    | Chưa có dấu hiệu Breakout | Volume Yếu (0.9x* MA20) - | Phe Mua Áp Đảo (Taker Buy | R/R Tối Ưu (4.8) — SL Sát | -      | 🔴 TỪ CHỐI
+    ↳ [Macro 4H] Entry: 0.2937     | SL Cứng: 0.2603     | TP 1H: 0.3024     | TP 4H: 0.3238     | [3D: MA7=0.3248 MA99=0.4684 BOLL_UP=0.3709 ST=🔴0.4699 -&gt; ⛔ [3D: GÃY ĐƯỜNG RAY MA7 3D - CẤM VÀO]]
+----------------------------------------------------------------------------------------------------
+====================================================================================================
+
+====================================================================================================
+🔥 HOT TREND PULLBACK (ĐỘNG CƠ 4) | Nguồn: 6 mã (&gt;=5.0%, vol&gt;=3M)
+====================================================================================================
+[SOLV  ] Điểm: 110    | RSI1H: 60.2 | Pull%: 8.0   | 🎯 🚀 VÀO LỆNH PULLBACK | 💥 TIỀN BẠO PHÁT (2.5x)
+   ↳ C1: EMA20(0.0043) &gt; EMA50(0.0041) ✅ | RSI Lý Tưởng (60.2) — Setup Full Vol | C2: Khá Sâu (-8.0% từ Swing) | C3: Kiệt Cung (29% đỉnh push) ✅ | C4: Chạm Fib0.382 (±0.0%) ✅ | C5: Taker Còn Yếu (53.6%)
+   ↳ 🌀 Macro: 🟡 TRUNG TÍNH | C0=+10đ | 💥 TIỀN BẠO PHÁT (2.5x) +20 ⇒ C0=+30đ | 0.0% | MA99 Dốc Lên (+11.2%/30D) — Đà Tăng Trưởng
+   ↳ ⚙️ SETUP: Trig=0.00421 | SL=0.0040548(-3.7%) | TP=0.00474(+12.6%) | R/R=1:3.4
+    ↳ [Macro 4H] Entry: 0.00404    | SL Cứng: 0.00332    | TP 1H: 0.00474    | TP 4H: 0.00474    | [3D: MA7=0.00416 MA99=0.00494 BOLL_UP=0.00546 ST=🟢0.00299 -&gt; ⚠️ [3D: ĐỤNG CẢN VĨ MÔ - KHÓA TRẦN TP2]] [3D: ⚠️ CẢN ĐÈ MA99_3D=0.00494 -&gt; Khóa TP]
+   ↳ 🎯 [GRID TP2 - SOLV] 0.003687 - 0.004740 | 24L | Trig: 0.004210 | SL: 0.003320 | TP: 0.004740 | 🟡 [3D STRICT ⚠️] 54đ (✗T2,T3)
+----------------------------------------------------------------------------------------------------
+[AVA   ] 💰x2.9🔴 Điểm: 80     | RSI1H: 53.5 | Pull%: 15.5  | 🎯 ⏳ CHỜ XÁC NHẬN (Pullback nông) | 💥 TIỀN BẠO PHÁT (2.6x)
+   ↳ C1: EMA20(0.2824) &gt; EMA50(0.2772) ✅ | RSI Lý Tưởng (53.5) — Setup Full Vol | C2: Quá Sâu (-15.5%) — Có Thể Gãy | C3: Vol Còn Cao (78% đỉnh push) | C4: Chạm MA25 (±0.4%) ✅ | C5: Taker Còn Yếu (45.5%)
+   ↳ 🌀 Macro: 🟡 TRUNG TÍNH | C0=+10đ | 🚀 NÉN SÁT BOLL UP 3D +20 | 💥 TIỀN BẠO PHÁT (2.6x) +15 | Trần thưởng +30 | Trần C0 +30 ⇒ C0=+30đ | 0.0% | MA99 Dốc Lên (+11.5%/30D) — Đà Tăng Trưởng
+   ↳ ⚙️ SETUP: Trig=0.2762 | SL=0.26756515(-3.1%) | TP=0.358924(+30.0%) | R/R=1:9.6
+    ↳ [Macro 4H] Entry: 0.2611     | SL Cứng: 0.1678     | TP 1H: 0.3243     | TP 4H: 0.3387     | [3D: MA7=0.2495 MA99=0.2222 BOLL_UP=0.2942 ST=🟢0.1471 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - AVA] 0.217683 - 0.358924 | 24L | Trig: 0.276200 | SL: 0.167800 | TP: 0.358924 | 🛡️ [3D STRICT ✅] 81đ (✗T2)
+----------------------------------------------------------------------------------------------------
+[DUSK  ] Điểm: 70     | RSI1H: 63.2 | Pull%: 2.3   | 🎯 ⏳ CHỜ XÁC NHẬN (Điểm 70/75) | 💥 TIỀN BẠO PHÁT (2.3x)
+   ↳ C1: EMA20(0.1173) &gt; EMA50(0.1120) ✅ | RSI Lý Tưởng (63.2) — Setup Full Vol | C2: Chưa Đủ (-2.3%) — Chờ Thêm | C3: Vol Giảm (55% đỉnh push) | C4: Xa Bệ Đỡ (EMA20 ±3.6%) | C5: Taker Còn Yếu (47.5%)
+   ↳ 🌀 Macro: 🟡 TRUNG TÍNH | C0=+10đ | 🚀 NỔ VOL VƯỢT BOLL UP 3D +25 | 💥 TIỀN BẠO PHÁT (2.3x) +15 | Trần thưởng +30 | Trần C0 +30 ⇒ C0=+30đ | 0.0% | MA99 Dốc Lên (+1.8%/30D) — Đà Tăng Trưởng
+   ↳ ⚙️ SETUP: Trig=0.1173 | SL=0.113181(-3.5%) | TP=0.14592(+24.4%) | R/R=1:7.0
+    ↳ [Macro 4H] Entry: 0.0986     | SL Cứng: 0.0699     | TP 1H: 0.1246     | TP 4H: 0.1246     | [3D: MA7=0.0914 MA99=0.0956 BOLL_UP=0.1064 ST=🟢0.0654 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - DUSK] 0.091540 - 0.145920 | 24L | Trig: 0.117300 | SL: 0.069900 | TP: 0.145920 | 🟡 [3D STRICT ⚠️] 60đ (✗T2,T3)
+----------------------------------------------------------------------------------------------------
+[AMP   ] Điểm: 55     | RSI1H: 81.2 | Pull%: 5.8   | 🎯 🔴 TỪ CHỐI (RSI Climax/Yếu) | 💥 TIỀN BẠO PHÁT (5.9x)
+   ↳ C1: EMA20(0.0007) &gt; EMA50(0.0007) ✅ | RSI Climax (81.2) — TỪ CHỐI (Chờ Xả Thực Sự) | C2: 🔴 Bơm xả (Râu trên 4.0%) — TỪ CHỐI | C3: Kiệt Cung (20% đỉnh push) ✅ | C4: Xa Bệ Đỡ (Fib0.382 ±4.0%) | C5: Taker Hồi Phục (56.2%)
+   ↳ 🌀 Macro: 🟡 TRUNG TÍNH | C0=+10đ | 💥 TIỀN BẠO PHÁT (5.9x) +20 ⇒ C0=+30đ | 0.0% | MA99 Dốc Lên (+8.1%/30D) — Đà Tăng Trưởng
+   ↳ ⚙️ SETUP: Trig=0.000772 | SL=0.000744(-3.6%) | TP=0.000849(+10.0%) | R/R=1:2.8
+    ↳ [Macro 4H] Entry: 0.000723   | SL Cứng: 0.000548   | TP 1H: 0.000849   | TP 4H: 0.000849   | [3D: MA7=0.000665 MA99=0.000948 BOLL_UP=0.000753 ST=🟢0.000441 -&gt; ⚠️ [3D: ĐỤNG CẢN VĨ MÔ - KHÓA TRẦN TP2]] [3D: ⚠️ CẢN ĐÈ MA99_3D=0.000948 -&gt; Khóa TP]
+   ↳ 🎯 [GRID TP2 - AMP] 0.000646 - 0.000849 | 24L | Trig: 0.000772 | SL: 0.000548 | TP: 0.000849 | 🛡️ [3D STRICT ✅] 79đ (✗T2)
+----------------------------------------------------------------------------------------------------
+[FIL   ] Điểm: 25     | RSI1H: 50.5 | Pull%: 5.0   | 🎯 🔴 TỪ CHỐI (RSI Climax/Yếu)
+   ↳ C1: ⚠️ Giá Dưới EMA20 (1.1414 &lt; 1.1461) | RSI Lý Tưởng (50.5) — Setup Full Vol | C2: Lý Tưởng (-5.0% từ Swing) | C3: 🔴 CÁ MẬP XẢ (Max Dump &gt; 80% Peak) — TỪ CHỐI | C4: Chạm EMA20 (±0.4%) ✅ | C5: Taker Còn Yếu (54.8%)
+   ↳ 🌀 Macro: 🔴 RỦI RO PHÂN PHỐI | C0=-20đ | 0.0% | MA99 Dốc Lên (+11.8%/30D) — Đà Tăng Trưởng
+   ↳ ⚙️ SETUP: In=1.14139998 | SL=1.10746816(-3.0%) | TP=1.508652(+32.2%) | R/R=1:10.8
+    ↳ [Macro 4H] Entry: 1.107      | SL Cứng: 0.9243     | TP 1H: 1.2013     | TP 4H: 1.2764     | [3D: MA7=1.088 MA99=0.9469 BOLL_UP=1.2366 ST=🟢0.682 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+   ↳ 🎯 [GRID TP2 - FIL] 1.0159 - 1.5087 | 24L | Trig: 1.1414 | SL: 0.924300 | TP: 1.5087 | 🛡️ [3D STRICT ✅] 79đ (✗T2)
+   ↳ 🦅 [WIDE GRID 3D - FIL] 1.0771 - 1.3850 | 28L | Trig: 1.1093 | SL: 1.0233 | TP: 1.3850 (Vốn 1000$ ≈ 35.71$/lưới) | 🛡️ [3D STRICT ✅] 79đ (✗T2)
+----------------------------------------------------------------------------------------------------
+👀 THEO DÕI THÊM: TIA (50đ 🔥)
+====================================================================================================
+
+====================================================================================================
+🏓 GRID PINGPONG (ĐỘNG CƠ 5)
+====================================================================================================
+Mã       | Điểm     | Action          | Bounces/Range        | Center/Trigger/SL
+STRKUSDT | 60.4914  | Hạng S - Siêu phẩm | 🦅 CỘT CỜ 3D +15 | F:10.0 A:12.22 Bx:9.46 R:10.0 RSI:3.81 | B:2.5x19.98% | Center: 0.08139 | Trigger: 0.08139 | SL: 0.06423
+  ↳ ⚙️ GRID: Low=0.0651982239 | Up=0.097577966 | Lưới=24 | SL Sell=0.06423 | 🟡 [3D STRICT ⚠️] 58đ (✗T2,T3)
+    ↳ [Macro 4H] Entry: 0.0927     | SL Cứng: 0.06086    | TP 1H: 0.09032    | TP 4H: 0.1265     | [3D: MA7=0.06462 MA99=0.04322 BOLL_UP=0.08525 ST=🟢0.05628 -&gt; 🦅 [3D: CỘT CỜ CAO - WIDE GRID 28L]]
+   ↳ 🦅 [WIDE GRID 3D - STRK] 0.06720 - 0.09547 | 28L | Trig: 0.07042 | SL: 0.06204 | TP: 0.09547 (Vốn 1000$ ≈ 35.71$/lưới) | 🟡 [3D STRICT ⚠️] 58đ (✗T2,T3)
+AVAUSDT  | 43.6957  | Hạng S - Siêu phẩm | F:14.0 A:5.0 Bx:9.7 R:10.0 RSI:5.0 | B:3.5x15.67% | Center: 0.28487 | Trigger: 0.28487 | SL: 0.22616
+  ↳ ⚙️ GRID: Low=0.2295498805 | Up=0.3401834526 | Lưới=24 | SL Sell=0.22616 | 🛡️ [3D STRICT ✅] 81đ (✗T2)
+    ↳ [Macro 4H] Entry: 0.2611     | SL Cứng: 0.1678     | TP 1H: 0.3243     | TP 4H: 0.3387     | [3D: MA7=0.2495 MA99=0.2222 BOLL_UP=0.2942 ST=🟢0.1471 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+ZKUSDT   | 41.7104  | Hạng S - Siêu phẩm | F:14.0 A:5.0 Bx:10.0 R:7.71 RSI:5.0 | B:3.5x11.21% | Center: 0.01712 | Trigger: 0.01712 | SL: 0.01402
+  ↳ ⚙️ GRID: Low=0.0142304723 | Up=0.0200171468 | Lưới=24 | SL Sell=0.01402 | 🟡 [3D STRICT ⚠️] 60đ (✗T2,T3)
+    ↳ [Macro 4H] Entry: 0.0162     | SL Cứng: 0.01209    | TP 1H: 0.01885    | TP 4H: 0.01885    | [3D: MA7=0.01394 MA99=0.01613 BOLL_UP=0.01628 ST=🟢0.01015 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+RLCUSDT  | 37.7160  | Hạng S - Siêu phẩm | F:6.0 A:9.6 Bx:10.0 R:8.17 RSI:3.95 | B:1.5x11.67% | Center: 0.86797 | Trigger: 0.86797 | SL: 0.71368
+  ↳ ⚙️ GRID: Low=0.7243813394 | Up=1.0115615011 | Lưới=24 | SL Sell=0.71368 | 🛡️ [3D STRICT ✅] 81đ (✗T2)
+    ↳ [Macro 4H] Entry: 0.9068     | SL Cứng: 0.7123     | TP 1H: 0.892      | TP 4H: 1.1119     | [3D: MA7=0.6332 MA99=0.423 BOLL_UP=0.853 ST=🟢0.536 -&gt; ➖ [3D: TRUNG TÍNH]]
+PYTHUSDT | 35.6259  | Hạng S - Siêu phẩm | F:8.0 A:7.53 Bx:10.0 R:6.65 RSI:3.45 | B:2.0x10.15% | Center: 0.0921 | Trigger: 0.0921 | SL: 0.07721
+  ↳ ⚙️ GRID: Low=0.0783685413 | Up=0.1058362202 | Lưới=24 | SL Sell=0.07721 | 🟡 [3D STRICT ⚠️] 74đ (✗T3)
+    ↳ [Macro 4H] Entry: 0.08634    | SL Cứng: 0.06784    | TP 1H: 0.09669    | TP 4H: 0.10094    | [3D: MA7=0.07831 MA99=0.05029 BOLL_UP=0.08896 ST=🟢0.05458 -&gt; 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]]
+====================================================================================================
+================================================================================================================================================
+🌱 BẢNG 3A: MỎ VÀNG NGỦ SAY (WATCHLIST VĨ MÔ 1D - THANG ĐIỂM 100 - TOP 5)
+================================================================================================================================================
+Mã           | Giá Live     | Điểm     | Chiết Khấu   | Nén Hộp      | Cạn Cung     | Nến Gom    | Radar Breakout                               
+------------------------------------------------------------------------------------------------------------------------------------------------
+GENIUS       | 0.2999       | 35.4     | -63.8%       | 70.0%        | Giảm 82.7%   | 2 nến      | -                                            
+    ↳ [Điểm] Tĩnh: 35.4/65 | ⏰ Awakening: +0.0/35 (MA 0 • Vol 0 • RSI 0) | 💤 Chưa thức giấc
+  ↳ ⚙️ GRID Darvas [Gom Đáy 70%] : [GENIUS] | Trig: 0.3658 | Lưới: 0.2676 - 0.364 (35L) | SL: 0.2542 | TP: N/A
+  ↳ ⚙️ GRID Darvas [Hứng Breakout 30%] : [GENIUS] | Trig: 0.364 | Lưới: 0.364 - 0.3969 (11L) | SL: 0.2542 | TP: 0.4049
+    ↳ 🛡️ [Chốt chặn] TP trần +35%
+    ↳ [Macro 4H] Entry: 0.3007     | SL Cứng: 0.2465     | TP 1H: 0.3213     | TP 4H: 0.3483     | [3D: MA7=0.3205 EMA50*=0.3812 BOLL_UP=0.3562 ST=🟢0.2288 -&gt; ⛔ [3D: GÃY ĐƯỜNG RAY MA7 3D - CẤM VÀO]]
+   ↳ 🎯 [GRID TP2 - GENIUS] 0.2570 - 0.4049 | 24L | Trig: 0.2999 | SL: 0.2465 | TP: 0.4049 | ⛔ [3D STRICT] 37đ
+SNXXB        | 9.51         | 23.0     | -53.2%       | 130.6%       | Giảm 19.8%   | 3 nến      | 🟢 Nổ Vol Mồi                                
+    ↳ [Điểm] Tĩnh: 13.0/65 | ⏰ Awakening: +10.0/35 (MA 0 • Vol 10 • RSI 0) | Vol Mồi x2.5/Taker 55%
+  ↳ ⚙️ GRID Vĩ Mô 1D (Lưới Kép) : [SNXXB] | Trig: 12.6497 (Đón lõng hộp) | Lưới: 8.78 - 12.5868 (35L) | SL: 8.341 (SL Cứng) | TP: 12.8385 (+5.0%)
+    ↳ 🛡️ [Chốt chặn] ATR1D 14%→12% • TP trần +35% • Gộp 1 lưới (hết room Breakout)
+    ↳ [Macro 4H] Entry: 10.87      | SL Cứng: 7.85       | TP 1H: 10.72      | TP 4H: 14.26      | [3D: MA7=14.54 EMA50*=14.56 BOLL_UP=20.14 ST=🟢7.83 -&gt; ⛔ [3D: GÃY ĐƯỜNG RAY MA7 3D - CẤM VÀO]]
+   ↳ 🎯 [GRID TP2 - SNXXB] 8.31 - 12.84 | 24L | Trig: 9.51 | SL: 7.85 | TP: 12.84 | ⛔ [3D STRICT] 25đ
+================================================================================================================================================
+
+=====================================================================================================================================================================
+🌊 BẢNG 3B: SIÊU SÓNG TĂNG 3D — TOP 5 (≥ 70đ / 100)
+=====================================================================================================================================================================
+Mã       | Điểm  | Hành Động         | 15M              | Giá Live    | Mua ~MA7    | SL Ray      | Cách MA7 | Vol 3D    | Cấu Trúc 3D                               
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+BAT      | 75    | ⚠️ XA RAY-Chờ hồi  | N/A              | 0.1955      | 0.1317      | 0.1265      | +48.4%   | x1.31*    | MA25↗ · &gt;MA99 · ✂️ Cắt vàng · Vượt Boll    
+    ↳ Ray 30/30 · Cross 25/25 · Boll 25/25 · Tiền 0/20 · Nến 3D đặc +10 · 🔴 FOMO -15 | Taker 49%
+    ↳ 🌊 [SÓNG 3D - BAT] 0.1271 - 0.2236 | 24L | Trig: 0.1317 | SL: 0.1265(-3.9%) | TP: 0.2236(+69.8%) | R:R=1:17.7
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ℹ️ Vol 3D = Vol dự phóng / MA5 nến 3D đã đóng (* đã nội suy, 💥 ≥ 3x) | SL Ray = max(ST 3D, MA7×0.96) | 15M chỉ hiển thị, không đổi điểm 3D
+=====================================================================================================================================================================
+
+
+====================================================================================================
+================ 🏁 BẢNG TỔNG KẾT TỐI ƯU ================
+====================================================================================================
+
+====================================================================================================
+🌟 KẾT LUẬN TỐI ƯU: CÁC ĐIỂM CHẠM VÀNG (SỰ HỘI TỤ TÍN HIỆU)
+====================================================================================================
+🏆 [HẠNG S] VỤ NỔ VĨ MÔ: VELODROME (DC3: 60đ - 🔴 TỪ CHỐI | 💥 TIỀN BẠO PHÁT (3.3x) → Trig đón nhúng)
+   ↳ Phân tích: Đã tích lũy Darvas/3A trong 14 ngày qua. Hôm nay chính thức nổ Breakout DC3.
+   ↳ Chiến lược: Mỏ vàng thức giấc. KHÔNG dùng OCO ngắn hạn. Đánh thẳng lệnh Limit hoặc Mở Wide Grid 3D để gồng ăn trọn chân sóng. SL cứng ngay nắp hộp Darvas cũ.
+   ↳ Thông số: ⚙️ SETUP: In=0.03681 | SL=0.0329714286(-10.4%) | R/R=1:4.1
+       📄 [MOCK] TP1=0.052582(+42.8%) | TP2=0.060468(+64.3%) || 🎯 [GRID TP2 - VELODROME] 0.03271 - 0.06047 | 24L | Trig: 0.03681 | SL: 0.03244 | TP: 0.06047 | 🟡 [3D STRICT ⚠️] 74đ (✗T3)
+====================================================================================================
+
+
+### 🎯 1. CHIẾN LƯỢC SPOT (Lướt sóng OCO / Bắn tỉa 1 điểm / Mã có dòng tiền bạo phát, R:R tối ưu) — Top 3
+   ⚠️ BTC RỦI RO CAO - TẠM KHÓA TÍN HIỆU SPOT
+   💡 Bổ sung 2 MÃ DỰ PHÒNG cho đủ slot (hạng 2 — chỉ đánh thăm dò / Watchlist)
+  #1 SOLV     | DC4 | 110đ | 💥 2.5x | R:R=1:3.4 | ⚠️ [3D: ĐỤNG CẢN VĨ MÔ - KHÓA TRẦN TP2]
+     ↳ ⚙️ SETUP: Trig=0.00421 | SL=0.0040548(-3.7%) | TP=0.00474(+12.6%) | R/R=1:3.4
+     ↳ 🎯 [GRID TP2 - SOLV] 0.003687 - 0.004740 | 24L | Trig: 0.004210 | SL: 0.003320 | TP: 0.004740 | 🟡 [3D STRICT ⚠️] 54đ (✗T2,T3)
+  #2 [⚠️ DỰ PHÒNG] DUSK     | DC4 | 70đ | 💥 2.3x | R:R=1:7.0 | ⏳ CHỜ XÁC NHẬN (Điểm 70/75) | 💥 TIỀN BẠO | 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]
+     ↳ ⚙️ SETUP: Trig=0.1173 | SL=0.113181(-3.5%) | TP=0.14592(+24.4%) | R/R=1:7.0
+     ↳ 🎯 [GRID TP2 - DUSK] 0.091540 - 0.145920 | 24L | Trig: 0.117300 | SL: 0.069900 | TP: 0.145920 | 🟡 [3D STRICT ⚠️] 60đ (✗T2,T3)
+  #3 [⚠️ DỰ PHÒNG] STRK     | DC2 | 80đ | R:R=1:2.5 | ⚠️ EW CẤP 1 | 🛡️ ƯU TIÊN BẮT ĐÁY (Siêu Pullback - Đã r | 🦅 [3D: CỘT CỜ CAO - WIDE GRID 28L]
+     ↳ ⚙️ SETUP: In=0.07191 | SL=0.06472(-10.0%) | TP=0.08989(+25.0%) | R/R=1:2.5
+     ↳ 🎯 [GRID TP2 - STRK] 0.06279 - 0.08989 | 24L | Trig: 0.07191 | SL: 0.06086 | TP: 0.08989 | 🟡 [3D STRICT ⚠️] 58đ (✗T2,T3)
+     ↳ 🦅 [WIDE GRID 3D - STRK] 0.06720 - 0.09547 | 28L | Trig: 0.07042 | SL: 0.06204 | TP: 0.09547 (Vốn 1000$ ≈ 35.71$/lưới) | 🟡 [3D STRICT ⚠️] 58đ (✗T2,T3)
+
+### 🥅 2. CHIẾN LƯỢC GRID TP2 (Lưới đón Pullback 2-5 ngày) — Top 3
+   💡 Bổ sung 1 MÃ DỰ PHÒNG cho đủ slot (hạng 2 — chỉ đánh thăm dò / Watchlist)
+  #1 AVA      | DC4 | 🛡️ [3D STRICT ✅] 81đ (✗T2) | 80đ | 💥 2.9x | R:R=1:9.6 | 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]
+     ↳ 🎯 [GRID TP2 - AVA] 0.217683 - 0.358924 | 24L | Trig: 0.276200 | SL: 0.167800 | TP: 0.358924
+  #2 FIL      | DC4 | 🛡️ [3D STRICT ✅] 79đ (✗T2) | 25đ | R:R=1:10.8 | 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]
+     ↳ 🎯 [GRID TP2 - FIL] 1.0159 - 1.5087 | 24L | Trig: 1.1414 | SL: 0.924300 | TP: 1.5087
+  #3 [⚠️ DỰ PHÒNG] VELODROME | 🏆 HẠNG S | 🟡 [3D STRICT ⚠️] 74đ (✗T3) | DC3 | 60đ | 💥 3.3x | R:R=1:4.1 | ⛔ NÉ GRID (Gãy Cấu Trúc 4H) | 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]
+     ↳ 🎯 [GRID TP2 - VELODROME] 0.03271 - 0.06047 | 24L | Trig: 0.03681 | SL: 0.03244 | TP: 0.06047
+
+### 🦅 3. CHIẾN LƯỢC WIDE GRID 3D (Nuôi Cột cờ / Siêu sóng 1-3 tuần) — Top 2
+   💡 Bổ sung 1 MÃ DỰ PHÒNG cho đủ slot (hạng 2 — chỉ đánh thăm dò / Watchlist)
+  #1 FIL      | DC2 | 🛡️ [3D STRICT ✅] 79đ (✗T2) | 65đ | Vola24H 10.9% | 🏷️ Pullback Sniper | 🚀 [3D: CHÂN SÓNG BỨT PHÁ - SIÊU SÓNG]
+     ↳ 🦅 [WIDE GRID 3D - FIL] 1.0771 - 1.3850 | 28L | Trig: 1.1093 | SL: 1.0233 | TP: 1.3850 (Vốn 1000$ ≈ 35.71$/lưới)
+  #2 [⚠️ DỰ PHÒNG] STRK     | DC2 | 🟡 [3D STRICT ⚠️] 58đ (✗T2,T3) | 80đ | Vola24H 25.1% | 🏷️ Pullback Sniper | R:R=1:2.5 | 🦅 [3D: CỘT CỜ CAO - WIDE GRID 28L]
+     ↳ 🦅 [WIDE GRID 3D - STRK] 0.06720 - 0.09547 | 28L | Trig: 0.07042 | SL: 0.06204 | TP: 0.09547 (Vốn 1000$ ≈ 35.71$/lưới)
+
+### 🌊 4. CHIẾN LƯỢC SÓNG 3D (Bảng 3B — Đón nhúng MA7 3D, nuôi sóng) — Top 3
+   Không có mã Sóng 3D đạt chuẩn.
+====================================================================================================
+👀 DANH SÁCH ĐÁNG THEO DÕI (Chưa đạt chuẩn bóp cò):
+• XA RAY (Chờ pullback về MA7): BAT (+48%)
+====================================================================================================
+
+📊 BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM 14 NGÀY V2.0 (TỪ 2026-10-06 00:00:00 ĐẾN 2026-10-17 01:18:35) (TỔNG 179 MÃ)
+====================================================================================================================================================
+Hạng  | Mã      | Tổng   | Tier (Phân Hạng)      | MÓNG(40) | └ 3D(25) | └ Grid(10) | └ 3AB(5) | └ HộiTụ(10) | Đẩy(40) | Tiền(20) | ×HệSố 
+----------------------------------------------------------------------------------------------------------------------------------------------------
+#1    | PYTH    | 84.5   | 💎 Tier S (Kim Cương)  | 27.8     | 25       | 0          | 0        | 5           | 24.6    | 18.0     | 🚀x1.2 
+#2    | VELODROME | 76.8   | Tier A (Xu Hướng)     | 35.0     | 25       | 0          | 0        | 10          | 9.0     | 20.0     | 🚀x1.2 
+#3    | TIA     | 60.9   | Tier A (Xu Hướng)     | 26.2     | 25       | 0          | 0        | 5           | 22.2    | 12.5     | x1.0  
+#4    | INJ     | 55.9   | Tier B (Lướt Sóng)    | 35.8     | 25       | 10         | 0        | 5           | 11.1    | 9.0      | x1.0  
+#5    | STRK    | 46.3   | Tier B (Lướt Sóng)    | 22.5     | 25       | 0          | 0        | 0           | 13.5    | 10.3     | x1.0  
+#6    | S       | 41.6   | Tier B (Lướt Sóng)    | 22.5     | 25       | 0          | 5        | 5           | 13.4    | 5.8      | x1.0  
+====================================================================================================================================================
+
+💎 THIẾT LẬP LỆNH CHO CÁC MÃ ĐẠT TIÊU CHUẨN TIER S (KIM CƯƠNG) [1 mã]:
+  ⭐ PYTH (84.5đ - 💎 Tier S (Kim Cương)) - Khuyến nghị: 🟢 DUYỆT TỰ ĐỘNG (Đánh Full Volume)
+     ↳ ⚙️ SETUP OCO: Buy=0.08215 | SL=0.07518(-8.5%) | TP=0.08896(+8.3%) | R:R=1:1.0
+     ↳ 🎯 [GRID TP2 - PYTH] 0.07367 - 0.08896 | 23L | Trig: 0.08215 | SL: 0.07217 | TP: 0.08896
+     ↳ 🦅 [WIDE GRID 3D - PYTH] 0.08144 - 0.09963 | 28L | Trig: 0.08148 | SL: 0.07518 | TP: 0.09963 (Vốn 1000$ ≈ 35.71$/lưới)
+====================================================================================================================================================
+👀 TIER C (25–39đ - Theo Dõi / Chờ Xác Nhận) [8 mã]:
+   ZK, AMP, RLC, APT, AVA, WAL, DUSK, SOLV
+----------------------------------------------------------------------------------------------------------------------------------------------------
+⛔ TIER F (&lt; 25đ - Rủi Ro / Mất Đà Tăng / Cạn Thanh Khoản) [165 mã]:
+   NEAR, AVAX, BAT, ZRO, DOT, FIL, AERO, OSMO, OP, NIL, CRCLB, QNT, BERA, TSLAB, MEGA, MARSCOIN, TUT, KAITO, RAY, TRUMP, NXPC, ARB, PENDLE,
+   JST, KMNO, ADA, WLD, ASTER, SEI, ZAMA, MUBARAK, PLUME, PUMP, PROM, TAO, PEPE, OPN, ICP, AAVE, MAGIC, GENIUS, RENDER, SUI, W, TON, BCH,
+   UNI, GLMR, ONDO, RSR, ETHFI, CHIP, ENA, XRP, SOXSB, INIT, SNXXB, ZEC, GNS, FET, BTC, OPEN, XPL, CRV, HYPE, STX, LUNC, SUPER, NVDAB,
+   PENGU, LDO, SOL, GRAM, SOXLB, ATOM, HBAR, LINK, MUB, POL, DOGE, AXL, DODO, BLUR, GTC, ACE, BIO, LTC, ORDI, PARTI, SHIB, SKL, AAOIB, ACM,
+   ALICE, ALLO, ALPINE, ALT, ARPA, AXS, BANK, BICO, BMT, BOME, C98, CAKE, CFG, CFX, CTSI, CYBER, EDEN, ERA, GALA, GIGGLE, GMT, GNO, GPS,
+   HEI, HEMI, HFT, HOME, HUMA, KORUB, LA, LPT, LRC, LUMIA, MET, MORPHO, MSTRB, NBISB, NFP, ONG, RAD, RE, RED, RONIN, SKHYB, SNDKB, SPCXB,
+   SUN, USDE, UTK, VANRY, VIRTUAL, WLFI, XAI, XLM, 币安人生, CTK, MANTA, OGN, INTCB, KAIA, 牛来, BNB, EIGEN, EPIC, ETH, QQQB, TQQQB, USUAL, ANIME,
+   DASH, FF, ZIL
+====================================================================================================================================================
+
+==============================================================================================================
+📊 BẢNG THEO DÕI BIẾN THIÊN TÍN NHIỆM (DELTA AUDIT)
+==============================================================================================================
+
+📈 [TOP 10 TĂNG ĐIỂM UY TÍN] (Dòng tiền gia tốc / Thoát đáy vĩ mô)
+--------------------------------------------------------------------------------------------------------------
+Mã       | Tier                   | Hiện Tại  | Δ 1-Phiên    | Δ 4-Phiên    | Đánh Giá            
+--------------------------------------------------------------------------------------------------------------
+VELODROME | Tier A (Xu Hướng)      | 76.8      | ⚪ 0.0      | 🟢 +28.8    | 🟢 Tích lũy tăng     
+
+📉 [TOP 10 GIẢM ĐIỂM CẢNH BÁO] (Lực mua suy yếu / Bị phân phối)
+--------------------------------------------------------------------------------------------------------------
+Mã       | Tier                   | Hiện Tại  | Δ 1-Phiên    | Δ 4-Phiên    | Đánh Giá            
+--------------------------------------------------------------------------------------------------------------
+  (Không có mã điểm cao nào ghi nhận suy giảm bất thường)
+==============================================================================================================
+
+🚀 THIẾT LẬP LỆNH CHO TOP 3 MÃ TĂNG NHIỀU NHẤT (DÒNG TIỀN GIA TỐC) [1 mã]:
+  ⭐ VELODROME (76.8đ - Tier A (Xu Hướng)) - Khuyến nghị: 🟢 DUYỆT TỰ ĐỘNG (Cấu trúc ổn định)
+     ↳ ⚙️ SETUP OCO: Buy=0.03756 | SL=0.03570(-5.0%) | TP=0.04310(+14.7%) | R:R=1:3.0
+     ↳ 🎯 [GRID TP2 - VELODROME] 0.03499 - 0.04310 | 24L | Trig: 0.03756 | SL: 0.03428 | TP: 0.04310
+     ↳ 🦅 [WIDE GRID 3D - VELODROME] 0.03682 - 0.04827 | 28L | Trig: 0.03710 | SL: 0.03498 | TP: 0.04827 (Vốn 1000$ ≈ 35.71$/lưới)
+==============================================================================================================
+
 
 ============================================================================================================================================================================================================================================================================================================
+============================================================================================================================================================================================================================================================================================================
 🏆 BẢNG CHẤM ĐIỂM REBALANCE / SPOT GRID (THANG ĐIỂM 100 - TUYẾN TÍNH & 4 KHÔNG)
-⏰ Thời điểm cập nhật (UTC+7): 2026-08-20 11:56:23
+⏰ Thời điểm cập nhật (UTC+7): 2026-10-17 01:18:35
 ============================================================================================================================================================================================================================================================================================================
 Hạng | Mã      | Trạng Thái                   | Phân Loại Grid                         | TỔNG  | Chế Độ         | Tín Hiệu Cảnh Báo                                            | Đ.Nến15M  | Đ.Râu24H  | Đ.Entry  | Đ.RSI  | RSI1H  | Giá Live       | Giá Limit        | Cần Giảm  | Vol24H(M)  | Vola24H% 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-#1   | DASH    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 70.5  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (62.8)  •  🟢 Rút chân xịn 15M (80%) | 100.0     | 53.6      | 40.0     | 98.7   | 62.8   | 31.6800        | 30.5050          | 3.71%     | $5.8M      | 9.1%     
-#2   | DOT     | 🟢 ĐANG TĂNG / PHỤC HỒI      | 🛡️ GRID HẸP (12 Lưới)                   | 59.9  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 85.0      | 51.2      | 40.0     | 95.2   | 57.0   | 0.78700000     | 0.77804000       | 1.14%     | $7.5M      | 7.3%     
-#3   | PAXG    | 🚀 UPTREND MẠNH (Leader)     | 🛡️ GRID HẸP (12 Lưới)                   | 57.9  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 40.1      | 48.9      | 60.0     | 97.6   | 61.0   | 4476.6200      | 4442.3356        | 0.77%     | $38.6M     | 4.2%     
-#4   | BCH     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 73.9  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (61.7)  •  🟢 Net Rút Chân Dương (+9 | 24.3      | 74.8      | 40.0     | 98.0   | 61.7   | 211.4000       | 206.2582         | 2.43%     | $36.7M     | 6.0%     
-#5   | ZRO     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 69.2  | 🌊 Tích Lũy    | 🟢 Rút chân xịn 15M (50%)  •  ⚠️ Net Giật Râu Âm (-5.7%)  •   | 85.0      | 35.9      | 40.0     | 96.5   | 65.7   | 0.87500000     | 0.80255280       | 8.28%     | $4.4M      | 10.3%    
-#6   | NEAR    | 🟢 ĐANG TĂNG / PHỤC HỒI      | 🛡️ GRID HẸP (12 Lưới)                   | 67.2  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 24.3      | 35.8      | 40.0     | 97.4   | 60.7   | 1.7220         | 1.6729           | 2.85%     | $32.2M     | 11.7%    
-#7   | ZEC     | 🟢 ĐANG TĂNG / PHỤC HỒI      | 🛡️ GRID HẸP (12 Lưới)                   | 66.1  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 5.0       | 40.2      | 80.0     | 96.7   | 59.5   | 552.5200       | 537.0012         | 2.81%     | $162.2M    | 15.7%    
-#8   | OP      | 🚀 UPTREND MẠNH (Leader)     | 🛡️ GRID HẸP (12 Lưới)                   | 65.7  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 50.0      | 37.3      | 40.0     | 99.0   | 63.3   | 0.08860000     | 0.08546400       | 3.54%     | $3.2M      | 13.4%    
-#9   | TSLAB   | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 65.1  | 🌊 Tích Lũy    | 🟢 Net Rút Chân Dương (+6.2%)  •  🌊 4H Tích Lũy: HL✅ + MA↑ | 94.2      | 65.4      | 40.0     | 57.9   | 73.4   | 350.7600       | 343.6666         | 2.02%     | $4.7M      | 5.1%     
-#10  | LDO     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 65.1  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (63.1)  •  ⚠️ Net Giật Râu Âm (-5.4%) | 27.5      | 36.4      | 40.0     | 98.9   | 63.1   | 0.33410000     | 0.31009476       | 7.19%     | $5.2M      | 13.2%    
-#11  | XLM     | 🚀 UPTREND MẠNH (Leader)     | 🛡️ GRID HẸP (12 Lưới)                   | 64.1  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 27.5      | 38.5      | 40.0     | 97.3   | 60.4   | 0.16790000     | 0.16344800       | 2.65%     | $15.6M     | 11.0%    
-#12  | PEPE    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 63.9  | 🌊 Tích Lũy    | ⚠️ RSI 1H Quá Mua (78.9) - Rủi Ro Đu Đỉnh  •  🌊 4H Tích Lũy: | 73.3      | 60.1      | 30.0     | 42.1   | 78.9   | 0.0000029600   | 0.0000026560     | 10.27%    | $35.4M     | 15.6%    
-#13  | RENDER  | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 62.8  | 🌊 Tích Lũy    | 🟢 Nến 15M xanh đẹp  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng | 35.0      | 41.8      | 40.0     | 93.1   | 66.4   | 1.3700         | 1.2891           | 5.90%     | $5.2M      | 11.4%    
-#14  | PENGU   | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 62.3  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (63.8)  •  🟢 Nến 15M xanh đẹp  •  ⚠️ | 43.9      | 36.6      | 40.0     | 99.3   | 63.8   | 0.00648600     | 0.00613890       | 5.35%     | $7.1M      | 8.6%     
-#15  | PLUME   | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 62.0  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (63.6)  •  🌊 4H Tích Lũy: HL✅ + MA | 27.5      | 43.3      | 40.0     | 99.2   | 63.6   | 0.01321000     | 0.01274099       | 3.55%     | $43.5M     | 9.0%     
-#16  | ICP     | 🚀 UPTREND MẠNH (Leader)     | 🛡️ GRID HẸP (12 Lưới)                   | 61.9  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 0.0       | 50.8      | 90.0     | 96.1   | 58.5   | 2.2930         | 2.2462           | 2.04%     | $7.0M      | 10.3%    
-#17  | COINB   | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 61.8  | 🌊 Tích Lũy    | 🟢 Nến 15M xanh đẹp  •  🟢 Net Rút Chân Dương (+6.3%)  •  🌊 | 50.0      | 65.8      | 40.0     | 55.2   | 74.0   | 165.8600       | 152.9051         | 7.81%     | $3.2M      | 14.6%    
-#18  | SUI     | 🚀 UPTREND MẠNH (Leader)     | 🛡️ GRID HẸP (12 Lưới)                   | 61.4  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 7.6       | 36.2      | 40.0     | 98.4   | 62.3   | 0.70050000     | 0.68143200       | 2.72%     | $43.2M     | 11.0%    
-#19  | PUMP    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 59.9  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (60.8)  •  Chỉnh -3.2% Đỉnh 1H  •    | 13.6      | 43.5      | 70.0     | 97.5   | 60.8   | 0.00322400     | 0.00292350       | 9.32%     | $28.8M     | 13.5%    
-#20  | ESP     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 59.8  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (64.3)  •  🟢 Rút chân xịn 15M (67%) | 96.7      | 44.8      | 20.0     | 99.6   | 64.3   | 0.08042000     | 0.07392378       | 8.08%     | $3.1M      | 14.1%    
-#21  | UNI     | 🔴 DOWNTREND (Rủi Ro)        | 🛡️ GRID HẸP (12 Lưới)                   | 59.1  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 16.3      | 60.5      | 40.0     | 97.1   | 60.1   | 3.6010         | 3.4918           | 3.03%     | $29.1M     | 15.1%    
-#22  | ADA     | 🚀 UPTREND MẠNH (Leader)     | 🛡️ GRID HẸP (12 Lưới)                   | 58.9  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 5.0       | 44.9      | 40.0     | 94.9   | 56.5   | 0.18340000     | 0.18002800       | 1.84%     | $35.9M     | 10.7%    
-#23  | ASTER   | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 56.8  | 🌊 Tích Lũy    | ⚠️ RSI 1H Quá Mua (82.1) - Rủi Ro Đu Đỉnh  •  🟢 Nến 15M xanh | 60.8      | 32.7      | 40.0     | 35.8   | 82.1   | 0.64900000     | 0.60915060       | 6.14%     | $10.8M     | 8.7%     
-#24  | MSTRB   | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 56.3  | 🌊 Tích Lũy    | 🟢 Nến 15M xanh đẹp  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng | 32.4      | 46.4      | 30.0     | 63.3   | 72.3   | 108.2200       | 97.7555          | 9.67%     | $8.2M      | 18.9%    
-#25  | SEI     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 56.2  | 🌊 Tích Lũy    | ⚠️ Net Giật Râu Âm (-7.4%)  •  🌊 4H Tích Lũy: HL✅ + MA↑ → K | 17.3      | 31.6      | 40.0     | 89.8   | 67.0   | 0.04118000     | 0.03983579       | 3.26%     | $3.2M      | 8.5%     
-#26  | TAO     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 56.2  | 🌊 Tích Lũy    | 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H                | 27.5      | 38.3      | 40.0     | 99.8   | 65.0   | 204.9000       | 197.0162         | 3.85%     | $23.7M     | 11.3%    
-#27  | HBAR    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 56.1  | 🌊 Tích Lũy    | 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H                | 17.0      | 42.2      | 40.0     | 88.4   | 67.3   | 0.07106000     | 0.06717621       | 5.47%     | $8.5M      | 6.6%     
-#28  | INJ     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 56.0  | 🌊 Tích Lũy    | ⚠️ RSI 1H Quá Mua (82.4) - Rủi Ro Đu Đỉnh  •  🟢 Nến 15M xanh | 38.7      | 49.9      | 30.0     | 35.1   | 82.4   | 4.6820         | 4.2216           | 9.83%     | $6.1M      | 13.2%    
-#29  | LTC     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 55.8  | 🌊 Tích Lũy    | 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H                | 12.5      | 42.7      | 40.0     | 74.7   | 70.1   | 46.9100        | 45.0517          | 3.96%     | $17.7M     | 6.6%     
-#30  | XAUT    | 🚀 UPTREND MẠNH (Leader)     | 🛡️ GRID HẸP (12 Lưới)                   | 55.7  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 38.3      | 50.9      | 60.0     | 98.2   | 61.9   | 4469.8400      | 4433.2608        | 0.82%     | $48.6M     | 4.2%     
-#31  | ZAMA    | 🔴 DOWNTREND (Rủi Ro)        | 🛡️ GRID HẸP (12 Lưới)                   | 55.7  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 42.5      | 44.3      | 60.0     | 97.9   | 61.5   | 0.04609000     | 0.04392600       | 4.70%     | $4.6M      | 15.3%    
-#32  | AAVE    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 55.7  | 🌊 Tích Lũy    | 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H                | 6.6       | 50.9      | 40.0     | 74.9   | 70.0   | 95.9200        | 89.5206          | 6.67%     | $16.5M     | 11.7%    
-#33  | DOGE    | 🟢 ĐANG TĂNG / PHỤC HỒI      | 🛡️ GRID HẸP (12 Lưới)                   | 55.1  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  ⚠️ Net  | 15.4      | 34.7      | 40.0     | 89.1   | 67.2   | 0.07483000     | 0.07249280       | 3.12%     | $81.1M     | 9.3%     
-#34  | AVAX    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 54.8  | 🌊 Tích Lũy    | 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H                | 9.4       | 38.0      | 40.0     | 81.1   | 68.8   | 6.7590         | 6.4453           | 4.64%     | $27.6M     | 9.3%     
-#35  | APT     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 54.0  | 🌊 Tích Lũy    | 🟢 Nến 15M xanh đẹp  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng | 50.0      | 57.0      | 40.0     | 95.0   | 66.0   | 0.56100000     | 0.53602680       | 4.45%     | $4.8M      | 7.6%     
-#36  | SOL     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 54.0  | 🌊 Tích Lũy    | 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H                | 23.2      | 44.8      | 40.0     | 69.1   | 71.2   | 84.8500        | 78.0230          | 8.05%     | $370.5M    | 13.8%    
-#37  | EUL     | 🔴 DOWNTREND (Rủi Ro)        | 🛡️ GRID HẸP (12 Lưới)                   | 53.9  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 20.0      | 46.6      | 80.0     | 94.2   | 55.3   | 1.2680         | 1.2524           | 1.23%     | $3.1M      | 11.8%    
-#38  | BTC     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 53.9  | 🌊 Tích Lũy    | ⚠️ RSI 1H Quá Mua (75.1) - Rủi Ro Đu Đỉnh  •  🌊 4H Tích Lũy: | 14.8      | 41.0      | 40.0     | 49.7   | 75.1   | 69500.0000     | 65283.2656       | 6.07%     | $2175.8M   | 9.1%     
-#39  | SHIB    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 52.8  | 🌊 Tích Lũy    | ⚠️ RSI 1H Quá Mua (78.8) - Rủi Ro Đu Đỉnh  •  🟢 Net Rút Chân | 27.5      | 64.3      | 40.0     | 42.3   | 78.8   | 0.0000047900   | 0.0000045213     | 5.61%     | $6.0M      | 8.8%     
-#40  | CAKE    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 52.8  | 🌊 Tích Lũy    | 🟢 Nến 15M xanh đẹp  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng | 32.0      | 44.5      | 40.0     | 94.2   | 66.2   | 1.6080         | 1.5089           | 6.16%     | $4.5M      | 7.5%     
-#41  | XRP     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 52.1  | 🌊 Tích Lũy    | 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H                | 10.9      | 40.8      | 40.0     | 94.6   | 66.1   | 1.0997         | 1.0233           | 6.95%     | $212.9M    | 13.7%    
-#42  | ENA     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 52.0  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (64.0)  •  🌊 4H Tích Lũy: HL✅ + MA | 5.0       | 42.0      | 40.0     | 99.4   | 64.0   | 0.09280000     | 0.08546922       | 7.90%     | $16.0M     | 14.0%    
-#43  | ONDO    | 🟢 ĐANG TĂNG / PHỤC HỒI      | 🛡️ GRID HẸP (12 Lưới)                   | 51.9  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 32.9      | 44.2      | 40.0     | 95.4   | 57.3   | 0.34420000     | 0.33665600       | 2.19%     | $13.9M     | 10.2%    
-#44  | XPL     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 51.2  | 🌊 Tích Lũy    | ⚠️ Râu trên xả 15M (59%)  •  ⚠️ Râu trên xả 1H (62%)  •  ⚠️ Net | 0.0       | 31.6      | 60.0     | 77.8   | 69.4   | 0.08151000     | 0.07764067       | 4.75%     | $30.3M     | 10.6%    
-#45  | BNB     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 50.9  | 🌊 Tích Lũy    | 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  🟢 Sát nền | 7.2       | 41.1      | 30.0     | 93.2   | 66.4   | 626.6500       | 611.1304         | 2.48%     | $162.3M    | 5.8%     
-#46  | FIL     | 🟢 ĐANG TĂNG / PHỤC HỒI      | 🛡️ GRID HẸP (12 Lưới)                   | 50.5  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 18.5      | 41.8      | 40.0     | 97.1   | 60.1   | 0.67130000     | 0.65533600       | 2.38%     | $7.2M      | 10.6%    
-#47  | LINK    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 50.2  | 🌊 Tích Lũy    | 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H                | 16.0      | 53.8      | 40.0     | 84.1   | 68.2   | 10.4640        | 9.7088           | 7.22%     | $58.2M     | 13.9%    
-#48  | FET     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 50.0  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (63.7)  •  🟢 Nến 15M xanh đẹp  •    | 32.0      | 43.5      | 40.0     | 99.2   | 63.7   | 0.13030000     | 0.12416574       | 4.71%     | $8.4M      | 10.2%    
-#49  | CRCLB   | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 49.3  | 🌊 Tích Lũy    | ⚠️ RSI 1H Quá Mua (76.6) - Rủi Ro Đu Đỉnh  •  🟢 Net Rút Chân | 85.0      | 68.3      | 10.0     | 46.7   | 76.6   | 81.1200        | 74.4432          | 8.23%     | $20.4M     | 16.2%    
-#50  | VIRTUAL | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 48.6  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (64.9)  •  ⚠️ Net Giật Râu Âm (-6.1%) | 2.5       | 34.8      | 40.0     | 100.0  | 64.9   | 0.60980000     | 0.57933024       | 5.00%     | $4.6M      | 9.4%     
-#51  | DEXE    | 🟢 ĐANG TĂNG / PHỤC HỒI      | 🛡️ GRID HẸP (12 Lưới)                   | 48.3  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 9.1       | 59.4      | 80.0     | 91.9   | 51.5   | 1.9020         | 1.8821           | 1.05%     | $4.4M      | 9.6%     
-#52  | CRV     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 48.1  | 🌊 Tích Lũy    | 🟢 Nến 15M xanh đẹp  •  ⚠️ Net Giật Râu Âm (-7.7%)  •  🌊 4H  | 64.0      | 30.7      | 20.0     | 63.1   | 72.4   | 0.26520000     | 0.24834756       | 6.35%     | $4.0M      | 13.0%    
-#53  | ARB     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 47.3  | 🌊 Tích Lũy    | ⚠️ RSI 1H Quá Mua (76.8) - Rủi Ro Đu Đỉnh  •  🟢 Nến 15M xanh | 64.0      | 39.8      | 40.0     | 46.4   | 76.8   | 0.08790000     | 0.07754178       | 11.78%    | $14.0M     | 20.2%    
-#54  | WBTC    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 42.9  | 🌊 Tích Lũy    | ⚠️ RSI 1H Quá Mua (75.2) - Rủi Ro Đu Đỉnh  •  🌊 4H Tích Lũy: | 23.6      | 52.6      | 40.0     | 49.6   | 75.2   | 69526.4300     | 65293.2766       | 6.09%     | $4.9M      | 9.1%     
-#55  | ETH     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 41.5  | 🌊 Tích Lũy    | ⚠️ RSI 1H Quá Mua (82.0) - Rủi Ro Đu Đỉnh  •  ⚠️ Net Giật Râu  | 0.0       | 36.6      | 40.0     | 36.0   | 82.0   | 2251.9400      | 1969.3674        | 12.55%    | $1902.6M   | 22.4%    
-#56  | PENDLE  | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 39.8  | 🌊 Tích Lũy    | 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Tăng nón | 27.5      | 48.4      | 40.0     | 51.5   | 74.7   | 1.4890         | 1.3397           | 10.03%    | $5.0M      | 18.4%    
-#57  | SKHYB   | 🟢 ĐANG TĂNG / PHỤC HỒI      | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 34.8  | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (61.9)  •  🔴 Nến 15M xả thượt  •  ⚠️ | 57.4      | 57.7      | 30.0     | 98.1   | 61.9   | 165.0900       | 162.3143         | 1.68%     | $28.3M     | 11.3%    
-#58  | BIO     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 21.3  | 🌊 Tích Lũy    | 🟢 Nến 15M xanh đẹp  •  ⚠️ Net Giật Râu Âm (-6.2%)  •  ⚠️ SAFE | 96.7      | 34.6      | 60.0     | 98.3   | 65.3   | 0.02864000     | 0.02551936       | 10.90%    | $6.2M      | 19.6%    
-#59  | KORUB   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 20.1  | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (61.8)  •  🔴 Nến 15M xả thượt  •  ⚠️ | 57.0      | 50.6      | 80.0     | 98.1   | 61.8   | 20.7900        | 20.5114          | 1.34%     | $8.1M      | 21.2%    
-#60  | EDEN    | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 18.2  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 59.9      | 50.0      | 90.0     | 91.0   | 50.0   | 0.05525000     | 0.05100880       | 7.68%     | $7.3M      | 24.5%    
-#61  | MUBARAK | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 17.5  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 75.1      | 61.2      | 70.0     | 93.3   | 53.8   | 0.02028000     | 0.01992880       | 1.73%     | $14.9M     | 50.0%    
-#62  | WLD     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 14.8  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (64.2)  •  🔴 Nến 15M xả thượt  •  ⚠️ | 0.0       | 42.3      | 40.0     | 99.5   | 64.2   | 0.36020000     | 0.34554312       | 4.07%     | $34.6M     | 18.4%    
-#63  | WLFI    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 13.3  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (59.2)  •  🟢 Nến 15M xanh đẹp  •  ⚠️ | 50.0      | 20.3      | 40.0     | 96.5   | 59.2   | 0.06190000     | 0.06075426       | 1.85%     | $8.3M      | 5.7%     
-#64  | GIGGLE  | 🟢 ĐANG TĂNG / PHỤC HỒI      | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 13.2  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 85.0      | 47.8      | 40.0     | 93.5   | 54.1   | 33.8800        | 33.4648          | 1.23%     | $3.4M      | 7.9%     
-#65  | MET     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 12.1  | 🌊 Tích Lũy    | ⚠️ RSI 1H Quá Mua (75.8) - Rủi Ro Đu Đỉnh  •  🟢 Nến 15M xanh | 39.1      | 54.1      | 35.0     | 48.3   | 75.8   | 0.21510000     | 0.17432328       | 18.96%    | $5.5M      | 32.8%    
-#66  | TREE    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 11.3  | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (53.1)  •  🟢 Net Rút Chân Dương (+5 | 32.0      | 64.2      | 10.0     | 92.9   | 53.1   | 0.03800000     | 0.03501420       | 7.86%     | $12.3M     | 45.0%    
-#67  | KAITO   | 🟢 ĐANG TĂNG / PHỤC HỒI      | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 10.6  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 9.5       | 41.8      | 90.0     | 93.2   | 53.7   | 0.34890000     | 0.34639200       | 0.72%     | $4.3M      | 6.9%     
-#68  | TRUMP   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 9.4   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 10.6      | 31.8      | 90.0     | 99.1   | 63.5   | 1.6620         | 1.5278           | 8.07%     | $38.9M     | 33.2%    
-#69  | ETHFI   | 🟢 ĐANG TĂNG / PHỤC HỒI      | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 8.8   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 2.0       | 33.8      | 60.0     | 95.7   | 57.9   | 0.51410000     | 0.50250000       | 2.26%     | $5.6M      | 11.4%    
-#70  | TON     | ⚠️ CHỈNH NGẮN HẠN (Đợi Nền)   | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 8.4   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 11.4      | 36.8      | 40.0     | 91.0   | 50.1   | 1.6000         | 1.5771           | 1.43%     | $7.7M      | 3.9%     
-#71  | WBETH   | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | ⛔ NÉ GRID (Bơm Xả Râu Dài)            | 5.7   | 🌊 Tích Lũy    | ⚠️ RSI 1H Quá Mua (82.2) - Rủi Ro Đu Đỉnh  •  ⚠️ Net Giật Râu  | 0.0       | 29.6      | 40.0     | 35.6   | 82.2   | 2483.9200      | 2174.4658        | 12.46%    | $5.2M      | 22.4%    
-#72  | GRAM    | 🟢 ĐANG TĂNG / PHỤC HỒI      | ⛔ NÉ GRID (Bơm Xả Râu Dài)            | 5.4   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 20.0      | 23.1      | 40.0     | 95.3   | 57.2   | 1.3540         | 1.3408           | 0.97%     | $6.5M      | 5.4%     
-#73  | MUB     | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 3.9   | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (54.0)  •  🔴 Nến 15M xả thượt  •  X | 5.0       | 59.4      | 60.0     | 93.4   | 54.0   | 951.5500       | 950.2571         | 0.14%     | $15.0M     | 5.8%     
-#74  | MRVLB   | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 3.9   | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (62.7)  •  🔴 Nến 15M xả thượt  •    | 12.9      | 72.3      | 60.0     | 98.6   | 62.7   | 240.0800       | 227.2880         | 5.33%     | $4.3M      | 18.1%    
-#75  | ACM     | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 3.2   | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (50.7)  •  🟢 Nến 15M xanh đẹp  •    | 50.0      | 72.4      | 50.0     | 91.4   | 50.7   | 0.28600000     | 0.27368160       | 4.31%     | $3.7M      | 27.5%    
-#76  | GALA    | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 1.5   | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (54.6)  •  🟢 Nến 15M xanh đẹp  •  X | 33.6      | 43.6      | 60.0     | 93.8   | 54.6   | 0.00141900     | 0.00138500       | 2.40%     | $3.2M      | 10.5%    
-#77  | NFP     | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | 🛑 EW CẤP 2: Xuyên thủng Dải Đáy BB(20) kèm Volume xả  •  ⚠️  | 0.0       | 43.2      | 90.0     | 65.0   | 14.2   | 0.00181000     | 0.00529160       | -192.35%  | $3.8M      | 239.3%   
-#78  | PORTAL  | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  ⚠️ RSI  | 0.0       | 45.1      | 60.0     | 65.0   | 29.7   | 0.01050000     | 0.01383880       | -31.80%   | $6.7M      | 42.3%    
-#79  | BB      | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  ⚠️ RSI  | 29.5      | 28.1      | 40.0     | 65.0   | 28.6   | 0.00886000     | 0.01084320       | -22.38%   | $7.0M      | 49.0%    
-#80  | TUT     | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  ⚠️ Râu  | 81.3      | 42.1      | 40.0     | 68.3   | 31.6   | 0.03218000     | 0.03828320       | -18.97%   | $12.7M     | 35.0%    
-#81  | BICO    | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (44.5)  •  ⚠️ Net Giật Râu Âm (-8.1%) | 15.6      | 29.9      | 20.0     | 87.7   | 44.5   | 0.01716000     | 0.02021480       | -17.80%   | $3.2M      | 12.1%    
-#82  | NBISB   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 2.6       | 45.6      | 80.0     | 86.4   | 42.3   | 227.8400       | 258.5208         | -13.47%   | $4.6M      | 18.3%    
-#83  | CFG     | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  Nhiễu  | 0.0       | 50.9      | 100.0    | 77.2   | 36.1   | 0.13370000     | 0.15097200       | -12.92%   | $3.4M      | 10.5%    
-#84  | SNXXB   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (48.5)  •  🔴 Nến 15M xả thượt  •  N | 50.0      | 54.9      | 50.0     | 90.1   | 48.5   | 15.1600        | 16.5976          | -9.48%    | $20.3M     | 23.1%    
-#85  | 币安人  | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (48.9)  •  Nhiễu sóng (10 lần/10 nến | 68.5      | 46.1      | 50.0     | 90.4   | 48.9   | 0.43930000     | 0.46418400       | -5.66%    | $4.9M      | 15.4%    
-#86  | HEI     | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (41.4)  •  ⚠️ Râu trên xả 1H (48%)  • | 86.7      | 43.0      | 50.0     | 85.8   | 41.4   | 0.12640000     | 0.13290800       | -5.15%    | $6.1M      | 25.0%    
-#87  | JST     | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 41.0      | 73.8      | 60.0     | 88.8   | 46.4   | 0.10533000     | 0.10732640       | -1.90%    | $3.6M      | 5.0%     
-#88  | SPCXB   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (42.1)  •  🔴 Nến 15M xả thượt  •  N | 8.0       | 58.2      | 20.0     | 86.3   | 42.1   | 139.5900       | 142.1440         | -1.83%    | $24.5M     | 6.3%     
-#89  | ALLO    | ⚠️ CHỈNH NGẮN HẠN (Đợi Nền)   | ⛔ NÉ GRID (Cạn Cầu / Trượt Giá)       | 0.0   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  ⚠️ Râu  | 0.0       | 55.3      | 60.0     | 83.8   | 39.4   | 0.28610000     | 0.28628400       | -0.06%    | $96.3M     | 6.4%     
-#90  | SNDKB   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (48.9)  •  🔴 Nến 15M xả thượt  •  N | 55.3      | 60.2      | 50.0     | 90.4   | 48.9   | 1604.8500      | 1604.6384        | 0.01%     | $79.5M     | 10.7%    
-#91  | BANK    | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 5.0       | 42.8      | 90.0     | 89.9   | 48.1   | 0.03580000     | 0.03578000       | 0.06%     | $3.3M      | 4.3%     
-#92  | SOXLB   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (49.4)  •  🟢 Net Rút Chân Dương (+7 | 0.0       | 69.2      | 50.0     | 90.6   | 49.4   | 125.6400       | 125.0257         | 0.49%     | $16.0M     | 15.7%    
-#93  | GPS     | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (40.4)  •  Nhiễu sóng (9 lần/10 nến) | 0.0       | 44.3      | 20.0     | 85.2   | 40.4   | 0.01215000     | 0.01208080       | 0.57%     | $10.5M     | 14.4%    
-#94  | HOME    | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (54.0)  •  ⚠️ Râu trên xả 15M (70%)   | 0.0       | 23.9      | 60.0     | 93.4   | 54.0   | 0.00619000     | 0.00615286       | 0.60%     | $3.9M      | 8.9%     2026-08-20 11:56:39,227 - CN4-Controller - INFO - Đã lọc được 62 mã: ['ICP/USDT', 'ZEC/USDT', 'ZAMA/USDT', 'WBTC/USDT', 'SKHYB/USDT', 'HEMI/USDT', 'ETH/USDT', 'AVAX/USDT', 'TAO/USDT', 'LDO/USDT', 'HBAR/USDT', 'RENDER/USDT', 'DASH/USDT', 'ASTER/USDT', 'CAKE/USDT', 'SOL/USDT', 'PENDLE/USDT', 'MSTRB/USDT', 'LTC/USDT', 'BNB/USDT', 'PLUME/USDT', 'SUI/USDT', 'EUL/USDT', 'XRP/USDT', 'MUBARAK/USDT', 'PUMP/USDT', 'ENA/USDT', 'LINK/USDT', 'SEI/USDT', 'XAUT/USDT', 'CRV/USDT', 'INJ/USDT', 'ONDO/USDT', 'TREE/USDT', 'AAVE/USDT', 'VIRTUAL/USDT', 'TRUMP/USDT', 'XPL/USDT', 'COINB/USDT', 'CRCLB/USDT', 'DEXE/USDT', 'APT/USDT', 'NEAR/USDT', 'BCH/USDT', 'UNI/USDT', 'DOGE/USDT', 'BTC/USDT', 'FET/USDT', 'ESP/USDT', 'PAXG/USDT', 'XLM/USDT', 'ARB/USDT', 'HOME/USDT', 'OP/USDT', 'PENGU/USDT', 'ADA/USDT', 'DOT/USDT', 'ZRO/USDT', 'PEPE/USDT', 'FIL/USDT', 'TSLAB/USDT', 'SHIB/USDT']
-2026-08-20 11:56:39,227 - CN4-Controller - INFO - Đang kích hoạt Hệ thống Cảnh báo Sớm (Early Warning Matrix)...
-2026-08-20 11:56:39,245 - core.exchange_factory - INFO - Đang kiểm tra kết nối tới sàn: BINANCE...
-2026-08-20 11:56:40,011 - core.exchange_factory - INFO - ✅ Đã kết nối thành công tới BINANCE
-
-#95  | POL     | ⚠️ CHỈNH NGẮN HẠN (Đợi Nền)   | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 0.0   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 14.0      | 43.0      | 40.0     | 90.9   | 49.8   | 0.08140000     | 0.07912800       | 2.79%     | $4.6M      | 3.0%     
-#96  | ACE     | ⚠️ CHỈNH NGẮN HẠN (Đợi Nền)   | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 0.0   | ⚡ Lướt Ngắn   | 🟢 RSI 1H Lý Tưởng Grid (42.5)  •  Nhiễu sóng (10 lần/10 nến | 88.2      | 43.1      | 40.0     | 86.5   | 42.5   | 0.19160000     | 0.18272800       | 4.63%     | $29.9M     | 36.2%    
-#97  | UTK     | ⚠️ CHỈNH NGẮN HẠN (Đợi Nền)   | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 0.0   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  🟢 RSI | 99.0      | 53.3      | 80.0     | 88.5   | 45.8   | 0.00795000     | 0.00748960       | 5.79%     | $10.2M     | 260.4%   
-#98  | RE      | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 0.0   | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  Chỉnh  | 0.0       | 42.8      | 90.0     | 64.4   | 72.1   | 0.52780000     | 0.47192400       | 10.59%    | $66.7M     | 43.1%    
-#99  | RED     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 0.0   | 🌊 Tích Lũy    | ⚠️ RSI 1H Quá Mua (76.3) - Rủi Ro Đu Đỉnh  •  ⚠️ Net Giật Râu  | 15.9      | 29.0      | 5.0      | 47.4   | 76.3   | 0.11190000     | 0.09136254       | 18.35%    | $3.4M      | 34.2%    
-#100 | HEMI    | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 0.0   | 🌊 Tích Lũy    | 🟢 RSI 1H Lý Tưởng Grid (59.5)  •  ⚠️ Giật Râu 30D (28.4%)  • | 20.0      | 51.4      | 0.0      | 96.7   | 59.5   | 0.00909000     | 0.00737268       | 18.89%    | $30.1M     | 40.4%    
-
-=========================================================================================================================================================
-🏆 BẢNG THAM SỐ GRID TỰ ĐỘNG CHUẨN BINANCE (CHỈ DÀNH CHO MÃ THỎA '4 KHÔNG')
-=========================================================================================================================================================
-Mã      | Loại Grid    | Giá Live         | Trigger (P)    | Price Range (Low - High)     | Lưới   | SL             | TP             | Xác Suất Active   
----------------------------------------------------------------------------------------------------------------------------------------------------------
-DASH    | TICH_LUY     | 31.6800          | 30.5050        | 28.9797 - 33.5555            | 24     | 28.1103        | 34.5621        | 75.0% - 85.0%     
-DOT     | HEP          | 0.78700000       | 0.77804000     | 0.76636940 - 0.83074443      | 12     | 0.73571462     | 0.84735932     | 88.0% - 93.5%     
-PAXG    | HEP          | 4476.6200        | 4442.3356      | 4375.7006 - 4743.2594        | 12     | 4200.6725      | 4838.1246      | 88.0% - 93.5%     
+#1   | APT     | 🛡️ PULLBACK LÀNH MẠNH (Uptren | 🛡️ GRID ĐÓN PULLBACK                    | 60.1  | ⚡ Lướt Ngắn   | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 49.5      | 46.599998 | 25.0     | 89.0   | 46.6   | 0.8418         | 0.8248           | 2.02%     | $16.4M     | 8.9%     
+#2   | NEAR    | 🛡️ PULLBACK LÀNH MẠNH (Uptren | 🛡️ GRID ĐÓN PULLBACK                    | 50.3  | ⚡ Lướt Ngắn   | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 51.0      | 48.599998 | 70.0     | 86.5   | 42.6   | 5.051          | 5.0607           | -0.19%    | $192.2M    | 10.5%    
+#3   | INJ     | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 47.9  | 🌊 Tích Lũy    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 55.2      | 48.0      | 5.0      | 87.9   | 44.9   | 8.616          | 8.1142           | 5.82%     | $48.7M     | 13.5%    
+#4   | ZRO     | ⚠️ CHỈNH NGẮN HẠN (Đợi Nền)   | 🛡️ GRID ĐÓN PULLBACK                    | 32.0  | ⚡ Lướt Ngắn   | ⚠️ EW CẤP 1: Giá cắt xuống dưới cụm MA(7) & EMA(7)  •  Nhiễu  | 48.4      | 40.299999 | 50.0     | 84.3   | 39.6   | 2.025          | 2.0401           | -0.75%    | $21.5M     | 15.5%    
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+⚠️ NHÓM PHỤ — Chưa đạt chuẩn An Toàn (RSI 1H ≥ 70 / FOMO 24H / Né Grid / Gãy Trend...) → xếp sau nhóm chính dù điểm cao hơn
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#5   | DOT     | 🟢 ĐANG TĂNG / PHỤC HỒI      | 🛡️ GRID HẸP (12 Lưới)                   | 67.7  | ⚡ Lướt Ngắn   | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 50.2      | 38.900001 | 100.0    | 93.8   | 54.7   | 1.165          | 1.1558           | 0.79%     | $15.8M     | 8.1%     
+#6   | FIL     | 🛡️ PULLBACK LÀNH MẠNH (Uptren | 🛡️ GRID ĐÓN PULLBACK                    | 60.3  | ⚡ Lướt Ngắn   | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 31.5      | 42.5      | 5.0      | 91.3   | 50.4   | 1.1416         | 1.1283           | 1.16%     | $26.9M     | 10.9%    
+#7   | ASTER   | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 43.8  | 🌊 Tích Lũy    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 51.1      | 56.799999 | 50.0     | 90.4   | 49.1   | 0.7062         | 0.7027           | 0.49%     | $6.4M      | 3.3%     
+#8   | ARB     | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 43.6  | 🌊 Tích Lũy    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 51.7      | 57.799999 | 5.0      | 88.6   | 46.0   | 0.1922         | 0.1885           | 1.91%     | $17.7M     | 7.2%     
+#9   | SEI     | 🟢 ĐANG TĂNG / PHỤC HỒI      | 🛡️ GRID HẸP (12 Lưới)                   | 42.6  | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (0.06968) −25  •  🛡️ EW CẤP 1 (Miễn Phạt - Pull | 62.8      | 45.200000 | 62.0     | 94.2   | 55.4   | 0.06445        | 0.06379          | 1.02%     | $10.0M     | 10.0%    
+#10  | TIA     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 36.7  | 🌊 Tích Lũy    | 🦅 EW CẤP 1 (Miễn Phạt - Cột Cờ 3D): Giá cắt xuống dưới cụm  | 22.5      | 48.599998 | 60.0     | 92.2   | 66.6   | 0.685          | 0.5891           | 14.00%    | $36.7M     | 25.6%    
+#11  | AVAX    | 🛡️ PULLBACK LÀNH MẠNH (Uptren | 🛡️ GRID ĐÓN PULLBACK                    | 27.2  | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (10.638) −25  •  🛡️ EW CẤP 1 (Miễn Phạt - Pullb | 43.1      | 66.599998 | 70.0     | 88.8   | 46.4   | 10.039         | 10.0987          | -0.59%    | $30.2M     | 6.4%     
+#12  | WLD     | 🛡️ PULLBACK LÀNH MẠNH (Uptren | 🛡️ GRID ĐÓN PULLBACK                    | 22.3  | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (0.5243) −25  •  🛡️ EW CẤP 1 (Miễn Phạt - Pullb | 32.4      | 51.099998 | 70.0     | 87.4   | 44.0   | 0.4995         | 0.5036           | -0.83%    | $47.8M     | 11.0%    
+#13  | TON     | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | 🌊 GRID TÍCH LŨY (24 Lưới / 2-3 Ngày)  | 22.2  | 🌊 Tích Lũy    | ⛔ MẤT MA7_3D (1.63714286) −25  •  🛡️ EW CẤP 1 (Miễn Phạt - P | 13.0      | 36.799999 | 50.0     | 91.0   | 50.1   | 1.6            | 1.585            | 0.94%     | $7.7M      | 3.9%     
+#14  | ETHFI   | 🛡️ PULLBACK LÀNH MẠNH (Uptren | 🛡️ GRID ĐÓN PULLBACK                    | 20.5  | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (0.7055) −25  •  🛡️ EW CẤP 1 (Miễn Phạt - Pullb | 43.7      | 53.599998 | 26.0     | 89.2   | 47.0   | 0.6734         | 0.6684           | 0.75%     | $6.5M      | 8.0%     
+#15  | AMP     | 🌊 TÍCH LŨY BỀN VỮNG (2-3 Ng | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 8.8   | 🌊 Tích Lũy    | ⚠️ RSI 1H Quá Mua (81.2) - Rủi Ro Đu Đỉnh  •  🟢 Nến 15M xanh | 50.4      | 54.599998 | 20.0     | 37.6   | 81.2   | 0.000797       | 0.0006937        | 12.96%    | $5.7M      | 30.2%    
+#16  | ZK      | 🛡️ ĐIỀU CHỈNH NGẮN (Cơ Hội Go | ⛔ NÉ GRID (Tiền Sử Xả Dốc 7D)         | 1.2   | 🌊 Tích Lũy    | 🛡️ EW CẤP 1 (Miễn Phạt - Pullback Lành Mạnh): Giá cắt xuống d | 55.1      | 53.099998 | 50.0     | 86.3   | 42.1   | 0.01644        | 0.01624          | 1.24%     | $9.5M      | 17.2%    
+#17  | ZIL     | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (0.003366) −25  •  ⚠️ EW CẤP 1: Giá cắt xuống d | 10.0      | 39.299999 | 50.0     | 65.0   | 25.0   | 0.002565       | 0.003253         | -26.81%   | $5.6M      | 36.6%    
+#18  | KORUB   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (18.26) −25  •  ⚠️ EW CẤP 1: Giá cắt xuống dưới | 20.0      | 56.400001 | 5.0      | 74.4   | 34.7   | 10.94          | 12.8948          | -17.87%   | $6.9M      | 14.9%    
+#19  | SOXLB   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (141.38) −25  •  🛑 EW CẤP 2: Xuyên thủng Dải  | 68.6      | 50.200000 | 26.0     | 66.6   | 30.8   | 96.71          | 113.8444         | -17.72%   | $18.3M     | 13.8%    
+#20  | CHIP    | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (0.051) −25  •  ⚠️ EW CẤP 1: Giá cắt xuống dưới | 20.0      | 48.799999 | 5.0      | 70.4   | 32.7   | 0.04545        | 0.05248          | -15.47%   | $5.7M      | 16.3%    
+#21  | W       | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (0.01521) −25  •  ⚠️ EW CẤP 1: Giá cắt xuống dư | 36.6      | 50.299999 | 70.0     | 83.7   | 39.3   | 0.01414        | 0.01613          | -14.09%   | $5.3M      | 10.7%    
+#22  | STRK    | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | 🦅 EW CẤP 1 (Miễn Phạt - Cột Cờ 3D): Giá cắt xuống dưới cụm  | 20.0      | 55.299999 | 5.0      | 73.1   | 34.0   | 0.07247        | 0.08241          | -13.71%   | $32.1M     | 25.1%    
+#23  | SNXXB   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (14.54) −25  •  ⚠️ EW CẤP 1: Giá cắt xuống dưới | 52.7      | 55.599998 | 38.0     | 76.9   | 35.9   | 9.51           | 10.7608          | -13.15%   | $5.2M      | 13.7%    
+#24  | PROM    | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (5.631) −25  •  ⚠️ EW CẤP 1: Giá cắt xuống dưới | 24.6      | 54.099998 | 50.0     | 65.0   | 29.4   | 4.618          | 5.1473           | -11.46%   | $12.9M     | 30.9%    
+#25  | PUMP    | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (0.005478) −25  •  ⚠️ EW CẤP 1: Giá cắt xuống d | 48.4      | 54.400001 | 50.0     | 70.7   | 32.9   | 0.004308       | 0.004734         | -9.90%    | $13.8M     | 8.7%     
+#26  | TQQQB   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (78.67) −25  •  🛑 EW CẤP 2: Xuyên thủng Dải Đ | 56.6      | 61.0      | 25.0     | 65.0   | 21.0   | 68.68          | 75.3632          | -9.73%    | $5.3M      | 8.9%     
+#27  | PLUME   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (0.01879) −25  •  ⚠️ EW CẤP 1: Giá cắt xuống dư | 20.0      | 38.5      | 30.0     | 69.9   | 32.5   | 0.01846        | 0.02017          | -9.26%    | $5.8M      | 16.9%    
+#28  | INTCB   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (109.6) −25  •  ⚠️ EW CẤP 1: Giá cắt xuống dưới | 38.6      | 50.099998 | 46.0     | 65.0   | 25.0   | 90.68          | 97.9936          | -8.07%    | $5.1M      | 7.2%     
+#29  | MSTRB   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (154.69) −25  •  ⚠️ EW CẤP 1: Giá cắt xuống dướ | 18.2      | 56.5      | 70.0     | 65.0   | 26.8   | 137.07         | 148.106          | -8.05%    | $13.4M     | 11.3%    
+#30  | SKHYB   | 🔴 DOWNTREND (Rủi Ro)        | ⛔ NÉ GRID (Gãy Cấu Trúc 4H)           | 0.0   | ⚡ Lướt Ngắn   | ⛔ MẤT MA7_3D (173.63) −25  •  ⚠️ EW CẤP 1: Giá cắt xuống dướ | 63.0      | 65.099998 | 70.0     | 72.8   | 33.9   | 138.0          | 148.3756         | -7.52%    | $9.7M      | 7.4%     
 
 ============================================================================================================================================================================================================================================================================================================
 
-
-🌱 Đang quét Bảng 3 - Bửa Sớm Nền Tăng (141 mã vol &gt; $2M)...
-
-====================================================================================================================
-🌱 BẢNG 3: BẮT SỚM NỀN TĂNG SPOT GRID (TOP 5 MÃ TIỀM NĂNG NHẤT)
-====================================================================================================================
-Mã       | Giá Live       | Điểm    | Rút Chân 15M   | Giật 4H    | RSI 1H   | Vol 24H     | Tăng 7D    | Tăng 24H  
---------------------------------------------------------------------------------------------------------------------
-TREE     | 0.03800000     | 98.4    | 6/20 nến       | 4.34%      | 53.2     | $12.3M      | 11.44%     | 13.1%     
-TRUMP    | 1.6630         | 93.8    | 4/20 nến       | 3.88%      | 63.6     | $38.9M      | 19.04%     | 18.46%    
-MUBARAK  | 0.02025000     | 92.7    | 5/20 nến       | 3.77%      | 53.6     | $14.9M      | 28.0%      | 18.53%    
-HEMI     | 0.00911000     | 88.4    | 3/20 nến       | 3.97%      | 59.3     | $30.1M      | 91.39%     | 30.98%    
-HOME     | 0.00619000     | 88.3    | 4/20 nến       | 4.33%      | 57.2     | $3.9M       | -38.65%    | 4.21%     
-====================================================================================================================
+2026-10-17 01:19:43,005 - CN4-Controller - INFO - Hoàn tất quét thị trường. Chương trình kết thúc.
+2026-10-17 01:19:43,005 - CN4-Controller - INFO - ⏱️ Thời gian chạy script: 1 phút 41 giây (101.02s).
 
 
-🚀 Đang quét Bảng 4 - Momentum Breakout (104 mã đang tăng vol &gt;$2M)...
-
-
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-🚨 HỆ THỐNG CẢNH BÁO SỚM & RỦI RO SẬP (EARLY WARNING MATRIX)
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-Mã (Symbol)     | Cấp Độ                                        | Tín Hiệu (Trigger)                           
----------------------------------------------------------------------------------------------------------------------------------------
-MUBARAK/USDT    | 💀 CẤP 3: KHẨN CẤP (Kích Hoạt Phòng Vệ)        | Gãy Nền Hỗ Trợ Supertrend                    
-TREE/USDT       | 💀 CẤP 3: KHẨN CẤP (Kích Hoạt Phòng Vệ)        | Gãy Nền Hỗ Trợ Supertrend                    
-HOME/USDT       | 💀 CẤP 3: KHẨN CẤP (Kích Hoạt Phòng Vệ)        | Gãy Nền Hỗ Trợ Supertrend                    
-ICP/USDT        | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-ZEC/USDT        | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-ZAMA/USDT       | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-SUI/USDT        | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-EUL/USDT        | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-LINK/USDT       | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-XAUT/USDT       | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-ONDO/USDT       | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-TRUMP/USDT      | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-DEXE/USDT       | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-NEAR/USDT       | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-UNI/USDT        | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-DOGE/USDT       | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-PAXG/USDT       | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-XLM/USDT        | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-OP/USDT         | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-ADA/USDT        | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-DOT/USDT        | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-FIL/USDT        | ⚠️ CẤP 1: THEO DÕI (Vùng Nhạy Cảm)            | Giá cắt xuống dưới cụm MA(7) & EMA(7)        
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-
-===============================================================================================================================================================================
-🎯 BẢNG CHẤM ĐIỂM PULLBACK SNIPER (ĐỘNG CƠ 2 - TÌM LỆNH THỰC THI CHÍNH XÁC)
-===============================================================================================================================================================================
-Mã (Symbol)     | Tổng Điểm  | Trạng Thái Bảng 1                   | C1 (Hội Tụ)  | C2 (Vol)   | C3 (Sổ Lệnh) | C4 (R/R)   | Hành Động
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-ETH/USDT        | 65         | ⚠️ ⚠️ RSI 1H Quá Mua (82.0) - Rủi Ro Đu Đỉnh  •  ⚠️ Net Giật Râu Âm (-5.4%)  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Tăng nóng xa MA25 (+8.4%)  •  ⚠️ FOMO 24H Cao (+17.9%) | 0            | 25         | 20           | 20         | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
-LDO/USDT        | 65         | ⚠️ 🟢 RSI 1H Lý Tưởng Grid (63.1)  •  ⚠️ Net Giật Râu Âm (-5.4%)  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H | 0            | 25         | 20           | 20         | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
-HBAR/USDT       | 65         | ⚠️ 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H | 0            | 25         | 20           | 20         | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
-RENDER/USDT     | 65         | ⚠️ 🟢 Nến 15M xanh đẹp  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H | 0            | 25         | 20           | 20         | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
-PENDLE/USDT     | 65         | ⚠️ 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Tăng nóng xa MA25 (+8.5%)  •  ⚠️ FOMO 24H Cao (+14.2%)  •  ⚠️ Giảm -2.2% Từ Đỉnh 1H | 0            | 25         | 20           | 20         | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
-XRP/USDT        | 65         | ⚠️ 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H | 0            | 25         | 20           | 20         | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
-PUMP/USDT       | 65         | ⚠️ 🟢 RSI 1H Lý Tưởng Grid (60.8)  •  Chỉnh -3.2% Đỉnh 1H  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Giảm -3.2% Từ Đỉnh 1H | 0            | 25         | 20           | 20         | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
-LINK/USDT       | 65         | ⚠️ 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H | 0            | 25         | 20           | 20         | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
-CRV/USDT        | 65         | ⚠️ 🟢 Nến 15M xanh đẹp  •  ⚠️ Net Giật Râu Âm (-7.7%)  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Tăng nóng xa MA25 (+6.2%) | 0            | 25         | 20           | 20         | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
-INJ/USDT        | 65         | ⚠️ ⚠️ RSI 1H Quá Mua (82.4) - Rủi Ro Đu Đỉnh  •  🟢 Nến 15M xanh đẹp  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Tăng nóng xa MA25 (+6.3%)  •  ⚠️ FOMO 24H Cao (+12.8%) | 0            | 25         | 20           | 20         | 🔴 LOẠI C: TỪ CHỐI (Không đạt chuẩn an toàn)
-===============================================================================================================================================================================
-
-
-=======================================================================================================================================
-🚀 BẢNG CHẤM ĐIỂM MOMENTUM BREAKOUT (ĐỘNG CƠ 3 - SĂN BỨT PHÁ ĐỘNG LƯỢNG)
-=======================================================================================================================================
-Mã (Symbol)     | Tổng Điểm  | C1 (PriceAct)             | C2 (Volume)               | C3 (OrderBook)            | C4 (R/R)                 
----------------------------------------------------------------------------------------------------------------------------------------
-ASTER/USDT      | 65         | Breakout Sạch (Đóng nến q | Volume Yếu (1.4x MA20) -  | Phe Mua chiếm ưu thế nhẹ  | SL Cực Ngắn (-2.7%) - R/R
-   ↳ Hành Động: 🔴 TỪ CHỐI
----------------------------------------------------------------------------------------------------------------------------------------
-XPL/USDT        | 50         | Tiệm cận Kháng cự (Chờ Br | Volume Yếu (0.1x MA20) -  | Phe Mua chiếm ưu thế nhẹ  | SL Cực Ngắn (-1.1%) - R/R
-   ↳ Hành Động: 🔴 TỪ CHỐI
----------------------------------------------------------------------------------------------------------------------------------------
-PEPE/USDT       | 50         | Tiệm cận Kháng cự (Chờ Br | Volume Yếu (0.8x MA20) -  | Phe Mua chiếm ưu thế nhẹ  | SL Cực Ngắn (-1.0%) - R/R
-   ↳ Hành Động: 🔴 TỪ CHỐI
----------------------------------------------------------------------------------------------------------------------------------------
-SHIB/USDT       | 50         | Tiệm cận Kháng cự (Chờ Br | Volume Yếu (0.5x MA20) -  | Phe Mua chiếm ưu thế nhẹ  | SL Cực Ngắn (-2.7%) - R/R
-   ↳ Hành Động: 🔴 TỪ CHỐI
----------------------------------------------------------------------------------------------------------------------------------------
-LDO/USDT        | 45         | Chưa có dấu hiệu Breakout | Volume Yếu (0.1x MA20) -  | Phe Mua Áp Đảo (Tường Bid | SL Cực Ngắn (-2.1%) - R/R
-   ↳ Hành Động: 🔴 TỪ CHỐI
----------------------------------------------------------------------------------------------------------------------------------------
-WBTC/USDT       | 40         | Tiệm cận Kháng cự (Chờ Br | Volume Yếu (0.2x MA20) -  | Tường Sell cản đường      | SL Cực Ngắn (-1.5%) - R/R
-   ↳ Hành Động: 🔴 TỪ CHỐI
----------------------------------------------------------------------------------------------------------------------------------------
-LTC/USDT        | 40         | Tiệm cận Kháng cự (Chờ Br | Volume Yếu (0.2x MA20) -  | Tường Sell cản đường      | SL Cực Ngắn (-1.3%) - R/R
-   ↳ Hành Động: 🔴 TỪ CHỐI
----------------------------------------------------------------------------------------------------------------------------------------
-XAUT/USDT       | 40         | Tiệm cận Kháng cự (Chờ Br | Volume Yếu (0.0x MA20) -  | Tường Sell cản đường      | SL Cực Ngắn (-1.1%) - R/R
-   ↳ Hành Động: 🔴 TỪ CHỐI
----------------------------------------------------------------------------------------------------------------------------------------
-INJ/USDT        | 40         | Tiệm cận Kháng cự (Chờ Br | Volume Yếu (0.2x MA20) -  | Tường Sell cản đường      | SL Cực Ngắn (-2.8%) - R/R
-   ↳ Hành Động: 🔴 TỪ CHỐI
----------------------------------------------------------------------------------------------------------------------------------------
-COINB/USDT      | 40         | Tiệm cận Kháng cự (Chờ Br | Volume Yếu (0.0x MA20) -  | Tường Sell cản đường      | SL Cực Ngắn (-1.6%) - R/R
-   ↳ Hành Động: 🔴 TỪ CHỐI
----------------------------------------------------------------------------------------------------------------------------------------
-=======================================================================================================================================
-
-
-=======================================================================================================================================
-📦 BẢNG CHẤM ĐIỂM MACRO GRID DARVAS (ĐỘNG CƠ 1 - TÌM KIẾM SÀN BÊ TÔNG)
-=======================================================================================================================================
-Mã (Symbol)     | Tổng Điểm  | Trạng Thái Bảng 1                   | Hành Động
----------------------------------------------------------------------------------------------------------------------------------------
-PUMP/USDT       | 65         | ⚠️ 🟢 RSI 1H Lý Tưởng Grid (60.8)  •  Chỉnh -3.2% Đỉnh 1H  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Giảm -3.2% Từ Đỉnh 1H | 🟡 THEO DÕI: Cần giá hồi về sát sàn hộp hơn
-ENA/USDT        | 65         | ⚠️ 🟢 RSI 1H Lý Tưởng Grid (64.0)  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Giảm -1.8% Từ Đỉnh 1H | 🟡 THEO DÕI: Cần giá hồi về sát sàn hộp hơn
-ARB/USDT        | 65         | ⚠️ ⚠️ RSI 1H Quá Mua (76.8) - Rủi Ro Đu Đỉnh  •  🟢 Nến 15M xanh đẹp  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Tăng nóng xa MA25 (+7.6%)  •  ⚠️ FOMO 24H Cao (+16.3%) | 🟡 THEO DÕI: Cần giá hồi về sát sàn hộp hơn
-PEPE/USDT       | 65         | ⚠️ ⚠️ RSI 1H Quá Mua (78.9) - Rủi Ro Đu Đỉnh  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Tăng nóng xa MA25 (+8.5%)  •  ⚠️ FOMO 24H Cao (+13.8%) | 🟡 THEO DÕI: Cần giá hồi về sát sàn hộp hơn
-ETH/USDT        | 55         | ⚠️ ⚠️ RSI 1H Quá Mua (82.0) - Rủi Ro Đu Đỉnh  •  ⚠️ Net Giật Râu Âm (-5.4%)  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Tăng nóng xa MA25 (+8.4%)  •  ⚠️ FOMO 24H Cao (+17.9%) | 🔴 TỪ CHỐI: Cấu trúc tích lũy bị vỡ hoặc nhiễu
-SOL/USDT        | 55         | ⚠️ 🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H | 🔴 TỪ CHỐI: Cấu trúc tích lũy bị vỡ hoặc nhiễu
-MSTRB/USDT      | 55         | ⚠️ 🟢 Nến 15M xanh đẹp  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Tăng nóng xa MA25 (+6.8%)  •  ⚠️ FOMO 24H Cao (+16.9%) | 🔴 TỪ CHỐI: Cấu trúc tích lũy bị vỡ hoặc nhiễu
-PLUME/USDT      | 55         | ⚠️ 🟢 RSI 1H Lý Tưởng Grid (63.6)  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H | 🔴 TỪ CHỐI: Cấu trúc tích lũy bị vỡ hoặc nhiễu
-INJ/USDT        | 55         | ⚠️ ⚠️ RSI 1H Quá Mua (82.4) - Rủi Ro Đu Đỉnh  •  🟢 Nến 15M xanh đẹp  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Tăng nóng xa MA25 (+6.3%)  •  ⚠️ FOMO 24H Cao (+12.8%) | 🔴 TỪ CHỐI: Cấu trúc tích lũy bị vỡ hoặc nhiễu2026-08-20 11:57:47,966 - CN4-Controller - INFO - Hoàn tất quét thị trường. Chương trình kết thúc.
-
-CRCLB/USDT      | 55         | ⚠️ ⚠️ RSI 1H Quá Mua (76.6) - Rủi Ro Đu Đỉnh  •  🟢 Net Rút Chân Dương (+7.3%)  •  🌊 4H Tích Lũy: HL✅ + MA↑ → Kệ Sóng Nhiễu 1H  •  ⚠️ Tăng nóng xa MA25 (+5.5%)  •  ⚠️ FOMO 24H Cao (+14.3%) | 🔴 TỪ CHỐI: Cấu trúc tích lũy bị vỡ hoặc nhiễu
-=======================================================================================================================================
-
-
-Return code: 0</pre>
+[SUCCESS] Hoàn tất quá trình quét.
+</pre>
 </body>
 </html>

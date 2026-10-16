@@ -680,7 +680,7 @@ def print_watchlist(wl: Dict[str, List[Dict[str, Any]]]) -> None:
         print("• Không có mã nào kẹt chốt kiểm duyệt.")
 
 
-DEFAULT_BOARD_CONFIG = {"top_spot": 5, "top_grid_tp2": 3, "top_wide_grid": 2, "top_super_wave": 3,
+DEFAULT_BOARD_CONFIG = {"top_spot": 3, "top_grid_tp2": 3, "top_wide_grid": 2, "top_super_wave": 3,
                         "fill_with_backup": True}
 
 
@@ -692,124 +692,56 @@ def _board_config(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return cfg
 
 
-def get_convergence_ranks(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger=None) -> Dict[str, str]:
-    """Trả về dict {symbol: rank_str} cho các mã đạt Điểm Chạm Vàng (Hội tụ) và lưu vào database.
-    Sắp xếp đa tầng: Hạng (S -> A1 -> A2 -> B) -> Dòng tiền bạo phát -> Strict 3D -> Điểm động cơ."""
-    if history_logger is None:
-        try:
-            from core.history_logger import HistoryLogger
-            history_logger = HistoryLogger("data/binac4_history.db")
-        except Exception:
-            history_logger = None
+# Điểm sàn tối thiểu theo từng động cơ trong Điểm Chạm Vàng
+CONVERGENCE_MIN_SCORES = {
+    "DC1": 60.0,
+    "DC2": 60.0,
+    "DC3": 60.0,
+    "DC4": 60.0,
+    "DC5": 15.0,
+    "3B": 70.0,
+}
 
-    if not history_logger:
-        return {}
-
-    current_symbols_engines = {}
-    for s in current_signals:
-        if s.symbol not in current_symbols_engines:
-            current_symbols_engines[s.symbol] = {}
-        current_symbols_engines[s.symbol][s.engine_source] = s
-
-    for r in (super_wave_results or []):
-        sym = r.get("symbol")
-        if sym:
-            if sym not in current_symbols_engines:
-                current_symbols_engines[sym] = {}
-            current_symbols_engines[sym]["3B"] = r
-
-    candidate_items = []
-    for symbol, engines_map in current_symbols_engines.items():
-        current_engines = list(engines_map.keys())
-        if not ("DC3" in current_engines or "DC4" in current_engines or "DC5" in current_engines or "DC2" in current_engines):
-            continue
-
-        history = history_logger.get_symbol_history(symbol, days=14)
-        history_counts = {}
-        for eng, ts in history:
-            history_counts[eng] = history_counts.get(eng, 0) + 1
-
-        history_7_days = history_logger.get_symbol_history(symbol, days=7)
-        history_7_counts = {}
-        for eng, ts in history_7_days:
-            history_7_counts[eng] = history_7_counts.get(eng, 0) + 1
-
-        rank = None
-        trigger = None
-        if ("DC3" in current_engines or "DC4" in current_engines):
-            if history_counts.get("3A", 0) >= 3 or history_counts.get("DC1", 0) >= 3:
-                rank = "🏆 [HẠNG S] VỤ NỔ VĨ MÔ"
-                trigger = "DC3" if "DC3" in current_engines else "DC4"
-        if not rank and ("DC2" in current_engines):
-            if "DC4" in current_engines or "3B" in current_engines:
-                rank = "🥇 [HẠNG A1] SIÊU PULLBACK"
-                trigger = "DC2"
-        if not rank and ("DC3" in current_engines):
-            if "3B" in current_engines:
-                rank = "🥈 [HẠNG A2] TIẾP DIỄN XU HƯỚNG"
-                trigger = "DC3"
-        if not rank and ("DC5" in current_engines):
-            if history_7_counts.get("DC1", 0) >= 3:
-                rank = "🥉 [HẠNG B] CỖ MÁY CASHFLOW"
-                trigger = "DC5"
-
-        if rank:
-            sig = engines_map.get(trigger) if trigger else None
-            if not sig and current_engines:
-                sig = engines_map.get(current_engines[0])
-
-            mf = _num(getattr(sig, "money_flow", 0)) if sig else 0.0
-            target_sc = _num(getattr(sig, "target_score", 0)) if sig else 0.0
-            strict_sc = max(
-                strict_score_of(getattr(sig, "grid_tp2_line", "")),
-                strict_score_of(getattr(sig, "wide_grid_line", ""))
-            ) if sig else 0.0
-            rr = _num(getattr(sig, "rr_ratio", 0)) if sig else 0.0
-
-            candidate_items.append({
-                "symbol": symbol,
-                "rank": rank,
-                "tier_prio": conv_tier_priority(rank),
-                "money_flow": mf,
-                "strict_score": strict_sc,
-                "target_score": target_sc,
-                "rr_ratio": rr
-            })
-
-    # Sắp xếp đa tầng: Hạng (S -> A1 -> A2 -> B) -> Dòng tiền bạo phát -> Strict 3D -> Điểm động cơ -> R:R
-    candidate_items.sort(
-        key=lambda c: (c["tier_prio"], -c["money_flow"], -c["strict_score"], -c["target_score"], -c["rr_ratio"], c["symbol"])
-    )
-
-    ranks = {}
-    for item in candidate_items:
-        clean_s = item["symbol"].upper().replace('/USDT', '').replace('USDT', '').strip()
-        ranks[clean_s] = item["rank"]
-        ranks[item["symbol"]] = item["rank"]
-
-    if ranks and history_logger and hasattr(history_logger, "save_convergence_signals"):
-        try:
-            history_logger.save_convergence_signals(ranks)
-        except Exception as e:
-            logger.error(f"Lỗi lưu convergence signals vào DB: {e}")
-
-    return ranks
-
-
-def build_convergence_summary(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger=None) -> str:
+def is_convergence_engine_qualified(engine: str, sig_or_res: Any) -> bool:
     """
-    Module Phân tích Hội tụ (Điểm Chạm Vàng):
-    Sắp xếp đa tầng: Xếp theo Hạng (S -> A1 -> A2 -> B) -> Trong cùng Hạng xếp theo Dòng tiền bạo phát & Điểm động cơ.
+    Kiểm tra tín hiệu động cơ cho Điểm Chạm Vàng:
+    - Dựa vào điểm sàn là chính (score >= CONVERGENCE_MIN_SCORES[engine])
+    - Loại bỏ mã vi phạm cảnh báo sớm cấp 3 hoặc gãy MA7 3D
     """
-    if history_logger is None:
-        try:
-            from core.history_logger import HistoryLogger
-            history_logger = HistoryLogger("data/binac4_history.db")
-        except Exception:
-            history_logger = None
+    if sig_or_res is None:
+        return False
 
+    # 1. Loại bỏ mã vi phạm cảnh báo sớm cấp 3 hoặc gãy MA7 3D
+    if isinstance(sig_or_res, SignalRecord):
+        if is_fatal_error(sig_or_res):
+            return False
+        score = _num(sig_or_res.target_score)
+    elif isinstance(sig_or_res, dict):
+        if sig_or_res.get("ew_level", 0) >= FATAL_EW_LEVEL:
+            return False
+        blob = f"{sig_or_res.get('action_label', '')} {sig_or_res.get('macro_3d_signal', '')} {sig_or_res.get('action_short', '')}"
+        if any(t in blob for t in FATAL_TEXTS) or "CẤP 3" in blob or "KHẨN CẤP" in blob:
+            return False
+        score = _num(sig_or_res.get("target_score", sig_or_res.get("score", 0)))
+    else:
+        ew_lvl = getattr(sig_or_res, "ew_level", 0)
+        if ew_lvl >= FATAL_EW_LEVEL:
+            return False
+        blob = f"{getattr(sig_or_res, 'action_label', '')} {getattr(sig_or_res, 'macro_3d_signal', '')}"
+        if any(t in blob for t in FATAL_TEXTS):
+            return False
+        score = _num(getattr(sig_or_res, "target_score", getattr(sig_or_res, "score", 0)))
+
+    # 2. Dựa vào điểm sàn là chính
+    min_score = CONVERGENCE_MIN_SCORES.get(engine, 60.0)
+    return score >= min_score
+
+
+def _evaluate_convergence_candidates(current_signals: List[SignalRecord],
+                                     super_wave_results: Optional[List[Dict[str, Any]]],
+                                     history_logger) -> List[Dict[str, Any]]:
     if not history_logger:
-        return ""
+        return []
 
     current_symbols_engines = {}
     for s in current_signals:
@@ -825,17 +757,20 @@ def build_convergence_summary(current_signals: List[SignalRecord], super_wave_re
             current_symbols_engines[sym]["3B"] = r
 
     candidates = []
-    
     for symbol, engines_map in current_symbols_engines.items():
-        current_engines = list(engines_map.keys())
-        if not ("DC3" in current_engines or "DC4" in current_engines or "DC5" in current_engines or "DC2" in current_engines):
+        # Chỉ giữ lại các động cơ thực sự đạt điểm tối thiểu và không bị từ chối
+        qualified_engines = {
+            eng: sig for eng, sig in engines_map.items()
+            if is_convergence_engine_qualified(eng, sig)
+        }
+        if not qualified_engines:
             continue
-            
+
         history = history_logger.get_symbol_history(symbol, days=14)
         history_counts = {}
         for eng, ts in history:
             history_counts[eng] = history_counts.get(eng, 0) + 1
-            
+
         history_7_days = history_logger.get_symbol_history(symbol, days=7)
         history_7_counts = {}
         for eng, ts in history_7_days:
@@ -845,68 +780,82 @@ def build_convergence_summary(current_signals: List[SignalRecord], super_wave_re
         phan_tich = ""
         chien_luoc = ""
         trigger = None
-        
+
         # Priority 1: 🏆 [HẠNG S] VỤ NỔ VĨ MÔ
-        if ("DC3" in current_engines or "DC4" in current_engines):
-            if history_counts.get("3A", 0) >= 3 or history_counts.get("DC1", 0) >= 3:
-                rank = "🏆 [HẠNG S] VỤ NỔ VĨ MÔ"
-                trigger = "DC3" if "DC3" in current_engines else "DC4"
-                phan_tich = f"Đã tích lũy Darvas/3A trong 14 ngày qua. Hôm nay chính thức nổ Breakout {trigger}."
-                chien_luoc = "Mỏ vàng thức giấc. KHÔNG dùng OCO ngắn hạn. Đánh thẳng lệnh Limit hoặc Mở Wide Grid 3D để gồng ăn trọn chân sóng. SL cứng ngay nắp hộp Darvas cũ."
-        
+        # Đã tích lũy Darvas/3A trong 14 ngày qua VÀ nổ Breakout đạt chuẩn từ DC3 hoặc DC4
+        cand_s = [e for e in ("DC3", "DC4") if e in qualified_engines]
+        if cand_s and (history_counts.get("3A", 0) >= 3 or history_counts.get("DC1", 0) >= 3):
+            rank = "🏆 [HẠNG S] VỤ NỔ VĨ MÔ"
+            trigger = max(cand_s, key=lambda e: _num(getattr(qualified_engines[e], "target_score", 0)))
+            phan_tich = f"Đã tích lũy Darvas/3A trong 14 ngày qua. Hôm nay chính thức nổ Breakout {trigger}."
+            chien_luoc = "Mỏ vàng thức giấc. KHÔNG dùng OCO ngắn hạn. Đánh thẳng lệnh Limit hoặc Mở Wide Grid 3D để gồng ăn trọn chân sóng. SL cứng ngay nắp hộp Darvas cũ."
+
         # Priority 2: 🥇 [HẠNG A1] SIÊU PULLBACK
-        if not rank and ("DC2" in current_engines):
-            if "DC4" in current_engines or "3B" in current_engines:
+        # DC2 đạt chuẩn VÀ có xác nhận từ DC4 hoặc Sóng 3D (3B) đạt chuẩn
+        if not rank and ("DC2" in qualified_engines):
+            if "DC4" in qualified_engines or "3B" in qualified_engines:
                 rank = "🥇 [HẠNG A1] SIÊU PULLBACK"
                 trigger = "DC2"
                 phan_tich = "Hội tụ (Sóng 3D + DC4 Hot Trend + DC2 Sniper). Vừa rũ râu về hỗ trợ cứng."
                 chien_luoc = "Thiên thời địa lợi. Bắn ngay lệnh OCO của DC2 (SL cực ngắn). Kéo Stop-Loss về hòa vốn ngay khi giá nảy lên để triệt tiêu hoàn toàn rủi ro, gồng phần còn lại theo Trend."
-                
+
         # Priority 3: 🥈 [HẠNG A2] TIẾP DIỄN XU HƯỚNG
-        if not rank and ("DC3" in current_engines):
-            if "3B" in current_engines:
+        # Sóng 3D (3B) đạt chuẩn VÀ nổ Breakout DC3 đạt chuẩn
+        if not rank and ("DC3" in qualified_engines):
+            if "3B" in qualified_engines:
                 rank = "🥈 [HẠNG A2] TIẾP DIỄN XU HƯỚNG"
                 trigger = "DC3"
                 phan_tich = "Đang ở giữa sóng lớn (3B), nghỉ ngơi tạo cờ (Flag) rồi nổ Breakout (DC3)."
                 chien_luoc = "Sóng đè sóng. Nếu chưa có hàng: Đánh Breakout thuận xu hướng. Nếu đã có hàng: Kích hoạt DCA Dương, nhồi thêm vốn và dời SL lên sát đáy nến Breakout."
-                
+
         # Priority 4: 🥉 [HẠNG B] CỖ MÁY CASHFLOW
-        if not rank and ("DC5" in current_engines):
+        # Lịch sử nẹp hộp DC1 trong 7 ngày qua VÀ DC5 đạt chuẩn
+        if not rank and ("DC5" in qualified_engines):
             if history_7_counts.get("DC1", 0) >= 3:
                 rank = "🥉 [HẠNG B] CỖ MÁY CASHFLOW"
                 trigger = "DC5"
                 phan_tich = "Kẹp giữa 2 mức giá đều đặn (DC1 7 ngày qua) và nảy pingpong (DC5)."
                 chien_luoc = "Setup kẹp thịt: Cài lưới Bot Grid 24-35 lưới bám sát biên độ hộp Darvas để bào chênh lệch (Grid Profit). Cài SL an toàn cách 3% dưới đáy hộp."
-                
+
         if rank:
+            sig = qualified_engines.get(trigger)
             info = ""
             setup_text = ""
-            sig = engines_map.get(trigger) if trigger else None
-            if not sig and current_engines:
-                sig = engines_map.get(current_engines[0])
+            if sig:
+                if isinstance(sig, dict):
+                    # 3B
+                    score_val = _num(sig.get("score", 0))
+                    score_str = f"{score_val:.0f}đ"
+                    act = sig.get("action_short", "").strip()
+                    info = f" ({trigger}: {score_str} - {act})" if act else f" ({trigger}: {score_str})"
+                    raw_setup = sig.get("wave_setup", {}).get("display_line", "")
+                    if raw_setup:
+                        setup_text = f"\n   ↳ Thông số: {raw_setup}"
+                    mf = 0.0
+                    target_sc = score_val
+                    strict_sc = 100.0
+                    rr = 0.0
+                else:
+                    # SignalRecord
+                    target_sc = _num(getattr(sig, "target_score", 0))
+                    score_str = f"{target_sc:.0f}đ"
+                    act = (sig.action_label or "").strip()
+                    info = f" ({trigger}: {score_str} - {act})" if act else f" ({trigger}: {score_str})"
+                    raw_setup = getattr(sig, "raw_setup_string", "")
+                    if raw_setup:
+                        setup_text = f"\n   ↳ Thông số: {raw_setup}"
+                    mf = _num(getattr(sig, "money_flow", 0))
+                    strict_sc = max(
+                        strict_score_of(getattr(sig, "grid_tp2_line", "")),
+                        strict_score_of(getattr(sig, "wide_grid_line", ""))
+                    )
+                    rr = _num(getattr(sig, "rr_ratio", 0))
+            else:
+                mf = 0.0
+                target_sc = 0.0
+                strict_sc = 0.0
+                rr = 0.0
 
-            mf = _num(getattr(sig, "money_flow", 0)) if sig else 0.0
-            target_sc = _num(getattr(sig, "target_score", 0)) if sig else 0.0
-            strict_sc = max(
-                strict_score_of(getattr(sig, "grid_tp2_line", "")),
-                strict_score_of(getattr(sig, "wide_grid_line", ""))
-            ) if sig else 0.0
-            rr = _num(getattr(sig, "rr_ratio", 0)) if sig else 0.0
-
-            if trigger and trigger in engines_map:
-                sig_trig = engines_map[trigger]
-                if hasattr(sig_trig, 'target_score'):
-                    score = f"{sig_trig.target_score:.0f}đ"
-                    act = (sig_trig.action_label or "").strip()
-                    if act:
-                        info = f" ({trigger}: {score} - {act})"
-                    else:
-                        info = f" ({trigger}: {score})"
-                        
-                raw_setup = getattr(sig_trig, 'raw_setup_string', '')
-                if raw_setup:
-                    setup_text = f"\n   ↳ Thông số: {raw_setup}"
-            
             block = f"{rank}: {symbol}{info}\n   ↳ Phân tích: {phan_tich}\n   ↳ Chiến lược: {chien_luoc}{setup_text}"
             candidates.append({
                 "symbol": symbol,
@@ -918,7 +867,7 @@ def build_convergence_summary(current_signals: List[SignalRecord], super_wave_re
                 "rr_ratio": rr,
                 "block": block
             })
-            
+
     # Sắp xếp đa tầng:
     # 1. Hạng (Tier: S -> A1 -> A2 -> B)
     # 2. Dòng tiền bạo phát (Money Flow) giảm dần
@@ -928,7 +877,51 @@ def build_convergence_summary(current_signals: List[SignalRecord], super_wave_re
     candidates.sort(
         key=lambda c: (c["tier_prio"], -c["money_flow"], -c["strict_score"], -c["target_score"], -c["rr_ratio"], c["symbol"])
     )
+    return candidates
 
+
+def get_convergence_ranks(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger=None) -> Dict[str, str]:
+    """Trả về dict {symbol: rank_str} cho các mã đạt Điểm Chạm Vàng (Hội tụ) và lưu vào database.
+    Sắp xếp đa tầng: Hạng (S -> A1 -> A2 -> B) -> Dòng tiền bạo phát -> Strict 3D -> Điểm động cơ."""
+    if history_logger is None:
+        try:
+            from core.history_logger import HistoryLogger
+            history_logger = HistoryLogger("data/binac4_history.db")
+        except Exception:
+            history_logger = None
+
+    if not history_logger:
+        return {}
+
+    candidates = _evaluate_convergence_candidates(current_signals, super_wave_results, history_logger)
+    ranks = {}
+    for item in candidates:
+        clean_s = item["symbol"].upper().replace('/USDT', '').replace('USDT', '').strip()
+        ranks[clean_s] = item["rank"]
+        ranks[item["symbol"]] = item["rank"]
+
+    if ranks and history_logger and hasattr(history_logger, "save_convergence_signals"):
+        try:
+            history_logger.save_convergence_signals(ranks)
+        except Exception as e:
+            pass
+
+    return ranks
+
+
+def build_convergence_summary(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger=None) -> str:
+    """Module Phân tích Hội tụ (Điểm Chạm Vàng) dạng text hiển thị lên màn hình console/web."""
+    if history_logger is None:
+        try:
+            from core.history_logger import HistoryLogger
+            history_logger = HistoryLogger("data/binac4_history.db")
+        except Exception:
+            history_logger = None
+
+    if not history_logger:
+        return ""
+
+    candidates = _evaluate_convergence_candidates(current_signals, super_wave_results, history_logger)
     summary_lines = [c["block"] for c in candidates]
 
     res = "\n" + "=" * 100 + "\n"
@@ -997,14 +990,12 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
         if btc_locked:
             print("   ⚠️ BTC RỦI RO CAO - TẠM KHÓA TÍN HIỆU SPOT")
 
-        # Gom chung mã đạt chuẩn và dự phòng (xếp Strict 3D → 💥 → Điểm), loại trừ mã trùng với GRID TP2.
-        # Số mã = config top_spot; fill_with_backup=False → primary có hàng thì KHÔNG trộn backup.
+        # Mã đạt chuẩn (primary) luôn đứng trước; chỉ khi thiếu slot mới bổ sung mã dự phòng (backup) xuống bên dưới
         primary_spot = [s for s in b["spot_primary"] if s.symbol not in tp2_symbols]
         backup_spot = [s for s in b["spot_backup"] if s.symbol not in tp2_symbols]
-        pool_spot = primary_spot if (primary_spot and not fill) else primary_spot + backup_spot
-        all_spot = _dedupe_keep_first(sort_spot_primary(pool_spot))[:cfg["top_spot"]]
-        primary_syms = {s.symbol for s in primary_spot}
-        spot_bk = {s.symbol for s in all_spot if s.symbol not in primary_syms}
+        all_spot, spot_bk = pick_with_fallback(primary_spot, backup_spot,
+                                               sort_spot_primary, sort_spot_backup,
+                                               top_n=cfg["top_spot"], fill_with_backup=fill)
 
         result["spot"] = all_spot
         result["spot_backup_symbols"] = spot_bk

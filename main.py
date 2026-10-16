@@ -612,6 +612,7 @@ def main():
                                 scores_payload.append({
                                     'symbol': item['symbol'],
                                     'tier': item.get('tier', ''),
+                                    'action_recommendation': item.get('action_recommendation', ''),
                                     'total': float(item.get('total_score', 0.0)),
                                     'mong': float(bdown.get('foundation_40', 0.0)),
                                     'day': float(bdown.get('momentum_40', 0.0)),

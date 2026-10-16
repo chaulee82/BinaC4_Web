@@ -1552,8 +1552,16 @@ def get_filtered_symbols(live_data_map):
             else:
                 reason = r.get('Phân Loại Grid', '').replace('⛔ NÉ GRID (', '').replace(')', '').replace('⛔ ', '')
                 if not reason.strip() or 'GRID' in reason:
-                    reason = r.get('Cảnh Báo', 'Rủi ro chưa xác định')
-                safety_map[sym_ccxt] = f"⚠️ {reason}"
+                    raw_warn = r.get('Cảnh Báo', 'Rủi ro chưa xác định')
+                    first_warn = raw_warn.split('  •  ')[0].strip() if raw_warn else 'Rủi ro chưa xác định'
+                    if ': ' in first_warn:
+                        reason = first_warn.split(': ')[0].strip()
+                    else:
+                        reason = first_warn
+                if any(reason.startswith(icon) for icon in ("⚠️", "⛔", "🛑", "💀", "🛡️", "🦅", "✅", "🟢")):
+                    safety_map[sym_ccxt] = reason
+                else:
+                    safety_map[sym_ccxt] = f"⚠️ {reason}"
 
     # Bổ sung mã từ Bảng 3 (early) và Bảng 4 (momentum) — thêm vào cuối nếu chưa có
     for r in early_list:

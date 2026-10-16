@@ -209,7 +209,7 @@ class ConsoleRenderer:
             print("\n" + "=" * 80)
             print(f"📦 ĐỘNG CƠ 1: DARVAS GRID")
             print("=" * 80)
-            print(f"{'Mã':<10} | {'Điểm':<6} | {'Trạng Thái':<20} | {'Hành Động'}")
+            print(f"{'Mã':<10} | {'Điểm':<6} | {'Trạng Thái':<42} | {'Hành Động'}")
             print("| --- | --- | --- | --- |")
             
             for state in symbol_states:
@@ -220,9 +220,9 @@ class ConsoleRenderer:
                 sym = state.symbol.replace('/USDT', '')
                 score = score_ctx.total_score
                 act = score_ctx.action_label
-                safe_tag = state.safety_tag[:20] if state.safety_tag else ""
+                safe_tag = state.safety_tag[:42] if state.safety_tag else ""
                 
-                print(f"{sym:<10} | {score:<6} | {safe_tag:<20} | {act}")
+                print(f"{sym:<10} | {score:<6} | {safe_tag:<42} | {act}")
                 if score >= 60 and score_ctx.grid_setup:
                     g_setup = score_ctx.grid_setup
                     sl = g_setup.stop_loss
@@ -251,7 +251,7 @@ class ConsoleRenderer:
             print("\n" + "=" * 100)
             print(f"🎯 PULLBACK SNIPER (ĐỘNG CƠ 2)")
             print("=" * 100)
-            print(f"{'Mã':<8} | {'Điểm':<5} | {'Trạng Thái':<15} | {'C0':<4} | {'C1':<4} | {'C2':<4} | {'C3':<4} | {'C4':<4} | {'Hành Động'}")
+            print(f"{'Mã':<8} | {'Điểm':<5} | {'Trạng Thái':<40} | {'C0':<4} | {'C1':<4} | {'C2':<4} | {'C3':<4} | {'C4':<4} | {'Hành Động'}")
             
             for state in symbol_states:
                 score_ctx = state.scores.get("DC2")
@@ -261,7 +261,7 @@ class ConsoleRenderer:
                 sym = state.symbol.replace('/USDT', '')
                 score = score_ctx.total_score
                 act = score_ctx.action_label
-                safe_tag = state.safety_tag[:15] if state.safety_tag else ""
+                safe_tag = state.safety_tag[:40] if state.safety_tag else ""
                 
                 c1 = score_ctx.c1_score
                 c2 = score_ctx.c2_score
@@ -270,7 +270,7 @@ class ConsoleRenderer:
                 c0 = score_ctx.bonus_score
                 c0_str = f"+{c0}" if isinstance(c0, (int, float)) and c0 > 0 else str(c0 if c0 != '-' else 0)
                 
-                print(f"{sym:<8} | {score:<5} | {safe_tag:<15} | {c0_str:<4} | {c1:<4} | {c2:<4} | {c3:<4} | {c4:<4} | {act}")
+                print(f"{sym:<8} | {score:<5} | {safe_tag:<40} | {c0_str:<4} | {c1:<4} | {c2:<4} | {c3:<4} | {c4:<4} | {act}")
                 
                 # In Early Warning
                 if score_ctx.early_warning:
