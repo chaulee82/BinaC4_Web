@@ -148,7 +148,7 @@ def record_and_analyze(
             eval_tag = "➖ Khởi tạo"
         elif d1 >= 5.0 and d4 >= 8.0:
             eval_tag = "🚀 Bứt phá mạnh"
-        elif d1 > 0 and d4 >= 0:
+        elif (d1 > 0 and d4 >= 0) or (d4 >= 3.0 and d1 >= 0):
             eval_tag = "🟢 Tích lũy tăng"
         elif d1 < 0 and d4 < -5.0:
             eval_tag = "⛔ Xả dốc mạnh"
@@ -167,24 +167,67 @@ def record_and_analyze(
             'eval': eval_tag
         })
 
-    # Top 10 Tăng Uy Tín: có dữ liệu quá khứ, delta_1 > 0, current >= 50.0
+    # Top 10 Tăng Uy Tín: có dữ liệu quá khứ, (delta_1 > 0 hoặc delta_4 > 0), tổng delta > 0, current >= 50.0
     top_gainers = sorted(
-        [x for x in delta_list if x['prev_1'] is not None and x['delta_1'] > 0 and x['current'] >= 50.0],
-        key=lambda x: (x['delta_1'] + x['delta_4']),
+        [
+            x for x in delta_list 
+            if x['prev_1'] is not None 
+            and (x['delta_1'] > 0 or x['delta_4'] > 0)
+            and (x['delta_1'] + x['delta_4']) > 0
+            and x['current'] >= 50.0
+        ],
+        key=lambda x: (x['delta_4'] + x['delta_1']),
         reverse=True
     )[:10]
 
-    # Top 10 Giảm Cảnh Báo: có dữ liệu quá khứ, delta_1 < 0 hoặc delta_4 < 0, và prev_1 >= 50.0 hoặc current >= 50.0
+    # Top 10 Giảm Cảnh Báo: có dữ liệu quá khứ, (delta_1 < 0 hoặc delta_4 < 0), và prev_1 >= 50.0 hoặc current >= 50.0
     top_losers = sorted(
-        [x for x in delta_list if x['prev_1'] is not None and (x['delta_1'] < 0 or x['delta_4'] < 0) and (x['prev_1'] >= 50.0 or x['current'] >= 50.0)],
-        key=lambda x: (x['delta_1'] + x['delta_4'])
+        [
+            x for x in delta_list 
+            if x['prev_1'] is not None 
+            and (x['delta_1'] < 0 or x['delta_4'] < 0) 
+            and (x['prev_1'] >= 50.0 or x['current'] >= 50.0)
+        ],
+        key=lambda x: (x['delta_4'] + x['delta_1'])
     )[:10]
 
     return top_gainers, top_losers
 
 
-def print_delta_tables(top_gainers: List[Dict], top_losers: List[Dict]) -> None:
+def _format_delta_cell(val: float) -> str:
+    """Định dạng ô hiển thị Delta có kèm icon màu sắc trực quan"""
+    if val > 0:
+        return f"🟢 +{val:<7}"
+    elif val < 0:
+        return f"🔴 {val:<8}"
+    else:
+        return f"⚪ {val:<8}"
+
+
+def print_delta_tables(
+    top_gainers: List[Dict],
+    top_losers: List[Dict],
+    has_history: Optional[bool] = None,
+    db_path: Optional[str] = None
+) -> None:
     """Hiển thị định dạng bảng phân tích Delta ra Terminal Log"""
+    if has_history is None:
+        if top_gainers or top_losers:
+            has_history = True
+        else:
+            target_db = db_path or DB_PATH
+            try:
+                if os.path.exists(target_db):
+                    with sqlite3.connect(target_db) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT COUNT(DISTINCT scan_time) FROM score_history")
+                        row = cursor.fetchone()
+                        has_history = bool(row and row[0] >= 2)
+                else:
+                    has_history = False
+            except Exception:
+                has_history = False
+
     print("\n" + "=" * 110)
     print("📊 BẢNG THEO DÕI BIẾN THIÊN TÍN NHIỆM (DELTA AUDIT)")
     print("=" * 110)
@@ -194,22 +237,28 @@ def print_delta_tables(top_gainers: List[Dict], top_losers: List[Dict]) -> None:
     print(f"{'Mã':<8} | {'Tier':<22} | {'Hiện Tại':<9} | {'Δ 1-Phiên':<12} | {'Δ 4-Phiên':<12} | {'Đánh Giá':<20}")
     print("-" * 110)
     if not top_gainers:
-        print("  (Chưa đủ dữ liệu tối thiểu 2 phiên quét để tính toán biến thiên)")
+        if has_history:
+            print("  (Không có mã uy tín nào (>= 50đ) ghi nhận tăng điểm trong các phiên gần nhất)")
+        else:
+            print("  (Chưa đủ dữ liệu tối thiểu 2 phiên quét để tính toán biến thiên)")
     else:
         for item in top_gainers:
-            d1_fmt = f"+{item['delta_1']}" if item['delta_1'] > 0 else f"{item['delta_1']}"
-            d4_fmt = f"+{item['delta_4']}" if item['delta_4'] > 0 else f"{item['delta_4']}"
-            print(f"{item['symbol']:<8} | {item['tier']:<22} | {item['current']:<9.1f} | 🟢 {d1_fmt:<9} | 🟢 {d4_fmt:<9} | {item['eval']:<20}")
+            c1 = _format_delta_cell(item['delta_1'])
+            c4 = _format_delta_cell(item['delta_4'])
+            print(f"{item['symbol']:<8} | {item['tier']:<22} | {item['current']:<9.1f} | {c1} | {c4} | {item['eval']:<20}")
 
     print("\n📉 [TOP 10 GIẢM ĐIỂM CẢNH BÁO] (Lực mua suy yếu / Bị phân phối)")
     print("-" * 110)
     print(f"{'Mã':<8} | {'Tier':<22} | {'Hiện Tại':<9} | {'Δ 1-Phiên':<12} | {'Δ 4-Phiên':<12} | {'Đánh Giá':<20}")
     print("-" * 110)
     if not top_losers:
-        print("  (Không có mã điểm cao nào ghi nhận suy giảm bất thường)")
+        if has_history:
+            print("  (Không có mã điểm cao nào ghi nhận suy giảm bất thường)")
+        else:
+            print("  (Chưa đủ dữ liệu tối thiểu 2 phiên quét để tính toán biến thiên)")
     else:
         for item in top_losers:
-            d1_fmt = f"{item['delta_1']}"
-            d4_fmt = f"{item['delta_4']}"
-            print(f"{item['symbol']:<8} | {item['tier']:<22} | {item['current']:<9.1f} | 🔴 {d1_fmt:<9} | 🔴 {d4_fmt:<9} | {item['eval']:<20}")
+            c1 = _format_delta_cell(item['delta_1'])
+            c4 = _format_delta_cell(item['delta_4'])
+            print(f"{item['symbol']:<8} | {item['tier']:<22} | {item['current']:<9.1f} | {c1} | {c4} | {item['eval']:<20}")
     print("=" * 110 + "\n")

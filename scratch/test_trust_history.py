@@ -64,12 +64,13 @@ def test_trust_history():
         {"symbol": "NIL", "tier": "Tier B", "total": 52.0, "mong": 20.0, "day": 22.0, "tien": 10.0},
         {"symbol": "DOGE", "tier": "Tier F", "total": 20.0, "mong": 10.0, "day": 10.0, "tien": 0.0},
         {"symbol": "SOL", "tier": "Tier A", "total": 70.0, "mong": 30.0, "day": 30.0, "tien": 10.0},
+        {"symbol": "NEAR", "tier": "Tier A", "total": 55.0, "mong": 22.0, "day": 23.0, "tien": 10.0},
     ]
     g1, l1 = record_and_analyze(session1_data, keep_snapshots=24, db_path=TEST_DB, scan_time=session1_time)
     assert len(g1) == 0, f"Phiên 1 chưa có lịch sử, g1 phải rỗng nhưng nhận: {len(g1)}"
     assert len(l1) == 0, f"Phiên 1 chưa có lịch sử, l1 phải rỗng nhưng nhận: {len(l1)}"
     print("✅ Phiên 1 (Khởi tạo): g1 và l1 rỗng chính xác (chưa đủ dữ liệu 2 phiên).")
-    print_delta_tables(g1, l1)
+    print_delta_tables(g1, l1, db_path=TEST_DB)
 
     # 3. Phiên 2: Bắt đầu có Delta 1 và Delta 4 (lấy phiên 1)
     session2_time = "2026-10-15 12:00:00"
@@ -117,6 +118,7 @@ def test_trust_history():
         {"symbol": "ZK", "tier": "Tier A", "total": 74.0},
         {"symbol": "NIL", "tier": "Tier B", "total": 56.0},
         {"symbol": "SOL", "tier": "Tier A", "total": 69.0},
+        {"symbol": "NEAR", "tier": "Tier A", "total": 60.0},
     ], keep_snapshots=24, db_path=TEST_DB, scan_time="2026-10-15 16:00:00")
 
     # Phiên 5 (T0 = 18:00):
@@ -132,6 +134,8 @@ def test_trust_history():
         {"symbol": "NIL", "tier": "Tier B", "total": 57.0, "mong": 22.0, "day": 25.0, "tien": 10.0},
         # SOL: 16:00 là 69.0, 10:00 là 70.0. Giờ là 68.0 -> d1 = -1.0, d4 = 68 - 70 = -2.0 -> Hạ nhiệt ngắn
         {"symbol": "SOL", "tier": "Tier A", "total": 68.0, "mong": 29.0, "day": 29.0, "tien": 10.0},
+        # NEAR: 10:00 là 55.0, 16:00 là 60.0. Giờ là 60.0 -> d1 = 0.0, d4 = +5.0 -> Vẫn vào Top Tăng Uy Tín
+        {"symbol": "NEAR", "tier": "Tier A", "total": 60.0, "mong": 25.0, "day": 25.0, "tien": 10.0},
     ]
     g5, l5 = record_and_analyze(session5_data, keep_snapshots=24, db_path=TEST_DB, scan_time=session5_time)
     print("✅ Phiên 5 (Đầy đủ T1 và T4):")
@@ -140,6 +144,11 @@ def test_trust_history():
     assert ava_5['delta_4'] == 22.0, f"AVA d4 mong đợi 22.0, nhận {ava_5['delta_4']}"
     assert ava_5['eval'] == "🚀 Bứt phá mạnh"
     print(f"  AVA: d1={ava_5['delta_1']}, d4={ava_5['delta_4']} -> {ava_5['eval']}")
+
+    near_5 = next(x for x in g5 if x['symbol'] == 'NEAR')
+    assert near_5['delta_1'] == 0.0
+    assert near_5['delta_4'] == 5.0
+    print(f"  NEAR: d1={near_5['delta_1']}, d4={near_5['delta_4']} -> {near_5['eval']} (Đã lọt Top Tăng thành công)")
 
     nil_5 = next(x for x in g5 if x['symbol'] == 'NIL')
     assert nil_5['delta_1'] == 1.0

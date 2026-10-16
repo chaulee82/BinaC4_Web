@@ -46,30 +46,92 @@ import gc
 LOCK_FILE = os.path.join(os.path.dirname(__file__), 'data', 'binac4_main.lock')
 
 def get_concurrent_main_pids() -> list:
-    """Trả về danh sách PID của các tiến trình main.py khác đang chạy song song."""
-    my_pid = os.getpid()
-    other_pids = []
+    """Trả về danh sách PID của các tiến trình main.py thực sự khác đang chạy song song.
     
-    # 1. Quét /proc trên Linux VPS
+    Tự động lọc bỏ:
+    - Chính tiến trình hiện tại (os.getpid())
+    - Tiến trình cha gọi nó (os.getppid()) như sh/bash/cron/auto_runner wrapper
+    - Tiến trình Zombie/Defunct (đã kết thúc nhưng chưa được giải phóng)
+    - Các script quản lý khác (auto_runner.py, web_app.py, v.v.)
+    """
+    my_pid = os.getpid()
+    parent_pid = os.getppid() if hasattr(os, 'getppid') else None
+    ignored_pids = {my_pid}
+    if parent_pid:
+        ignored_pids.add(parent_pid)
+
+    other_pids = []
+
+    def is_target_main_cmd(cmdline_list: list) -> bool:
+        if not cmdline_list:
+            return False
+        cmd_str = " ".join(cmdline_list)
+        # Bỏ qua các wrapper quản lý
+        if "auto_runner.py" in cmd_str or "web_app.py" in cmd_str:
+            return False
+        # Phải là lệnh python
+        has_python = any("python" in str(arg).lower() or "venv" in str(arg).lower() for arg in cmdline_list[:2])
+        if not has_python:
+            return False
+        # Phải có đối số là main.py đích thực (tránh test_main.py hay chuỗi con)
+        has_main = any(
+            arg == "main.py" or arg.endswith("/main.py") or arg.endswith("\\main.py")
+            for arg in cmdline_list
+        )
+        return has_main
+
+    # 1. Quét bằng psutil (chuẩn xác nhất, có sẵn trong requirements.txt)
+    try:
+        import psutil
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'status']):
+            try:
+                pid = proc.info.get('pid')
+                if not pid or pid in ignored_pids:
+                    continue
+                # Bỏ qua Zombie / Defunct process
+                if proc.info.get('status') == psutil.STATUS_ZOMBIE:
+                    continue
+                cmdline = proc.info.get('cmdline') or []
+                if is_target_main_cmd(cmdline):
+                    other_pids.append(pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+        return other_pids
+    except ImportError:
+        pass
+
+    # 2. Fallback quét /proc trên Linux VPS (khi chưa cài psutil)
     if os.path.exists('/proc'):
         try:
             for entry in os.listdir('/proc'):
-                if entry.isdigit():
-                    pid = int(entry)
-                    if pid == my_pid:
-                        continue
-                    try:
-                        with open(f"/proc/{pid}/cmdline", "rb") as f:
+                if not entry.isdigit():
+                    continue
+                pid = int(entry)
+                if pid in ignored_pids:
+                    continue
+                try:
+                    # Kiểm tra trạng thái để loại trừ zombie
+                    status_path = f"/proc/{pid}/status"
+                    if os.path.exists(status_path):
+                        with open(status_path, "r", encoding="utf-8", errors="ignore") as f:
+                            stat_text = f.read(256)
+                            if "State:\tZ" in stat_text or "State: Z" in stat_text:
+                                continue
+
+                    cmdline_path = f"/proc/{pid}/cmdline"
+                    if os.path.exists(cmdline_path):
+                        with open(cmdline_path, "rb") as f:
                             raw = f.read().decode("utf-8", errors="ignore")
-                            if "main.py" in raw and ("python" in raw or "venv" in raw):
+                            args = [a for a in raw.split("\0") if a]
+                            if is_target_main_cmd(args):
                                 other_pids.append(pid)
-                    except (FileNotFoundError, PermissionError, ProcessLookupError):
-                        continue
+                except (FileNotFoundError, PermissionError, ProcessLookupError):
+                    continue
             return other_pids
         except Exception:
             pass
 
-    # 2. Fallback bằng lệnh pgrep trên Unix
+    # 3. Fallback bằng lệnh pgrep trên Unix
     if sys.platform != 'win32':
         try:
             import subprocess
@@ -77,7 +139,13 @@ def get_concurrent_main_pids() -> list:
             for line in out.strip().splitlines():
                 if line.isdigit():
                     p = int(line)
-                    if p != my_pid and p not in other_pids:
+                    if p not in ignored_pids and p not in other_pids:
+                        try:
+                            state = subprocess.check_output(['ps', '-o', 'stat=', '-p', str(p)], text=True).strip()
+                            if state.startswith('Z'):
+                                continue
+                        except Exception:
+                            pass
                         other_pids.append(p)
         except Exception:
             pass

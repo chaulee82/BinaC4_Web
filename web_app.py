@@ -105,7 +105,6 @@ def run_binac4():
     if prev_pid:
         output_str += (
             f"⚠️ [CẢNH BÁO TÀI NGUYÊN] Tiến trình quét trước (PID: {prev_pid}) vẫn đang chạy ngầm!\n"
-            f"💡 Khuyến nghị: Bạn có thể nhấn [⏹️ Dừng Bot] để tắt tiến trình cũ giúp giảm tải RAM VPS.\n"
             f"⚡ Ưu tiên tiếp tục khởi tạo phiên quét mới này (PID: {process.pid})...\n"
             + "="*60 + "\n"
         )
@@ -223,13 +222,10 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
     gr.Markdown("Giao diện này cho phép bạn kích hoạt bot `main.py` và theo dõi quá trình quét thị trường trực tiếp.")
     
     with gr.Row():
-        run_btn = gr.Button("▶️ Thực thi Bot (Run main.py)", variant="primary", scale=3)
-        refresh_btn = gr.Button("🔄 Tải Log Gần Nhất", scale=1)
-        stop_btn = gr.Button("⏹️ Dừng Bot (Stop)", variant="stop", scale=1)
+        run_btn = gr.Button("▶️ Thực thi Bot (Run main.py)", variant="primary")
     
     with gr.Row():
         copy_btn = gr.Button("📋 Copy Kết Quả", size="sm")
-        summary_copy_btn = gr.Button("✂️ Copy Tóm Tắt (Gửi Điện Thoại)", size="sm")
     
     with gr.Row():
         output_box = gr.Textbox(
@@ -249,10 +245,11 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
             interactive=False
         )
     
-    # Connect run, refresh & stop buttons
+    # Tự động tải log gần nhất mỗi khi mở hoặc làm mới trang web (F5 / tải lại)
+    demo.load(fn=get_latest_log_data, inputs=None, outputs=[output_box, file_download])
+
+    # Connect run button
     run_btn.click(fn=run_binac4, inputs=None, outputs=[output_box, file_download])
-    refresh_btn.click(fn=get_latest_log_data, inputs=None, outputs=[output_box, file_download])
-    stop_btn.click(fn=stop_binac4, inputs=None, outputs=[output_box])
     
     # Javascript fallback for copying on HTTP (non-secure) connections
     js_copy_text = """
@@ -274,160 +271,6 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
     }
     """
     
-    js_copy_summary = """
-    (text) => {
-        let lines = text.split('\\n');
-        let summaryLines = [];
-        let captureMode = '';
-        
-        for (let i = 0; i < lines.length; i++) {
-            let line = lines[i].trim();
-            if (!line) continue;
-            
-            if (line.includes('⏰ Thời điểm cập nhật')) {
-                summaryLines.push(line);
-                continue;
-            }
-            if (line.includes('BẢNG CHẤM ĐIỂM REBALANCE')) {
-                captureMode = 'REBALANCE';
-                summaryLines.push('');
-                summaryLines.push('🏆 BẢNG CHẤM ĐIỂM REBALANCE / SPOT GRID');
-                summaryLines.push('Hạng | Mã | TỔNG | Phân Loại Grid | Tín Hiệu Cảnh Báo');
-                continue;
-            }
-            if (line.includes('BẢNG THAM SỐ GRID CHUẨN') || line.includes('BẢNG THAM SỐ GRID TỰ ĐỘNG')) {
-                captureMode = 'GRID_PARAMS';
-                summaryLines.push('');
-                summaryLines.push('🏆 BẢNG THAM SỐ GRID CHUẨN');
-                continue;
-            }
-            if (line.includes('BẢNG 3: BẮT SỚM NỀN TĂNG')) {
-                captureMode = 'EARLY_BIRD';
-                summaryLines.push('');
-                summaryLines.push('🌱 BẢNG 3: BẮT SỚM NỀN TĂNG');
-                summaryLines.push('Mã | Điểm | Rút Chân | Giật 4H');
-                continue;
-            }
-            if (line.includes('ĐỘNG CƠ 1: DARVAS GRID') || line.includes('BẢNG CHẤM ĐIỂM MACRO GRID DARVAS')) {
-                captureMode = 'DARVAS';
-                summaryLines.push('');
-                summaryLines.push('📦 ĐỘNG CƠ 1: DARVAS GRID');
-                summaryLines.push('Mã | Điểm | Trạng Thái | Hành Động');
-                continue;
-            }
-            if (line.includes('ĐỘNG CƠ 2 - TÌM LỆNH THỰC THI CHÍNH XÁC')) {
-                captureMode = 'SNIPER';
-                summaryLines.push('');
-                summaryLines.push('🎯 ĐỘNG CƠ 2: PULLBACK SNIPER');
-                summaryLines.push('Mã | Điểm | Trạng Thái | Hành Động');
-                continue;
-            }
-            if (line.includes('ĐỘNG CƠ 3 - SĂN BỨT PHÁ ĐỘNG LƯỢNG')) {
-                captureMode = 'BREAKOUT';
-                summaryLines.push('');
-                summaryLines.push('🚀 ĐỘNG CƠ 3: MOMENTUM BREAKOUT');
-                summaryLines.push('Mã | Điểm | Hành Động');
-                continue;
-            }
-            if (line.includes('ĐỘNG CƠ 4 - SĂN ĐIỂM VÀO LỆNH PULLBACK')) {
-                captureMode = 'HOT_TREND';
-                summaryLines.push('');
-                summaryLines.push('🔥 ĐỘNG CƠ 4: HOT TREND PULLBACK');
-                summaryLines.push('Mã | Điểm | Hành Động');
-                continue;
-            }
-            
-            if (line.startsWith('====') || line.startsWith('----') && captureMode) {
-                continue;
-            }
-            if (line.includes('KẾT QUẢ PHÂN TÍCH THỊ TRƯỜNG')) {
-                captureMode = '';
-                continue;
-            }
-            
-            if (captureMode === 'DARVAS') {
-                if (line.includes('|') && !line.includes('Mã (Symbol)')) {
-                    let parts = line.split('|').map(s => s.trim());
-                    if (parts.length >= 4) {
-                        summaryLines.push(`${parts[0]} | ${parts[1]} | ${parts[2].replace(/✅ |⚠️ /g, '')} | ${parts[3]}`);
-                    }
-                }
-            } else if (captureMode === 'SNIPER') {
-                if (line.includes('|') && !line.includes('Mã (Symbol)')) {
-                    let parts = line.split('|').map(s => s.trim());
-                    if (parts.length >= 8) {
-                        summaryLines.push(`${parts[0]} | ${parts[1]} | ${parts[2].replace(/✅ |⚠️ /g, '')} | ${parts[7]}`);
-                    }
-                } else if (line.includes('↳ ⚙️ SETUP:')) {
-                    summaryLines.push('  ' + line.replace('↳ ⚙️ SETUP:', '↳').replace(/\\s+/g, ' '));
-                }
-            } else if (captureMode === 'BREAKOUT') {
-                if (line.includes('|') && !line.includes('Mã (Symbol)')) {
-                    let parts = line.split('|').map(s => s.trim());
-                    if (parts.length >= 6) {
-                        let hanhDong = '';
-                        if (i + 1 < lines.length && lines[i+1].includes('↳ Hành Động:')) {
-                            hanhDong = lines[i+1].split('↳ Hành Động:')[1].trim();
-                        }
-                        summaryLines.push(`${parts[0]} | ${parts[1]} | ${hanhDong}`);
-                    }
-                }
-            } else if (captureMode === 'HOT_TREND') {
-                if (line.includes('|') && !line.includes('Mã (Symbol)')) {
-                    let parts = line.split('|').map(s => s.trim());
-                    if (parts.length >= 8) {
-                        // Col 0: Mã, Col 1: Điểm, Col 7: Hành Động
-                        let hanhDong = parts[7].replace(/✅ |⚠️ |🟡 |🛑 |🚀 |⏳ /g, '');
-                        summaryLines.push(`${parts[0]} | ${parts[1]} | ${hanhDong}`);
-                    }
-                } else if (line.includes('↳ ⚙️ SETUP:')) {
-                    summaryLines.push('  ' + line.replace('↳ ⚙️ SETUP:', '↳').replace(/\\s+/g, ' '));
-                }
-            } else if (captureMode === 'REBALANCE') {
-                if (line.includes('|') && !line.includes('Mã')) {
-                    let parts = line.split('|').map(s => s.trim());
-                    if (parts.length >= 7) {
-                        let rank = parts[0];
-                        let sym = parts[1];
-                        let phanLoai = parts[3];
-                        let tong = parts[4];
-                        let canhBao = parts[6];
-                        summaryLines.push(`${rank} | ${sym} | ${tong} | ${phanLoai} | ${canhBao}`);
-                    }
-                }
-            } else if (captureMode === 'GRID_PARAMS') {
-                if (line.includes('↳ ⚙️')) {
-                    summaryLines.push('  ' + line.trim().replace(/\\s+/g, ' '));
-                }
-            } else if (captureMode === 'EARLY_BIRD') {
-                if (line.includes('|') && !line.includes('Mã')) {
-                    let parts = line.split('|').map(s => s.trim());
-                    if (parts.length >= 5) {
-                        summaryLines.push(`${parts[0]} | ${parts[2]} | ${parts[3]} | ${parts[4]}`);
-                    }
-                }
-            }
-        }
-        
-        let summaryText = summaryLines.join('\\n');
-        
-        if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(summaryText.trim());
-            alert('Đã copy Tóm Tắt Ngắn Gọn!');
-        } else {
-            let textArea = document.createElement("textarea");
-            textArea.value = summaryText.trim();
-            textArea.style.position = "fixed";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            document.execCommand('copy');
-            textArea.remove();
-            alert('Đã copy Tóm Tắt Ngắn Gọn bằng chế độ tương thích!');
-        }
-    }
-    """
-    
     # Connect copy button using Javascript
     copy_btn.click(
         fn=None,
@@ -436,13 +279,7 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
         js=js_copy_text
     )
     
-    # Connect summary copy button using Javascript
-    summary_copy_btn.click(
-        fn=None,
-        inputs=[output_box],
-        outputs=[],
-        js=js_copy_summary
-    )
+
 
 if __name__ == "__main__":
     demo.queue() # Enable queuing for streaming outputs
