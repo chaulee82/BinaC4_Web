@@ -4,10 +4,37 @@ import sys
 import os
 import queue
 import threading
+import time
+
+WORKSPACE_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_PATH = os.path.join(WORKSPACE_DIR, 'main.py')
+HTML_LOG_FILE = os.path.join(WORKSPACE_DIR, 'BinaC4_latest_log.html')
+TXT_LOG_FILE = os.path.join(WORKSPACE_DIR, 'BinaC4_latest_log.txt')
 
 # Quản lý tiến trình duy nhất (Single Instance Subprocess)
 _current_process = None
 _proc_lock = threading.Lock()
+
+def get_latest_log_data():
+    """Tải nội dung log gần nhất từ file để hiển thị ngay khi mở Web (0s chờ)."""
+    if os.path.exists(TXT_LOG_FILE) and os.path.getsize(TXT_LOG_FILE) > 0:
+        try:
+            with open(TXT_LOG_FILE, 'r', encoding='utf-8') as f:
+                return f.read(), TXT_LOG_FILE
+        except Exception:
+            pass
+    if os.path.exists(HTML_LOG_FILE) and os.path.getsize(HTML_LOG_FILE) > 0:
+        try:
+            with open(HTML_LOG_FILE, 'r', encoding='utf-8') as f:
+                content = f.read()
+                if '<pre>' in content:
+                    content = content.split('<pre>', 1)[1]
+                    if '</pre>' in content:
+                        content = content.split('</pre>', 1)[0]
+                return content.replace('&lt;', '<').replace('&gt;', '>'), HTML_LOG_FILE
+        except Exception:
+            pass
+    return "ℹ️ Chưa có dữ liệu phiên quét nào. Vui lòng bấm [▶️ Thực thi Bot] để bắt đầu.", None
 
 def stop_binac4():
     """Dừng tiến trình main.py đang chạy nếu có."""
@@ -28,7 +55,7 @@ def stop_binac4():
         return "ℹ️ Hiện không có tiến trình bot nào đang chạy."
 
 def run_binac4():
-    """Executes main.py and yields its output line by line to the Gradio UI."""
+    """Executes main.py and yields its output in throttled batches to the Gradio UI."""
     global _current_process
     
     # ── 1. Kiểm tra tiến trình cũ (Chỉ cảnh báo, vẫn ưu tiên tiếp tục chạy dù chậm) ──
@@ -37,9 +64,6 @@ def run_binac4():
         if _current_process is not None and _current_process.poll() is None:
             prev_pid = _current_process.pid
 
-    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'main.py')
-    html_log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'BinaC4_latest_log.html')
-    
     # Prepare environment variables to force UTF-8 encoding for prints
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
@@ -60,13 +84,9 @@ def run_binac4():
 </body>
 </html>"""
 
-    # Clear previous HTML log file and write header
-    with open(html_log_file_path, 'w', encoding='utf-8') as f:
-        f.write(html_header)
-        
     try:
         process = subprocess.Popen(
-            [sys.executable, "-u", script_path],
+            [sys.executable, "-u", SCRIPT_PATH],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -102,40 +122,80 @@ def run_binac4():
     t.daemon = True
     t.start()
     
+    last_yield_time = time.time()
+    has_new_data = False
+    
     try:
-        while True:
-            try:
-                line = q.get(timeout=1.0)
-                if "✅ AN TOÀN" in line:
-                    continue
-                    
-                output_str += line
-                
-                # Append line to HTML file (escape < and > just in case)
-                safe_line = line.replace('<', '&lt;').replace('>', '&gt;')
-                with open(html_log_file_path, 'a', encoding='utf-8') as f:
-                    f.write(safe_line)
-                    
-                yield output_str, None
-                
-            except queue.Empty:
-                if process.poll() is not None:
-                    break
-                yield output_str, None
-                
-        return_code = process.wait()
-        
-        if return_code != 0:
-            output_str += f"\n\n[ERROR] Quá trình kết thúc với mã lỗi {return_code}"
-        else:
-            output_str += f"\n\n[SUCCESS] Hoàn tất quá trình quét."
-        
-        # Write footer to HTML file
-        with open(html_log_file_path, 'a', encoding='utf-8') as f:
-            f.write(f"\nReturn code: {return_code}")
-            f.write(html_footer)
+        with open(HTML_LOG_FILE, 'w', encoding='utf-8') as f_html, \
+             open(TXT_LOG_FILE, 'w', encoding='utf-8') as f_txt:
             
-        yield output_str, html_log_file_path
+            f_html.write(html_header)
+            f_txt.write(output_str)
+            f_html.write(output_str.replace('<', '&lt;').replace('>', '&gt;'))
+            
+            while True:
+                try:
+                    # Timeout ngắn để nhanh chóng gom các dòng
+                    line = q.get(timeout=0.2)
+                    if "✅ AN TOÀN" not in line:
+                        output_str += line
+                        has_new_data = True
+                        f_txt.write(line)
+                        f_html.write(line.replace('<', '&lt;').replace('>', '&gt;'))
+                    
+                    # Rút hết các dòng đang chờ sẵn trong Queue mà không chờ timeout
+                    while not q.empty():
+                        try:
+                            extra_line = q.get_nowait()
+                            if "✅ AN TOÀN" not in extra_line:
+                                output_str += extra_line
+                                has_new_data = True
+                                f_txt.write(extra_line)
+                                f_html.write(extra_line.replace('<', '&lt;').replace('>', '&gt;'))
+                        except queue.Empty:
+                            break
+                    
+                    now = time.time()
+                    # Throttle: Chỉ yield ra giao diện mỗi tối thiểu 0.5 giây để tránh nghẽn WebSocket & DOM Freeze
+                    if has_new_data and (now - last_yield_time >= 0.5):
+                        f_html.flush()
+                        f_txt.flush()
+                        last_yield_time = now
+                        has_new_data = False
+                        yield output_str, None
+
+                except queue.Empty:
+                    now = time.time()
+                    if has_new_data:
+                        f_html.flush()
+                        f_txt.flush()
+                        last_yield_time = now
+                        has_new_data = False
+                        yield output_str, None
+                    elif process.poll() is not None:
+                        # Tiến trình con đã kết thúc và không còn dữ liệu trong queue
+                        break
+                    else:
+                        # Gửi heartbeat định kỳ 2s nếu không có output để giữ kết nối không bị timeout
+                        if now - last_yield_time >= 2.0:
+                            last_yield_time = now
+                            yield output_str, None
+            
+            return_code = process.wait()
+            
+            if return_code != 0:
+                final_msg = f"\n\n[ERROR] Quá trình kết thúc với mã lỗi {return_code}\n"
+            else:
+                final_msg = f"\n\n[SUCCESS] Hoàn tất quá trình quét.\n"
+            
+            output_str += final_msg
+            f_txt.write(final_msg)
+            f_html.write(final_msg.replace('<', '&lt;').replace('>', '&gt;'))
+            f_html.write(html_footer)
+            f_txt.flush()
+            f_html.flush()
+            
+        yield output_str, TXT_LOG_FILE
     finally:
         with _proc_lock:
             if _current_process == process:
@@ -157,11 +217,14 @@ css = """
 
 # Build the Gradio interface
 with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
+    initial_text, initial_file = get_latest_log_data()
+
     gr.Markdown("# 🚀 BinaC4 Trading Bot Web Interface")
     gr.Markdown("Giao diện này cho phép bạn kích hoạt bot `main.py` và theo dõi quá trình quét thị trường trực tiếp.")
     
     with gr.Row():
         run_btn = gr.Button("▶️ Thực thi Bot (Run main.py)", variant="primary", scale=3)
+        refresh_btn = gr.Button("🔄 Tải Log Gần Nhất", scale=1)
         stop_btn = gr.Button("⏹️ Dừng Bot (Stop)", variant="stop", scale=1)
     
     with gr.Row():
@@ -170,6 +233,7 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
     
     with gr.Row():
         output_box = gr.Textbox(
+            value=initial_text,
             label="Terminal Output / Logs", 
             lines=30, 
             max_lines=50, 
@@ -179,10 +243,15 @@ with gr.Blocks(title="BinaC4 Web Interface", css=css) as demo:
         )
         
     with gr.Row():
-        file_download = gr.File(label="Tải xuống File Log để gửi cho Gemini (.txt)", interactive=False)
+        file_download = gr.File(
+            value=initial_file,
+            label="Tải xuống File Log để gửi cho Gemini (.txt)", 
+            interactive=False
+        )
     
-    # Connect run & stop buttons
+    # Connect run, refresh & stop buttons
     run_btn.click(fn=run_binac4, inputs=None, outputs=[output_box, file_download])
+    refresh_btn.click(fn=get_latest_log_data, inputs=None, outputs=[output_box, file_download])
     stop_btn.click(fn=stop_binac4, inputs=None, outputs=[output_box])
     
     # Javascript fallback for copying on HTTP (non-secure) connections

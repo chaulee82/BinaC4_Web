@@ -81,7 +81,11 @@ def test_historical_rater():
         })
 
     profiles = rater.query_all_14_day_profiles()
-    render_profiles_table(profiles, "BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM V2.0 (AGGRESSIVE DECAY & CASHFLOW MULTIPLIER)")
+    render_profiles_table(
+        profiles,
+        "BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM V2.0 (AGGRESSIVE DECAY & CASHFLOW MULTIPLIER)",
+        date_range=rater.get_data_date_range()
+    )
 
 if __name__ == "__main__":
     test_historical_rater()

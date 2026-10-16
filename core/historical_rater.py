@@ -15,7 +15,7 @@ import sqlite3
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 if hasattr(sys.stdout, 'reconfigure'):
     try:
@@ -704,6 +704,72 @@ class HistoricalDataQuery:
         profiles.sort(key=lambda x: (x["total_score"], x["breakdown"]["foundation_40"]), reverse=True)
         return profiles
 
+    def get_data_date_range(self, as_of_date: Optional[datetime] = None) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Lấy mốc thời gian bắt đầu và kết thúc (có đầy đủ giờ:phút:giây) của dữ liệu được đánh giá trong 14 ngày gần nhất.
+        - Start: Ngày/giờ nhỏ nhất (nếu chỉ có YYYY-MM-DD thì gán 00:00:00).
+        - End: Ngày/giờ lớn nhất (ưu tiên MAX(timestamp) từ signal_logs, hoặc MAX(date) kèm HH:MM:SS hiện tại).
+        Trả về (min_timestamp, max_timestamp) dạng chuỗi 'YYYY-MM-DD HH:MM:SS', hoặc (None, None).
+        """
+        ref_date = as_of_date or datetime.now()
+        fourteen_days_ago = (ref_date - timedelta(days=14)).strftime('%Y-%m-%d')
+        ref_date_str = ref_date.strftime('%Y-%m-%d')
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT MIN(date), MAX(date) FROM daily_metrics
+                    WHERE date >= ? AND date <= ?
+                ''', (fourteen_days_ago, ref_date_str))
+                row = cursor.fetchone()
+                min_d = row[0] if row and row[0] else None
+                max_d = row[1] if row and row[1] else None
+
+                if not min_d or not max_d:
+                    cursor.execute('SELECT MIN(date), MAX(date) FROM daily_metrics')
+                    row = cursor.fetchone()
+                    min_d = row[0] if row and row[0] else None
+                    max_d = row[1] if row and row[1] else None
+
+                if not min_d or not max_d:
+                    return None, None
+
+                # Tìm timestamp chi tiết (HH:MM:SS) từ signal_logs
+                has_signal_logs = cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='signal_logs'"
+                ).fetchone()
+
+                min_ts, max_ts = None, None
+                if has_signal_logs:
+                    cursor.execute(
+                        "SELECT MIN(timestamp), MAX(timestamp) FROM signal_logs WHERE substr(timestamp, 1, 10) >= ? AND substr(timestamp, 1, 10) <= ?",
+                        (str(min_d), str(max_d))
+                    )
+                    ts_row = cursor.fetchone()
+                    if ts_row:
+                        min_ts, max_ts = ts_row[0], ts_row[1]
+
+                # Chuẩn hóa start_str có giờ:phút:giây
+                if min_ts and str(min_ts).startswith(str(min_d)):
+                    start_str = str(min_ts)
+                else:
+                    start_str = f"{min_d} 00:00:00"
+
+                # Chuẩn hóa end_str có giờ:phút:giây
+                if max_ts and str(max_ts).startswith(str(max_d)):
+                    end_str = str(max_ts)
+                else:
+                    today_s = datetime.now().strftime('%Y-%m-%d')
+                    if str(max_d) == today_s:
+                        end_str = f"{max_d} {datetime.now().strftime('%H:%M:%S')}"
+                    else:
+                        end_str = f"{max_d} 23:59:59"
+
+                return start_str, end_str
+        except Exception as e:
+            logger.debug(f"Lỗi lấy date range từ daily_metrics: {e}")
+        return None, None
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # GIAO DIỆN HIỂN THỊ BẢNG TÍN NHIỆM V2.0
@@ -781,15 +847,26 @@ def calculate_tier_s_setups(symbol: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def render_profiles_table(profiles: List[Dict[str, Any]], title: str = "BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM V2.0 (AGGRESSIVE DECAY & CASHFLOW MULTIPLIER)"):
+def render_profiles_table(
+    profiles: List[Dict[str, Any]],
+    title: Optional[str] = None,
+    date_range: Optional[Tuple[str, str]] = None
+):
     """
     In bảng hiển thị V2.0:
     - Bảng chi tiết: Các mã đạt chuẩn giao dịch (Tier S, Tier A, Tier B - Điểm >= 40.0).
     - Thiết lập lệnh Tier S: Tính và in chi tiết OCO, Grid TP2, Wide Grid 3D cho các mã Tier S (Kim Cương).
     - Danh sách rút gọn: Liệt kê các mã Tier C (25–39đ) và Tier F (< 25đ) cách nhau bằng dấu phẩy.
     """
+    # 📅 Xác định khoảng ngày dữ liệu (từ...đến...) để người dùng nhận diện data mới hay cũ
+    min_date, max_date = None, None
+    if date_range and date_range[0] and date_range[1]:
+        min_date, max_date = str(date_range[0]), str(date_range[1])
+
+    date_tag = f" (TỪ {min_date} ĐẾN {max_date})" if min_date and max_date else ""
+
     if not profiles:
-        print("\n📊 BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM: Không có dữ liệu.")
+        print(f"\n📊 BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM 14 NGÀY{date_tag}: Không có dữ liệu.")
         return
 
     import textwrap
@@ -802,7 +879,20 @@ def render_profiles_table(profiles: List[Dict[str, Any]], title: str = "BẢNG T
     # Nếu thị trường không có mã nào >= 40đ, hiển thị tối thiểu Top 5 để người dùng theo dõi
     display_profiles = active_profiles if active_profiles else profiles[:5]
 
-    print(f"\n📊 {title}")
+    # Chuẩn hóa tiêu đề hiển thị: bổ sung thông tin ngày từ...đến...
+    if not title:
+        display_title = f"BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM 14 NGÀY V2.0{date_tag} (TỔNG {len(profiles)} MÃ)"
+    else:
+        display_title = title
+        if date_tag and "TỪ" not in display_title.upper() and "ĐẾN" not in display_title.upper():
+            if "(TỔNG" in display_title:
+                display_title = display_title.replace("(TỔNG", f"{date_tag} (TỔNG")
+            elif "V2.0" in display_title:
+                display_title = display_title.replace("V2.0", f"V2.0{date_tag}")
+            else:
+                display_title = f"{display_title}{date_tag}"
+
+    print(f"\n📊 {display_title}")
     sep = "=" * 148
     line = "-" * 148
     print(sep)
@@ -886,7 +976,8 @@ def print_14_day_summary_board(
     super_wave_results: Optional[List[Dict[str, Any]]] = None,
     warning_results: Optional[List[Dict[str, Any]]] = None,
     convergence_ranks: Optional[Dict[str, str]] = None,
-    top_n: int = 25
+    top_n: int = 25,
+    scan_time: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Điểm vào chuẩn để hiển thị BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM V2.0 ngay trước Bảng Rebalance.
@@ -992,11 +1083,18 @@ def print_14_day_summary_board(
 
         # 7. Truy vấn toàn bộ hồ sơ
         profiles = rater.query_all_14_day_profiles()
+        min_date, max_date = rater.get_data_date_range()
+        if scan_time:
+            max_date = str(scan_time)
+        date_tag = f" (TỪ {min_date} ĐẾN {max_date})" if min_date and max_date else ""
         if profiles:
             render_profiles_table(
                 profiles,
-                f"BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM V2.0 (TỔNG {len(profiles)} MÃ)"
+                f"BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM 14 NGÀY V2.0{date_tag} (TỔNG {len(profiles)} MÃ)",
+                date_range=(min_date, max_date) if min_date and max_date else None
             )
+        else:
+            print(f"\n📊 BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM 14 NGÀY{date_tag}: Không có dữ liệu.")
         return profiles
     except Exception as e:
         logger.error(f"Render Error (Bảng Tín Nhiệm V2.0): {e}")
@@ -1006,4 +1104,10 @@ def print_14_day_summary_board(
 if __name__ == "__main__":
     rater = HistoricalDataQuery("data/binac4_history.db")
     profiles = rater.query_all_14_day_profiles()
-    render_profiles_table(profiles[:25])
+    min_date, max_date = rater.get_data_date_range()
+    date_tag = f" (TỪ {min_date} ĐẾN {max_date})" if min_date and max_date else ""
+    render_profiles_table(
+        profiles[:25],
+        f"BẢNG TỔNG HỢP HỒ SƠ TÍN NHIỆM 14 NGÀY V2.0{date_tag} (TỔNG {len(profiles[:25])} MÃ)",
+        date_range=(min_date, max_date) if min_date and max_date else None
+    )

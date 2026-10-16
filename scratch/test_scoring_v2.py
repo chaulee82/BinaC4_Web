@@ -154,7 +154,7 @@ def test_db_e2e():
     })
 
     profiles = rater.query_all_14_day_profiles()
-    render_profiles_table(profiles, "BẢNG TEST HỒ SƠ TÍN NHIỆM V2.0")
+    render_profiles_table(profiles, "BẢNG TEST HỒ SƠ TÍN NHIỆM V2.0", date_range=rater.get_data_date_range())
 
 if __name__ == "__main__":
     test_scoring_v2_logic()

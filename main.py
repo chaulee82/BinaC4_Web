@@ -528,7 +528,8 @@ def main():
                         super_wave_results=get_last_super_wave_results(),
                         warning_results=_warning_results,
                         convergence_ranks=_conv_ranks,
-                        top_n=25
+                        top_n=25,
+                        scan_time=current_time_str if 'current_time_str' in locals() and current_time_str else None
                     )
 
                     # -------------------------------------------------------------------------
