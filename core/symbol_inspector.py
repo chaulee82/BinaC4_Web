@@ -14,45 +14,30 @@ DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(_
 
 def get_available_symbols(db_path: str = DEFAULT_DB_PATH) -> List[str]:
     """
-    Lấy danh sách mã coin đã quét, ưu tiên các mã trong phiên mới nhất lên đầu,
-    sau đó sắp xếp theo bảng chữ cái.
+    Lấy danh sách mã coin đã quét, ưu tiên thứ hạng theo Bảng Hồ Sơ Tín Nhiệm V2.0 lên đầu.
     """
     if not os.path.exists(db_path):
-        return ["BERA", "INJ", "PYTH", "TIA", "RAD"]
+        return ["PYTH", "AMP", "TIA", "DUSK", "SOLV"]
+
+    try:
+        from core.historical_rater import HistoricalDataQuery
+        rater = HistoricalDataQuery(db_path)
+        profs = rater.query_all_14_day_profiles()
+        if profs:
+            symbols = [p['symbol'] for p in profs if p.get('symbol')]
+            if symbols:
+                return symbols
+    except Exception:
+        pass
 
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
-            # 1. Lấy ngày quét gần nhất
-            cursor.execute("SELECT DISTINCT date FROM daily_metrics ORDER BY date DESC LIMIT 1")
-            latest_date_row = cursor.fetchone()
-            latest_date = latest_date_row[0] if latest_date_row else None
-
-            latest_symbols = []
-            if latest_date:
-                cursor.execute("""
-                    SELECT symbol FROM daily_metrics 
-                    WHERE date = ? 
-                    ORDER BY raw_base_score DESC, rebalance_score DESC
-                """, (latest_date,))
-                latest_symbols = [r[0] for r in cursor.fetchall() if r[0]]
-
-            # 2. Lấy toàn bộ các mã còn lại trong DB
             cursor.execute("SELECT DISTINCT symbol FROM daily_metrics ORDER BY symbol ASC")
             all_symbols = [r[0] for r in cursor.fetchall() if r[0]]
-
-            # Gộp và loại bỏ trùng lặp, giữ thứ tự ưu tiên
-            seen = set()
-            ordered = []
-            for s in latest_symbols + all_symbols:
-                s_clean = s.replace("/USDT", "").replace("USDT", "").strip().upper()
-                if s_clean and s_clean not in seen:
-                    seen.add(s_clean)
-                    ordered.append(s_clean)
-
-            return ordered if ordered else ["BERA", "INJ", "PYTH"]
+            return all_symbols if all_symbols else ["PYTH", "AMP", "TIA"]
     except Exception:
-        return ["BERA", "INJ", "PYTH"]
+        return ["PYTH", "AMP", "TIA"]
 
 
 def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_PATH) -> Tuple[str, pd.DataFrame, pd.DataFrame]:

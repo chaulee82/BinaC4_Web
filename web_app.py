@@ -260,13 +260,13 @@ def get_latest_page_state():
     """Lấy dữ liệu đồng bộ cho trang: log text, file, danh sách mã và hồ sơ mã đang chọn."""
     log_text, log_file = get_latest_log_data()
     symbols = get_available_symbols()
-    target_sym = "BERA" if "BERA" in symbols else (symbols[0] if symbols else "")
+    target_sym = symbols[0] if symbols else ""
     summary_md, df1, df2 = get_symbol_dossier(target_sym)
     return log_text, log_file, gr.update(choices=symbols, value=target_sym), summary_md, df1, df2
 
 # Pre-fetch initial data for symbol inspector
 _initial_symbols = get_available_symbols()
-_default_sym = "BERA" if "BERA" in _initial_symbols else (_initial_symbols[0] if _initial_symbols else "BERA")
+_default_sym = _initial_symbols[0] if _initial_symbols else ""
 _init_summary, _init_df1, _init_df2 = get_symbol_dossier(_default_sym)
 
 # Build the Gradio interface
@@ -318,7 +318,7 @@ with gr.Blocks(title="BinaC4 Web Interface") as demo:
         table2_output = gr.DataFrame(value=_init_df2, interactive=False, wrap=True)
     
     def on_inspect(sym=None):
-        target = sym or "BERA"
+        target = sym or (_default_sym if _default_sym else "")
         return get_symbol_dossier(target)
 
     # Event: Xem chi tiết khi bấm nút hoặc đổi mã trên dropdown
