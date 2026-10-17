@@ -14,6 +14,8 @@ from typing import Optional, Dict, Any
 WORKSPACE_DIR = os.path.dirname(os.path.abspath(__file__))
 MAIN_SCRIPT = os.path.join(WORKSPACE_DIR, "main.py")
 LOCK_FILE = os.path.join(WORKSPACE_DIR, "data", "binac4_main.lock")
+HTML_LOG_FILE = os.path.join(WORKSPACE_DIR, "BinaC4_latest_log.html")
+TXT_LOG_FILE = os.path.join(WORKSPACE_DIR, "BinaC4_latest_log.txt")
 PYTHON_BIN = sys.executable  # Tự động dùng đúng Python venv hiện hành
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -127,7 +129,7 @@ def clean_stale_lock():
 
 
 def auto_scan():
-    """Hàm kích hoạt quét tự động định kỳ"""
+    """Hàm kích hoạt quét tự động định kỳ, đồng thời ghi log ra file cho Web UI."""
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
     # 1. Kiểm tra an toàn tiến trình
@@ -140,28 +142,110 @@ def auto_scan():
         clean_stale_lock()
         print(f"[{timestamp}] 🚀 [AUTO-RUNNER] Hệ thống rảnh. Bắt đầu kích hoạt phiên quét tự động...")
 
-    # 2. Gọi main.py độc lập qua subprocess
+    # Header log cho file và UI
+    header_banner = (
+        f"🤖 [AUTO-RUNNER] PHIÊN QUÉT TỰ ĐỘNG ĐỊNH KỲ\n"
+        f"⏰ Khởi động lúc: {timestamp}\n"
+        + "=" * 60 + "\n"
+    )
+
+    html_header = """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>BinaC4 Log (Auto Runner)</title>
+    <style>
+        body { background-color: #1e1e1e; padding: 20px; margin: 0; }
+        pre { font-family: Consolas, 'Courier New', monospace; white-space: pre; font-size: 14px; color: #d4d4d4; line-height: 1.5; }
+    </style>
+</head>
+<body>
+<pre>"""
+
+    # 2. Gọi main.py độc lập qua subprocess và stream log
+    f_txt = None
+    f_html = None
     try:
+        try:
+            f_txt = open(TXT_LOG_FILE, 'w', encoding='utf-8')
+            f_html = open(HTML_LOG_FILE, 'w', encoding='utf-8')
+            f_html.write(html_header)
+            f_txt.write(header_banner)
+            f_html.write(header_banner.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
+            f_txt.flush()
+            f_html.flush()
+        except Exception as err_file:
+            print(f"[{timestamp}] ⚠️ [AUTO-RUNNER] Không thể mở file log: {err_file}")
+
         env = os.environ.copy()
         env["AUTO_SCAN_MODE"] = "1"  # Cờ đánh dấu chạy tự động nếu cần
         env["PYTHONIOENCODING"] = "utf-8"
 
-        # Chạy main.py và chờ hoàn tất
-        result = subprocess.run(
-            [PYTHON_BIN, MAIN_SCRIPT],
+        # Khởi chạy main.py với unbuffered I/O
+        process = subprocess.Popen(
+            [PYTHON_BIN, "-u", MAIN_SCRIPT],
             cwd=WORKSPACE_DIR,
             env=env,
-            stdout=sys.stdout,
-            stderr=sys.stderr
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True,
+            encoding='utf-8',
+            errors='replace'
         )
 
-        if result.returncode == 0:
-            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ [AUTO-RUNNER] Hoàn tất phiên quét tự động thành công.")
+        # Stream từng dòng ra cả terminal và file log
+        if process.stdout:
+            for line in iter(process.stdout.readline, ''):
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                if f_txt:
+                    f_txt.write(line)
+                    f_txt.flush()
+                if f_html:
+                    escaped = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                    f_html.write(escaped)
+                    f_html.flush()
+            process.stdout.close()
+
+        retcode = process.wait()
+        end_time = time.strftime("%Y-%m-%d %H:%M:%S")
+
+        if retcode == 0:
+            finish_msg = f"\n" + "=" * 60 + f"\n[{end_time}] ✅ [AUTO-RUNNER] Hoàn tất phiên quét tự động thành công.\n"
         else:
-            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ❌ [AUTO-RUNNER] Phiên quét kết thúc với mã lỗi: {result.returncode}")
+            finish_msg = f"\n" + "=" * 60 + f"\n[{end_time}] ❌ [AUTO-RUNNER] Phiên quét kết thúc với mã lỗi: {retcode}\n"
+
+        sys.stdout.write(finish_msg)
+        sys.stdout.flush()
+        if f_txt:
+            f_txt.write(finish_msg)
+            f_txt.flush()
+        if f_html:
+            f_html.write(finish_msg.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
+            f_html.flush()
 
     except Exception as e:
-        print(f"[{timestamp}] 💥 [AUTO-RUNNER] Lỗi ngoại lệ khi gọi main.py: {e}")
+        err_msg = f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] 💥 [AUTO-RUNNER] Lỗi ngoại lệ khi chạy main.py: {e}\n"
+        sys.stdout.write(err_msg)
+        sys.stdout.flush()
+        if f_txt:
+            f_txt.write(err_msg)
+        if f_html:
+            f_html.write(err_msg.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
+    finally:
+        if f_html:
+            try:
+                f_html.write("</pre>\n</body>\n</html>\n")
+                f_html.close()
+            except Exception:
+                pass
+        if f_txt:
+            try:
+                f_txt.close()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
