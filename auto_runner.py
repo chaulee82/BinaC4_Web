@@ -132,15 +132,29 @@ def auto_scan():
     """Hàm kích hoạt quét tự động định kỳ, đồng thời ghi log ra file cho Web UI."""
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
-    # 1. Kiểm tra an toàn tiến trình
+    # 1. Kiểm tra an toàn tiến trình (Process Guard)
     running_proc = find_running_main_proc()
     if running_proc:
         pid_info = f" (PID: {running_proc['pid']} | {running_proc['cmd']})"
-        print(f"[{timestamp}] ⚠️ [AUTO-RUNNER] CẢNH BÁO: Phát hiện main.py đang chạy{pid_info}. Vẫn tiếp tục thực thi phiên quét theo yêu cầu...")
-    else:
-        # Dọn dẹp stale lock nếu hệ thống hoàn toàn rảnh
-        clean_stale_lock()
-        print(f"[{timestamp}] 🚀 [AUTO-RUNNER] Hệ thống rảnh. Bắt đầu kích hoạt phiên quét tự động...")
+        print(f"[{timestamp}] ⚠️ [AUTO-RUNNER] Phát hiện main.py đang chạy{pid_info}.")
+        print(f"[{timestamp}] ⏳ [AUTO-RUNNER] Đang chờ tối đa 30 giây xem tiến trình cũ có hoàn tất không...")
+        for _ in range(6):
+            time.sleep(5)
+            running_proc = find_running_main_proc()
+            if not running_proc:
+                break
+
+        if running_proc:
+            skip_msg = (
+                f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ⏸️ [AUTO-RUNNER] Tiến trình main.py cũ vẫn đang hoạt động. "
+                f"Bỏ qua phiên quét tự động này để bảo vệ tài nguyên VPS và tránh bị Binance giới hạn API (HTTP 429)."
+            )
+            print(skip_msg)
+            return
+
+    # Dọn dẹp stale lock nếu hệ thống hoàn toàn rảnh
+    clean_stale_lock()
+    print(f"[{timestamp}] 🚀 [AUTO-RUNNER] Hệ thống rảnh. Bắt đầu kích hoạt phiên quét tự động...")
 
     # Header log cho file và UI
     header_banner = (
@@ -165,6 +179,7 @@ def auto_scan():
     # 2. Gọi main.py độc lập qua subprocess và stream log
     f_txt = None
     f_html = None
+    process = None
     try:
         try:
             f_txt = open(TXT_LOG_FILE, 'w', encoding='utf-8')
@@ -195,18 +210,44 @@ def auto_scan():
             errors='replace'
         )
 
-        # Stream từng dòng ra cả terminal và file log
+        # Ghi nhận lock file cho tiến trình mới
+        try:
+            os.makedirs(os.path.dirname(LOCK_FILE), exist_ok=True)
+            with open(LOCK_FILE, "w", encoding="utf-8") as lf:
+                lf.write(str(process.pid))
+        except Exception:
+            pass
+
+        # Stream từng dòng với cơ chế Throttled Batch Flush (tối đa 2 lần/giây)
+        # Giúp tránh nghẽn I/O đĩa cứng khi in hàng nghìn dòng ma trận và bảng biểu
+        last_flush = time.time()
+        FLUSH_INTERVAL = 0.5  # giây
+
         if process.stdout:
             for line in iter(process.stdout.readline, ''):
                 sys.stdout.write(line)
-                sys.stdout.flush()
                 if f_txt:
                     f_txt.write(line)
-                    f_txt.flush()
                 if f_html:
                     escaped = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
                     f_html.write(escaped)
-                    f_html.flush()
+
+                # Chỉ flush đĩa cứng định kỳ để tiến trình con main.py chạy tốc độ tối đa
+                now = time.time()
+                if now - last_flush >= FLUSH_INTERVAL:
+                    sys.stdout.flush()
+                    if f_txt:
+                        f_txt.flush()
+                    if f_html:
+                        f_html.flush()
+                    last_flush = now
+
+            # Đảm bảo xả hết toàn bộ buffer còn lại khi kết thúc đọc
+            sys.stdout.flush()
+            if f_txt:
+                f_txt.flush()
+            if f_html:
+                f_html.flush()
             process.stdout.close()
 
         retcode = process.wait()
@@ -235,6 +276,12 @@ def auto_scan():
         if f_html:
             f_html.write(err_msg.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
     finally:
+        # Dọn dẹp lock file
+        if os.path.exists(LOCK_FILE):
+            try:
+                os.remove(LOCK_FILE)
+            except Exception:
+                pass
         if f_html:
             try:
                 f_html.write("</pre>\n</body>\n</html>\n")
