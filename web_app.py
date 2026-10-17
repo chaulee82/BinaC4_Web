@@ -314,7 +314,7 @@ with gr.Blocks(title="BinaC4 Web Interface") as demo:
         gr.Markdown("#### 📊 BẢNG 1: Tín Hiệu Kỹ Thuật & Động Cơ Phiên Mới Nhất", elem_classes=["table-header-title"])
         table1_output = gr.DataFrame(value=_init_df1, interactive=False, wrap=True)
 
-        gr.Markdown("#### 📈 BẢNG 2: Phân Rã Lịch Sử 4 Phiên & Tính Suy Hao (Aggressive Decay)", elem_classes=["table-header-title"])
+        gr.Markdown("#### 📈 BẢNG 2: Phân Rã Lịch Sử 4 Ngày & Tính Suy Hao (Aggressive Decay)", elem_classes=["table-header-title"])
         table2_output = gr.DataFrame(value=_init_df2, interactive=False, wrap=True)
     
     def on_inspect(sym=None):

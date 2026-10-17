@@ -122,7 +122,7 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
         pen_str = f"🔴 Trừ -{pen_sum}đ" if pen_sum > 0 else "🟢 Không dính phạt"
 
         table1_data = [
-            {"Chỉ Số / Hạng Mục": "📅 Ngày Ghi Nhận Phiên", "Giá Trị": str(lr.get("date", "—")), "Ghi Chú": "Phiên quét gần nhất có dữ liệu của mã"},
+            {"Chỉ Số / Hạng Mục": "📅 Ngày Ghi Nhận Dữ Liệu", "Giá Trị": str(lr.get("date", "—")), "Ghi Chú": "Ngày quét gần nhất có dữ liệu của mã"},
             {"Chỉ Số / Hạng Mục": "🛡️ Trạng Thái 3D Strict", "Giá Trị": status_3d, "Ghi Chú": note_3d},
             {"Chỉ Số / Hạng Mục": "🌊 Cấu Trúc Đa Khung (P>MA7_3D & ST_4H)", "Giá Trị": f"P>MA7: {'✅ Có' if p_ma7 else '❌ Không'} | ST_4H: {'🟢 Xanh' if st_4h else '🔴 Đỏ'}", "Ghi Chú": "Kiểm định chân sóng xu hướng trung hạn"},
             {"Chỉ Số / Hạng Mục": "📦 Động Cơ 1 (Darvas Grid)", "Giá Trị": str(lr.get("grid_status", "—") or "—"), "Ghi Chú": f"Thứ hạng Grid: {g_rank_str}"},
@@ -178,7 +178,7 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
     decay_sum = decay_mong + decay_day + decay_tien
 
     target_col = "🎯 BÌNH QUÂN SUY HAO"
-    row_date[target_col] = f"{len(recent_dates[:4])} Phiên Gần Nhất"
+    row_date[target_col] = f"{len(recent_dates[:4])} Ngày Gần Nhất"
     row_weight[target_col] = "100%"
     row_mong[target_col] = f"{decay_mong:.1f}đ"
     row_day[target_col] = f"{decay_day:.1f}đ"
