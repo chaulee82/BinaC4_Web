@@ -211,6 +211,7 @@ class HistoricalDataQuery:
             ''')
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_sess_sym_ts ON session_scores(symbol, timestamp)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_sess_ts ON session_scores(timestamp)")
+            cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_sess_unique ON session_scores(timestamp, symbol)")
             conn.commit()
 
     def record_session_score(self, timestamp: str, symbol: str, mong: float, day: float, tien: float):
@@ -223,6 +224,10 @@ class HistoricalDataQuery:
             cursor.execute('''
                 INSERT INTO session_scores (timestamp, symbol, mong_score, day_score, tien_score)
                 VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(timestamp, symbol) DO UPDATE SET
+                    mong_score = excluded.mong_score,
+                    day_score = excluded.day_score,
+                    tien_score = excluded.tien_score
             ''', (timestamp, clean_sym, round(float(mong), 2), round(float(day), 2), round(float(tien), 2)))
             conn.commit()
 
@@ -1057,14 +1062,54 @@ def print_14_day_summary_board(
                         "score": sc_reb
                     }
 
-        # 4. Tập hợp toàn bộ danh sách mã trong phiên T-0
-        all_symbols = set(reb_map.keys()) | top5_3a | top5_3b | set(warning_map.keys())
+        # 4. Thu thập tín hiệu động cơ phiên quét hiện tại từ signal_logs
+        latest_signals_map = {}
+        latest_ts = None
+        try:
+            with sqlite3.connect(rater.db_path) as conn_s:
+                cur_s = conn_s.cursor()
+                row_ts = cur_s.execute("SELECT MAX(timestamp) FROM signal_logs").fetchone()
+                if row_ts and row_ts[0]:
+                    latest_ts = row_ts[0]
+                    sig_q = '''
+                        SELECT 
+                            symbol,
+                            MAX(CASE WHEN engine = 'DC2' THEN score ELSE 0 END) as dc2_sc,
+                            MAX(CASE WHEN engine = 'DC3' THEN score ELSE 0 END) as dc3_sc,
+                            MAX(CASE WHEN engine = 'DC4' THEN score ELSE 0 END) as dc4_sc,
+                            MAX(CASE WHEN engine = 'DC5' THEN score ELSE 0 END) as dc5_sc,
+                            MAX(CASE WHEN action LIKE '%TIỀN BẠO PHÁT%' THEN 1 ELSE 0 END) as has_mf,
+                            SUM(CASE WHEN engine = 'PENALTY_LVL3' THEN 1 ELSE 0 END) as p_lvl3,
+                            SUM(CASE WHEN engine = 'PENALTY_XARAY' THEN 1 ELSE 0 END) as p_xaray,
+                            SUM(CASE WHEN engine = 'PENALTY_FAKEOUT' THEN 1 ELSE 0 END) as p_fakeout
+                        FROM signal_logs
+                        WHERE timestamp = ?
+                        GROUP BY symbol
+                    '''
+                    for row_s in cur_s.execute(sig_q, (latest_ts,)).fetchall():
+                        s_sym = str(row_s[0]).upper().replace('/USDT', '').replace('USDT', '').strip()
+                        latest_signals_map[s_sym] = {
+                            'dc2_sc': float(row_s[1] or 0.0),
+                            'dc3_sc': float(row_s[2] or 0.0),
+                            'dc4_sc': float(row_s[3] or 0.0),
+                            'dc5_sc': float(row_s[4] or 0.0),
+                            'has_mf': int(row_s[5] or 0),
+                            'p_lvl3': int(row_s[6] or 0),
+                            'p_xaray': int(row_s[7] or 0),
+                            'p_fakeout': int(row_s[8] or 0),
+                        }
+        except Exception as e_sig:
+            logger.warning(f"Không thể đọc tín hiệu phiên từ signal_logs: {e_sig}")
+
+        # 4.5. Tập hợp toàn bộ danh sách mã trong phiên T-0
+        all_symbols = set(reb_map.keys()) | top5_3a | top5_3b | set(warning_map.keys()) | set(latest_signals_map.keys())
         if convergence_ranks:
             all_symbols |= {s.upper().replace('/USDT', '').replace('USDT', '').strip() for s in convergence_ranks.keys()}
         all_symbols -= {''}
 
-        # 5. Ghi nhận Snapshot T-0 vào daily_metrics
+        # 5. Ghi nhận Snapshot T-0 vào daily_metrics và session_scores
         from core.macro_levels import get_3d_profile
+        sess_time = str(scan_time) if scan_time else (latest_ts or datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
 
         for sym in sorted(all_symbols):
             d3 = get_3d_profile(sym)
@@ -1114,18 +1159,37 @@ def print_14_day_summary_board(
             })
 
             # Ghi nhận điểm phiên quét 30 phút vào session_scores (V2.0 Spec)
-            sess_time = str(scan_time) if scan_time else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            dc2_sc = float(item.get('DC2_Score', 0) or 0)
-            dc3_sc = float(item.get('DC3_Score', 0) or 0)
-            dc4_sc = float(item.get('DC4_Score', 0) or 0)
+            sig_data = latest_signals_map.get(sym, {})
+            dc2_sc = sig_data.get('dc2_sc', 0.0)
+            dc3_sc = sig_data.get('dc3_sc', 0.0)
+            dc4_sc = sig_data.get('dc4_sc', 0.0)
+            dc5_sc = sig_data.get('dc5_sc', 0.0)
+            has_mf = sig_data.get('has_mf', 0)
+            p_lvl3 = sig_data.get('p_lvl3', 0)
+            p_xaray = sig_data.get('p_xaray', 0)
+            p_fakeout = sig_data.get('p_fakeout', 0)
+
+            # Điểm Đẩy: Bắt trọn xung lực kích hoạt (Trigger Points: DC2, DC3, DC4 - Tối đa 40đ)
             p_dc2 = min(10.0, max(5.0, dc2_sc * 0.10)) if dc2_sc > 0 else 0.0
             p_dc3 = min(15.0, max(8.0, dc3_sc * 0.15)) if dc3_sc > 0 else 0.0
             p_dc4 = min(15.0, max(8.0, dc4_sc * 0.15)) if dc4_sc > 0 else 0.0
             day_push = min(40.0, p_dc2 + p_dc3 + p_dc4)
 
-            has_mf = 1 if (item.get('TIỀN BẠO PHÁT') or item.get('Money_Flow')) else 0
-            opt_s = 1 if 'HẠNG S' in opt_tier else 0
-            day_cash = min(20.0, (10.0 if has_mf else 0.0) + (5.0 if p_dc3 > 0 else 0.0) + (5.0 if opt_s else 0.0))
+            # Điểm Tiền: Trạng thái dòng tiền Net Flow & Phạt xả râu (Tối đa 20đ)
+            opt_s = 1 if 'HẠNG S' in (opt_tier or '') else 0
+            pen = (p_lvl3 * -15) + (p_xaray * -5) + (p_fakeout * -10)
+            cash_sum = 0.0
+            if has_mf:
+                cash_sum += 10.0
+            if p_dc3 > 0:
+                cash_sum += 5.0
+            if dc5_sc > 0:
+                cash_sum += min(10.0, max(5.0, dc5_sc * 0.10))
+            if opt_s:
+                cash_sum += 5.0
+            if cash_sum == 0.0 and reb_score >= 45 and pen == 0:
+                cash_sum = 6.0
+            day_cash = max(-30.0, min(20.0, cash_sum + pen))
 
             rater.record_session_score(sess_time, sym, raw_base, day_push, day_cash)
 
