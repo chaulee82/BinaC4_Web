@@ -104,9 +104,14 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
 
     # =========================================================================
     # 📊 BẢNG 1: Tín hiệu & Thông số kỹ thuật phiên mới nhất (Latest Scan Signals)
+    # Áp dụng cơ chế Data TTL: Nếu mã không có mặt trong phiên quét mới nhất -> Đã hết hạn (0đ)
     # =========================================================================
+    target_live_date = recent_dates[0] if recent_dates else datetime.now().strftime('%Y-%m-%d')
+    record_date = str(latest_row["date"]) if latest_row else "—"
+    is_expired = (latest_row is None) or (record_date < target_live_date)
+
     table1_data = []
-    if latest_row:
+    if latest_row and not is_expired:
         lr = dict(latest_row)
         sc_st = lr.get("strict_3d_score", 0.0) or 0.0
         p_ma7 = lr.get("price_above_ma7_3d", 0)
@@ -122,7 +127,7 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
         pen_str = f"🔴 Trừ -{pen_sum}đ" if pen_sum > 0 else "🟢 Không dính phạt"
 
         table1_data = [
-            {"Chỉ Số / Hạng Mục": "📅 Ngày Ghi Nhận Dữ Liệu", "Giá Trị": str(lr.get("date", "—")), "Ghi Chú": "Ngày quét gần nhất có dữ liệu của mã"},
+            {"Chỉ Số / Hạng Mục": "📅 Ngày Ghi Nhận Dữ Liệu", "Giá Trị": str(lr.get("date", "—")), "Ghi Chú": "Dữ liệu phiên mới nhất đang hoạt động"},
             {"Chỉ Số / Hạng Mục": "🛡️ Trạng Thái 3D Strict", "Giá Trị": status_3d, "Ghi Chú": note_3d},
             {"Chỉ Số / Hạng Mục": "🌊 Cấu Trúc Đa Khung (P>MA7_3D & ST_4H)", "Giá Trị": f"P>MA7: {'✅ Có' if p_ma7 else '❌ Không'} | ST_4H: {'🟢 Xanh' if st_4h else '🔴 Đỏ'}", "Ghi Chú": "Kiểm định chân sóng xu hướng trung hạn"},
             {"Chỉ Số / Hạng Mục": "📦 Động Cơ 1 (Darvas Grid)", "Giá Trị": str(lr.get("grid_status", "—") or "—"), "Ghi Chú": f"Thứ hạng Grid: {g_rank_str}"},
@@ -135,7 +140,21 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
             {"Chỉ Số / Hạng Mục": "💰 Dòng Tiền & Điểm Phạt", "Giá Trị": f"Dòng tiền: {'+10đ' if lr.get('money_flow_score') else '0đ'} | {pen_str}", "Ghi Chú": "Quyết định hệ số x1.2 thưởng hoặc x0.5 phạt"}
         ]
     else:
-        table1_data = [{"Chỉ Số / Hạng Mục": "Thông báo", "Giá Trị": "Chưa có dữ liệu", "Ghi Chú": f"Mã {clean_sym} chưa có dữ liệu trong daily_metrics"}]
+        # Đã hết hạn hoặc rớt top trong phiên mới nhất -> Đưa toàn bộ động cơ về 0đ để chống ảo giác
+        old_note = f" (Phiên cũ: {record_date})" if record_date != "—" else ""
+        table1_data = [
+            {"Chỉ Số / Hạng Mục": "📅 Ngày Ghi Nhận Dữ Liệu", "Giá Trị": f"⚠️ {record_date} (Đã hết hạn / Mất Live)", "Ghi Chú": f"Mã không lọt top trong phiên mới nhất [{target_live_date}]"},
+            {"Chỉ Số / Hạng Mục": "🛡️ Trạng Thái 3D Strict", "Giá Trị": "0đ", "Ghi Chú": "⛔ Dưới chuẩn vĩ mô phiên hiện tại"},
+            {"Chỉ Số / Hạng Mục": "🌊 Cấu Trúc Đa Khung (P>MA7_3D & ST_4H)", "Giá Trị": "P>MA7: ❌ Không | ST_4H: 🔴 Đỏ", "Ghi Chú": "Mất cấu trúc chân sóng"},
+            {"Chỉ Số / Hạng Mục": "📦 Động Cơ 1 (Darvas Grid)", "Giá Trị": f"⛔ N/A - Rớt Top{old_note}", "Ghi Chú": "Không có trong top quét hiện tại"},
+            {"Chỉ Số / Hạng Mục": "🎯 Động Cơ 2 (Pullback Sniper)", "Giá Trị": "0.0đ", "Ghi Chú": "0đ (Không có xung lực đón điểm)"},
+            {"Chỉ Số / Hạng Mục": "🚀 Động Cơ 3 (Breakout)", "Giá Trị": "0.0đ", "Ghi Chú": "0đ (Không có nổ Volume)"},
+            {"Chỉ Số / Hạng Mục": "🔥 Động Cơ 4 (Hot Trend)", "Giá Trị": "0.0đ", "Ghi Chú": "0đ (Không có sóng tăng nóng)"},
+            {"Chỉ Số / Hạng Mục": "🏓 Động Cơ 5 (Pingpong)", "Giá Trị": "0.0đ", "Ghi Chú": "0đ (Không có sóng ngắn)"},
+            {"Chỉ Số / Hạng Mục": "🌱 Bảng 3A (Mỏ Vàng) / 3B (Sóng 3D)", "Giá Trị": "3A: — | 3B: —", "Ghi Chú": "Không nằm trong Top 3A / 3B"},
+            {"Chỉ Số / Hạng Mục": "🏆 Hội Tụ Tối Ưu (Summary Board)", "Giá Trị": "N/A (Chưa hội tụ)", "Ghi Chú": "0đ (Không lọt danh sách ưu tiên)"},
+            {"Chỉ Số / Hạng Mục": "💰 Dòng Tiền & Điểm Phạt", "Giá Trị": "Dòng tiền: 0đ | 🟢 Không phạt", "Ghi Chú": "Không có dòng tiền bạo phát phiên hiện tại"}
+        ]
 
     df_table1 = pd.DataFrame(table1_data)
 
@@ -203,8 +222,15 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
     else:
         mult_badge = f"⚪ **x{mult:.1f}** *(Chuẩn)*"
 
+    expired_alert = ""
+    if is_expired:
+        expired_alert = f"""
+> ⚠️ **CẢNH BÁO TÍN HIỆU CŨ (HẾT HẠN):** Phiên quét mới nhất `[{target_live_date}]` không ghi nhận mã **{clean_sym}** (đã rớt top / mất tín hiệu Live). Điểm số BẢNG 1 được đưa về **0đ**, điểm tín nhiệm BẢNG 2 chỉ còn giá trị suy hao từ dữ liệu cũ ngày `{record_date}`.
+"""
+
     summary_md = f"""
 ### 🔎 Hồ Sơ Chi Tiết: **{clean_sym}**
+{expired_alert}
 * 🏆 **Tổng Điểm Tín Nhiệm:** <span class="score-badge" style="font-size: 20px; font-weight: bold; color: #ff9800;">{total_score:.1f} / 100đ</span>
 * 🏷️ **Phân Hạng:** **{tier}**
 * 🎯 **Khuyến Nghị:** **{action}**
