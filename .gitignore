@@ -17,6 +17,7 @@ venv.bak/
 *.log
 *.sqlite3
 BinaC4_latest_log.txt
+BinaC4_latest_log.html
 main_output*.txt
 test_risk.txt
 out*.txt
