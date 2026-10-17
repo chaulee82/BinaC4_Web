@@ -173,22 +173,22 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
         pen_sum = (lr.get('penalty_level_3', 0) or 0)*15 + (lr.get('penalty_xaray', 0) or 0)*5 + (lr.get('penalty_fakeout', 0) or 0)*10
         pen_str = f"🔴 Trừ -{pen_sum}đ" if pen_sum > 0 else "🟢 Không dính phạt"
 
-            b3b_val = float(lr.get('b3b_score', 0.0) or 0.0)
-            b3b_info = f"{b3b_val:.0f}đ" if b3b_val > 0 else "—"
-            if lr.get('in_top_3b'):
-                b3b_info += " (✅ Top)"
-            b3b_note = f"3B đóng góp +{(b3b_val/100*25):.1f}đ vào Móng" if b3b_val > 0 else "+5đ Móng nếu lọt Top 5 của 3A hoặc 3B"
+        b3b_val = float(lr.get('b3b_score', 0.0) or 0.0)
+        b3b_info = f"{b3b_val:.0f}đ" if b3b_val > 0 else "—"
+        if lr.get('in_top_3b'):
+            b3b_info += " (✅ Top)"
+        b3b_note = f"3B đóng góp +{(b3b_val/100*25):.1f}đ vào Móng" if b3b_val > 0 else "+5đ Móng nếu lọt Top 5 của 3A hoặc 3B"
 
-            table1_data = [
-                {"Chỉ Số / Hạng Mục": "📅 Thời Điểm Ghi Nhận Dữ Liệu", "Giá Trị": str(sym_ts), "Ghi Chú": "Dữ liệu phiên mới nhất đang hoạt động"},
-                {"Chỉ Số / Hạng Mục": "🛡️ Trạng Thái 3D Strict", "Giá Trị": status_3d, "Ghi Chú": note_3d},
-                {"Chỉ Số / Hạng Mục": "🌊 Cấu Trúc Đa Khung (P>MA7_3D & ST_4H)", "Giá Trị": f"P>MA7: {'✅ Có' if p_ma7 else '❌ Không'} | ST_4H: {'🟢 Xanh' if st_4h else '🔴 Đỏ'}", "Ghi Chú": "Kiểm định chân sóng xu hướng trung hạn"},
-                {"Chỉ Số / Hạng Mục": "📦 Động Cơ 1 (Darvas Grid)", "Giá Trị": str(lr.get("grid_status", "—") or "—"), "Ghi Chú": f"Thứ hạng Grid: {g_rank_str}"},
-                {"Chỉ Số / Hạng Mục": "🎯 Động Cơ 2 (Pullback Sniper)", "Giá Trị": f"{float(lr.get('dc2_score', 0) or 0):.1f}đ", "Ghi Chú": "Xung lực đón điểm hồi quy (Hạn mức 10đ)"},
-                {"Chỉ Số / Hạng Mục": "🚀 Động Cơ 3 (Breakout)", "Giá Trị": f"{float(lr.get('dc3_score', 0) or 0):.1f}đ", "Ghi Chú": "Xung lực nổ Volume bứt phá (Hạn mức 15đ)"},
-                {"Chỉ Số / Hạng Mục": "🔥 Động Cơ 4 (Hot Trend)", "Giá Trị": f"{float(lr.get('dc4_score', 0) or 0):.1f}đ", "Ghi Chú": "Đà tăng nóng & phục hồi đáy 24h (Hạn mức 15đ)"},
-                {"Chỉ Số / Hạng Mục": "🏓 Động Cơ 5 (Pingpong)", "Giá Trị": f"{float(lr.get('dc5_score', 0) or 0):.1f}đ", "Ghi Chú": "Sóng giật biên độ ngắn"},
-                {"Chỉ Số / Hạng Mục": "🌱 Bảng 3A (Mỏ Vàng) / 3B (Sóng 3D)", "Giá Trị": f"3A: {'✅ Top' if lr.get('in_top_3a') else '—'} | 3B: {b3b_info}", "Ghi Chú": b3b_note},
+        table1_data = [
+            {"Chỉ Số / Hạng Mục": "📅 Thời Điểm Ghi Nhận Dữ Liệu", "Giá Trị": str(sym_ts), "Ghi Chú": "Dữ liệu phiên mới nhất đang hoạt động"},
+            {"Chỉ Số / Hạng Mục": "🛡️ Trạng Thái 3D Strict", "Giá Trị": status_3d, "Ghi Chú": note_3d},
+            {"Chỉ Số / Hạng Mục": "🌊 Cấu Trúc Đa Khung (P>MA7_3D & ST_4H)", "Giá Trị": f"P>MA7: {'✅ Có' if p_ma7 else '❌ Không'} | ST_4H: {'🟢 Xanh' if st_4h else '🔴 Đỏ'}", "Ghi Chú": "Kiểm định chân sóng xu hướng trung hạn"},
+            {"Chỉ Số / Hạng Mục": "📦 Động Cơ 1 (Darvas Grid)", "Giá Trị": str(lr.get("grid_status", "—") or "—"), "Ghi Chú": f"Thứ hạng Grid: {g_rank_str}"},
+            {"Chỉ Số / Hạng Mục": "🎯 Động Cơ 2 (Pullback Sniper)", "Giá Trị": f"{float(lr.get('dc2_score', 0) or 0):.1f}đ", "Ghi Chú": "Xung lực đón điểm hồi quy (Hạn mức 10đ)"},
+            {"Chỉ Số / Hạng Mục": "🚀 Động Cơ 3 (Breakout)", "Giá Trị": f"{float(lr.get('dc3_score', 0) or 0):.1f}đ", "Ghi Chú": "Xung lực nổ Volume bứt phá (Hạn mức 15đ)"},
+            {"Chỉ Số / Hạng Mục": "🔥 Động Cơ 4 (Hot Trend)", "Giá Trị": f"{float(lr.get('dc4_score', 0) or 0):.1f}đ", "Ghi Chú": "Đà tăng nóng & phục hồi đáy 24h (Hạn mức 15đ)"},
+            {"Chỉ Số / Hạng Mục": "🏓 Động Cơ 5 (Pingpong)", "Giá Trị": f"{float(lr.get('dc5_score', 0) or 0):.1f}đ", "Ghi Chú": "Sóng giật biên độ ngắn"},
+            {"Chỉ Số / Hạng Mục": "🌱 Bảng 3A (Mỏ Vàng) / 3B (Sóng 3D)", "Giá Trị": f"3A: {'✅ Top' if lr.get('in_top_3a') else '—'} | 3B: {b3b_info}", "Ghi Chú": b3b_note},
             {"Chỉ Số / Hạng Mục": "🏆 Hội Tụ Tối Ưu (Summary Board)", "Giá Trị": str(lr.get("optimal_tier", "—") or "—"), "Ghi Chú": "+10đ (Hạng S) hoặc +5đ (Hạng A/B)"},
             {"Chỉ Số / Hạng Mục": "💰 Dòng Tiền & Điểm Phạt", "Giá Trị": f"Dòng tiền: {'+10đ' if lr.get('money_flow_score') else '0đ'} | {pen_str}", "Ghi Chú": "Quyết định hệ số x1.2 thưởng hoặc x0.5 phạt"}
         ]
