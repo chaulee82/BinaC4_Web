@@ -1194,10 +1194,10 @@ def print_14_day_summary_board(
                             SUM(CASE WHEN engine = 'PENALTY_XARAY' THEN 1 ELSE 0 END) as p_xaray,
                             SUM(CASE WHEN engine = 'PENALTY_FAKEOUT' THEN 1 ELSE 0 END) as p_fakeout
                         FROM signal_logs
-                        WHERE timestamp = ?
+                        WHERE timestamp >= datetime(?, '-15 minutes') AND timestamp <= datetime(?, '+1 minute')
                         GROUP BY symbol
                     '''
-                    for row_s in cur_s.execute(sig_q, (latest_ts,)).fetchall():
+                    for row_s in cur_s.execute(sig_q, (latest_ts, latest_ts)).fetchall():
                         s_sym = str(row_s[0]).upper().replace('/USDT', '').replace('USDT', '').strip()
                         latest_signals_map[s_sym] = {
                             'dc2_sc': float(row_s[1] or 0.0),
