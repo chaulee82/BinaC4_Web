@@ -293,12 +293,8 @@ with gr.Blocks(title="BinaC4 Web Interface") as demo:
             autoscroll=True
         )
         
-    with gr.Row():
-        file_download = gr.File(
-            value=initial_file,
-            label="Tải xuống File Log để gửi cho Gemini (.txt)", 
-            interactive=False
-        )
+    # Ẩn component download file vì đã có nút Copy Kết Quả
+    file_download = gr.File(value=initial_file, visible=False)
 
     # ── KHU VỰC TRA CỨU HỒ SƠ CHI TIẾT THEO MÃ (BÊN DƯỚI TERMINAL OUTPUT) ──
     with gr.Accordion("🔍 TRA CỨU HỒ SƠ CHI TIẾT THEO MÃ (Symbol Inspector)", open=True):
