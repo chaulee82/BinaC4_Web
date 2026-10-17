@@ -373,7 +373,8 @@ def analyze_super_wave(symbol: str, live_info: dict):
 
         df_1h = get_klines_cached(symbol, "1h", limit=24)
         score, d = score_super_wave_3d(df_3d, taker_buy_ratio_24h(df_1h))
-        if d.get("status") != "OK" or score < B3B_MIN_SCORE:
+        # Backend Pipeline: Giữ lại toàn bộ mã hợp lệ qua Hard Gate (kể cả dải 40-69đ), chỉ loại mã lỗi hoặc score < 0
+        if d.get("status") != "OK" or score < 0:
             return None
 
         d.update(_recommend_action(d))
@@ -387,8 +388,96 @@ def analyze_super_wave(symbol: str, live_info: dict):
         return None
 
 
-def scan_super_wave_3d(live_data_map: dict, top_n: int = B3B_TOP_N, exclude_symbols=None) -> list:
-    """Quét Top thanh khoản → chấm điểm → trả về Top N (sort Điểm↓, Vol ratio↓)."""
+def save_engine_3b_records(records: list, db_path: str = "data/binac4_history.db", scan_time: str = None) -> int:
+    """Lưu trữ dồi dào toàn bộ kết quả chấm điểm Bảng 3B vào bảng engine_3b_history (Backend Pipeline)."""
+    if not records:
+        return 0
+    from datetime import datetime
+    import sqlite3
+    import os
+
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+        ts = scan_time or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS engine_3b_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_time TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    score REAL NOT NULL,
+                    rail_score REAL DEFAULT 0,
+                    cross_score REAL DEFAULT 0,
+                    boll_score REAL DEFAULT 0,
+                    flow_score REAL DEFAULT 0,
+                    bonus REAL DEFAULT 0,
+                    penalty REAL DEFAULT 0,
+                    mode TEXT DEFAULT '',
+                    price REAL DEFAULT 0,
+                    ma7 REAL DEFAULT 0,
+                    sl REAL DEFAULT 0,
+                    vol_ratio REAL DEFAULT 0
+                )
+            ''')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_3b_sym_time ON engine_3b_history (symbol, scan_time DESC)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_3b_scan_time ON engine_3b_history (scan_time DESC)")
+            cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_3b_unique ON engine_3b_history (scan_time, symbol)")
+
+            rows = []
+            for r in records:
+                sym = str(r.get("symbol", "")).upper().replace("/USDT", "").replace("USDT", "").strip()
+                if not sym:
+                    continue
+                sc = float(r.get("score", 0.0) or 0.0)
+                p = r.get("pts", {})
+                rows.append((
+                    ts,
+                    sym,
+                    sc,
+                    float(p.get("rail", 0.0) or 0.0),
+                    float(p.get("cross", 0.0) or 0.0),
+                    float(p.get("boll", 0.0) or 0.0),
+                    float(p.get("flow", 0.0) or 0.0),
+                    float(p.get("bonus", 0.0) or 0.0),
+                    float(p.get("penalty", 0.0) or 0.0),
+                    str(r.get("mode", "") or ""),
+                    float(r.get("price", 0.0) or 0.0),
+                    float(r.get("ma7", 0.0) or 0.0),
+                    float(r.get("sl", 0.0) or 0.0),
+                    float(r.get("vol_ratio", 0.0) or 0.0)
+                ))
+
+            cursor.executemany('''
+                INSERT INTO engine_3b_history (
+                    scan_time, symbol, score, rail_score, cross_score, boll_score,
+                    flow_score, bonus, penalty, mode, price, ma7, sl, vol_ratio
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(scan_time, symbol) DO UPDATE SET
+                    score = excluded.score,
+                    rail_score = excluded.rail_score,
+                    cross_score = excluded.cross_score,
+                    boll_score = excluded.boll_score,
+                    flow_score = excluded.flow_score,
+                    bonus = excluded.bonus,
+                    penalty = excluded.penalty,
+                    mode = excluded.mode,
+                    price = excluded.price,
+                    ma7 = excluded.ma7,
+                    sl = excluded.sl,
+                    vol_ratio = excluded.vol_ratio
+            ''', rows)
+            conn.commit()
+            return len(rows)
+    except Exception as e:
+        logger.warning(f"[3B-SaveDB] Lỗi lưu trữ engine_3b_history: {e}")
+        return 0
+
+
+def scan_super_wave_3d(live_data_map: dict, top_n: int = B3B_TOP_N, exclude_symbols=None, scan_time: str = None) -> list:
+    """Quét Top thanh khoản → chấm điểm → lưu trữ Backend dồi dào → trả về Top N (>= 70đ) cho View UI."""
     if not live_data_map:
         return []
     exclude_symbols = set(exclude_symbols or ())
@@ -402,22 +491,31 @@ def scan_super_wave_3d(live_data_map: dict, top_n: int = B3B_TOP_N, exclude_symb
     pool = pool[:B3B_SCAN_TOP_N]
 
     with ThreadPoolExecutor(max_workers=8) as ex:
-        results = [r for r in ex.map(lambda p: analyze_super_wave(p[0], p[1]), pool) if r]
-    results.sort(key=lambda r: (r["score"], r["vol_ratio"]), reverse=True)
-    results = results[:top_n]
+        all_results = [r for r in ex.map(lambda p: analyze_super_wave(p[0], p[1]), pool) if r]
+    all_results.sort(key=lambda r: (r["score"], r["vol_ratio"]), reverse=True)
 
-    # Lớp Micro-Trigger 15M: chỉ cho Top N cuối (top_n lệnh gọi API tươi), KHÔNG đổi điểm/thứ hạng
-    if results:
-        with ThreadPoolExecutor(max_workers=min(5, len(results))) as ex:
-            m15 = list(ex.map(lambda r: fetch_micro_trigger_15m(r["symbol"] + "USDT"), results))
-        for r, m in zip(results, m15):
+    # 1. Backend Pipeline: Lưu toàn bộ mã đạt chuẩn vào SQLite engine_3b_history & cache
+    save_engine_3b_records(all_results, scan_time=scan_time)
+    global _LAST_ALL_RESULTS
+    _LAST_ALL_RESULTS = list(all_results)
+
+    # 2. View Pipeline: Màng lọc hiển thị chỉ lấy Top N đạt >= 70đ cho UI
+    display_results = [r for r in all_results if r["score"] >= B3B_MIN_SCORE][:top_n]
+
+    # Lớp Micro-Trigger 15M: chỉ cho Top N hiển thị (tiết kiệm API calls), KHÔNG đổi điểm/thứ hạng
+    if display_results:
+        with ThreadPoolExecutor(max_workers=min(5, len(display_results))) as ex:
+            m15 = list(ex.map(lambda r: fetch_micro_trigger_15m(r["symbol"] + "USDT"), display_results))
+        for r, m in zip(display_results, m15):
             r["m15"] = m
+
     global _LAST_RESULTS
-    _LAST_RESULTS = list(results)
-    return results
+    _LAST_RESULTS = list(display_results)
+    return display_results
 
 
 _LAST_RESULTS: list = []
+_LAST_ALL_RESULTS: list = []
 
 
 def get_last_super_wave_results() -> list:
@@ -430,6 +528,16 @@ def get_last_super_wave_results() -> list:
         r["m15_short"] = _M15_SHORT.get((r.get("m15") or {}).get("state"), "N/A")
         out.append(r)
     return out
+
+
+def get_last_all_super_wave_scores() -> dict:
+    """Trả về từ điển {symbol: score} của TOÀN BỘ các mã quét được trong phiên gần nhất (cho V2.0 Scoring Core)."""
+    return {r["symbol"]: float(r.get("score", 0.0) or 0.0) for r in _LAST_ALL_RESULTS if "symbol" in r}
+
+
+def get_last_all_super_wave_results() -> list:
+    """Trả về toàn bộ danh sách kết quả quét (chưa qua màng lọc Top 5 hay >= 70đ)."""
+    return list(_LAST_ALL_RESULTS)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

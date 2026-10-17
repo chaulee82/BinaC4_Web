@@ -5,7 +5,7 @@ import os
 import queue
 import threading
 import time
-from core.symbol_inspector import get_available_symbols, get_symbol_dossier
+from core.symbol_inspector import get_available_symbols, get_symbol_dossier, format_dossier_for_clipboard
 
 WORKSPACE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPT_PATH = os.path.join(WORKSPACE_DIR, 'main.py')
@@ -254,6 +254,9 @@ css = """
     margin-bottom: 8px !important;
     color: #0284c7 !important;
 }
+.hidden-copy-payload {
+    display: none !important;
+}
 """
 
 def get_latest_page_state():
@@ -262,12 +265,14 @@ def get_latest_page_state():
     symbols = get_available_symbols()
     target_sym = symbols[0] if symbols else ""
     summary_md, df1, df2 = get_symbol_dossier(target_sym)
-    return log_text, log_file, gr.update(choices=symbols, value=target_sym), summary_md, df1, df2
+    copy_payload = format_dossier_for_clipboard(summary_md, df1, df2)
+    return log_text, log_file, gr.update(choices=symbols, value=target_sym), summary_md, df1, df2, copy_payload
 
 # Pre-fetch initial data for symbol inspector
 _initial_symbols = get_available_symbols()
 _default_sym = _initial_symbols[0] if _initial_symbols else ""
 _init_summary, _init_df1, _init_df2 = get_symbol_dossier(_default_sym)
+_init_copy_payload = format_dossier_for_clipboard(_init_summary, _init_df1, _init_df2)
 
 # Build the Gradio interface
 with gr.Blocks(title="BinaC4 Web Interface") as demo:
@@ -304,10 +309,19 @@ with gr.Blocks(title="BinaC4 Web Interface") as demo:
                 value=_default_sym,
                 label="Chọn hoặc gõ tìm mã (Symbol)",
                 filterable=True,
-                scale=4,
+                scale=3,
                 interactive=True
             )
-            inspect_btn = gr.Button("🔎 Xem Chi Tiết Mã", variant="primary", scale=1, elem_classes=["mobile-btn"])
+            with gr.Column(scale=1):
+                inspect_btn = gr.Button("🔎 Xem Chi Tiết Mã", variant="primary", elem_classes=["mobile-btn"])
+                copy_history_btn = gr.Button("📋 Copy Lịch Sử", variant="secondary", elem_classes=["mobile-btn"])
+
+        history_copy_payload = gr.Textbox(
+            value=_init_copy_payload,
+            elem_classes=["hidden-copy-payload"],
+            container=False,
+            interactive=False
+        )
 
         summary_card = gr.Markdown(value=_init_summary, elem_classes=["inspector-card"])
 
@@ -319,18 +333,20 @@ with gr.Blocks(title="BinaC4 Web Interface") as demo:
     
     def on_inspect(sym=None):
         target = sym or (_default_sym if _default_sym else "")
-        return get_symbol_dossier(target)
+        s_md, d1, d2 = get_symbol_dossier(target)
+        c_payload = format_dossier_for_clipboard(s_md, d1, d2)
+        return s_md, d1, d2, c_payload
 
     # Event: Xem chi tiết khi bấm nút hoặc đổi mã trên dropdown
     inspect_btn.click(
         fn=on_inspect,
         inputs=[symbol_select],
-        outputs=[summary_card, table1_output, table2_output]
+        outputs=[summary_card, table1_output, table2_output, history_copy_payload]
     )
     symbol_select.change(
         fn=on_inspect,
         inputs=[symbol_select],
-        outputs=[summary_card, table1_output, table2_output]
+        outputs=[summary_card, table1_output, table2_output, history_copy_payload]
     )
 
     # Connect run button
@@ -340,7 +356,7 @@ with gr.Blocks(title="BinaC4 Web Interface") as demo:
     demo.load(
         fn=get_latest_page_state,
         inputs=None,
-        outputs=[output_box, file_download, symbol_select, summary_card, table1_output, table2_output]
+        outputs=[output_box, file_download, symbol_select, summary_card, table1_output, table2_output, history_copy_payload]
     )
     
     # Javascript fallback for copying on HTTP (non-secure) connections
@@ -369,6 +385,37 @@ with gr.Blocks(title="BinaC4 Web Interface") as demo:
         outputs=[],
         js=js_copy_text
     )
+
+    js_copy_history = """
+    (text) => {
+        if (!text || text.trim() === '') {
+            alert('⚠️ Chưa có dữ liệu lịch sử để copy!');
+            return;
+        }
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text);
+            alert('📋 Đã copy kết quả truy cứu lịch sử vào clipboard!');
+        } else {
+            let textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            document.execCommand('copy');
+            textArea.remove();
+            alert('📋 Đã copy kết quả truy cứu lịch sử vào clipboard (Chế độ tương thích)!');
+        }
+    }
+    """
+    # Connect copy history button using Javascript
+    copy_history_btn.click(
+        fn=None,
+        inputs=[history_copy_payload],
+        outputs=[],
+        js=js_copy_history
+    )
+
 
 if __name__ == "__main__":
     demo.queue() # Enable queuing for streaming outputs

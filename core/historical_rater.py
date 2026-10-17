@@ -55,15 +55,19 @@ def calculate_raw_base_score(coin_data: Dict[str, Any]) -> float:
     st_4h = coin_data.get("ST_4H")
     st_4h_green = st_4h in ("Green", "GREEN", True, 1) or bool(coin_data.get("st_4h_green"))
 
-    # 1. 3D Strict
-    price_ok = (price > ma7_3d) if (price > 0 and ma7_3d > 0) else bool(coin_data.get("price_above_ma7_3d"))
-    ma_aligned = (ma7_3d > ma99_3d) if (ma7_3d > 0 and ma99_3d > 0) else bool(coin_data.get("ma7_gt_ma99_3d"))
-
-    if price_ok and st_4h_green:
-        if ma_aligned:
-            raw_base += 25.0
-        else:
-            raw_base += 15.0
+    # 1. 3D Component (Tối đa 25đ - Nội suy tuyến tính từ Điểm Sóng 3B: (Score / 100) * 25)
+    b3b_score = float(coin_data.get("b3b_score", 0.0) or 0.0)
+    if b3b_score > 0:
+        raw_base += min(25.0, (b3b_score / 100.0) * 25.0)
+    else:
+        # Fallback 3D Strict nếu chưa có bản ghi sóng 3B
+        price_ok = (price > ma7_3d) if (price > 0 and ma7_3d > 0) else bool(coin_data.get("price_above_ma7_3d"))
+        ma_aligned = (ma7_3d > ma99_3d) if (ma7_3d > 0 and ma99_3d > 0) else bool(coin_data.get("ma7_gt_ma99_3d"))
+        if price_ok and st_4h_green:
+            if ma_aligned:
+                raw_base += 25.0
+            else:
+                raw_base += 15.0
 
     # 2. Rebalance
     grid_rank = int(coin_data.get("Grid_Rank", 999) or 999)
@@ -212,7 +216,48 @@ class HistoricalDataQuery:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_sess_sym_ts ON session_scores(symbol, timestamp)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_sess_ts ON session_scores(timestamp)")
             cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_sess_unique ON session_scores(timestamp, symbol)")
+            # Khởi tạo bảng engine_3b_history lưu vết toàn bộ dữ liệu Bảng 3B
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS engine_3b_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_time TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    score REAL NOT NULL,
+                    rail_score REAL DEFAULT 0,
+                    cross_score REAL DEFAULT 0,
+                    boll_score REAL DEFAULT 0,
+                    flow_score REAL DEFAULT 0,
+                    bonus REAL DEFAULT 0,
+                    penalty REAL DEFAULT 0,
+                    mode TEXT DEFAULT '',
+                    price REAL DEFAULT 0,
+                    ma7 REAL DEFAULT 0,
+                    sl REAL DEFAULT 0,
+                    vol_ratio REAL DEFAULT 0
+                )
+            ''')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_3b_sym_time ON engine_3b_history (symbol, scan_time DESC)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_3b_scan_time ON engine_3b_history (scan_time DESC)")
+            cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_3b_unique ON engine_3b_history (scan_time, symbol)")
             conn.commit()
+
+    def query_latest_3b_score(self, symbol: str) -> float:
+        """Truy vấn điểm sóng 3B gần nhất của mã từ engine_3b_history."""
+        clean_sym = symbol.replace('/USDT', '').replace('USDT', '').strip().upper()
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                row = cursor.execute('''
+                    SELECT score FROM engine_3b_history
+                    WHERE symbol = ?
+                    ORDER BY scan_time DESC
+                    LIMIT 1
+                ''', (clean_sym,)).fetchone()
+                if row and row[0] is not None:
+                    return float(row[0])
+        except Exception as e:
+            logger.debug(f"[3B-Query] {clean_sym}: {e}")
+        return 0.0
 
     def record_session_score(self, timestamp: str, symbol: str, mong: float, day: float, tien: float):
         """
@@ -515,7 +560,9 @@ class HistoricalDataQuery:
             day_base = float(raw_base)
         else:
             sc_strict = 0.0
-            if strict_3d and strict_3d >= 70:
+            if b3b and float(b3b) > 0:
+                sc_strict = min(25.0, (float(b3b) / 100.0) * 25.0)
+            elif strict_3d and strict_3d >= 70:
                 sc_strict = 25.0
             elif strict_3d and strict_3d >= 50:
                 sc_strict = 15.0
@@ -657,6 +704,56 @@ class HistoricalDataQuery:
 
         is_live = bool(target_dates[0] in daily_agg and (history_mong[0] > 0 or history_day[0] > 0 or history_tien[0] > 0))
 
+        # ═════════════════════════════════════════════════════════════════════
+        # LỚP IV: TRÍCH XUẤT THÀNH PHẦN MÓNG T-0 CHO BẢNG HIỂN THỊ
+        # ═════════════════════════════════════════════════════════════════════
+        t0_components = {}
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            row_t0 = cur.execute('''
+                SELECT b3b_score, strict_3d_score, grid_rank, grid_status, in_top_3a, in_top_3b, optimal_tier,
+                       price_above_ma7_3d, ma7_gt_ma99_3d, st_4h_green
+                FROM daily_metrics
+                WHERE symbol = ? AND date = ?
+            ''', (clean_sym, target_dates[0])).fetchone()
+            if row_t0:
+                b3b_val, sc_st, g_rnk, g_stat, in_3a, in_3b, opt_t, p_ma7, ma_gt, st_4h = row_t0
+                if b3b_val and float(b3b_val) > 0:
+                    sc_3d = min(25.0, (float(b3b_val) / 100.0) * 25.0)
+                elif sc_st and sc_st >= 70:
+                    sc_3d = 25.0
+                elif sc_st and sc_st >= 50:
+                    sc_3d = 15.0
+                elif p_ma7 and st_4h:
+                    sc_3d = 25.0 if ma_gt else 15.0
+                else:
+                    sc_3d = 0.0
+
+                sc_grid = 0.0
+                if "NÉ GRID" not in (g_stat or ''):
+                    if (g_rnk or 999) <= 5:
+                        sc_grid = 10.0
+                    elif (g_rnk or 999) <= 15:
+                        sc_grid = 5.0
+
+                sc_3ab = 5.0 if (in_3a or in_3b) else 0.0
+                sc_opt = 10.0 if "HẠNG S" in (opt_t or '') else (5.0 if any(t in (opt_t or '') for t in ["HẠNG A", "HẠNG B"]) else 0.0)
+                t0_components = {
+                    '3d_strict': sc_3d,
+                    'grid_reb': sc_grid,
+                    'radar_3ab': sc_3ab,
+                    'optimal_confluence': sc_opt
+                }
+            else:
+                b3b_val = self.query_latest_3b_score(clean_sym)
+                if b3b_val > 0:
+                    t0_components = {
+                        '3d_strict': min(25.0, (b3b_val / 100.0) * 25.0),
+                        'grid_reb': 0.0,
+                        'radar_3ab': 0.0,
+                        'optimal_confluence': 0.0
+                    }
+
         return {
             "symbol": clean_sym,
             "total_score": final_rating,
@@ -672,7 +769,7 @@ class HistoricalDataQuery:
                 "history_mong": [round(x, 1) for x in history_mong],
                 "history_day": [round(x, 1) for x in history_day],
                 "history_tien": [round(x, 1) for x in history_tien],
-                "t0_components": {}
+                "t0_components": t0_components
             }
         }
 
@@ -960,9 +1057,10 @@ def render_profiles_table(
             mult_str = f"🔻x{mult:.1f}"
 
         rank_str = f"#{idx}"
+        sc_3d_str = f"{sc_3d:.1f}" if (sc_3d % 1 != 0) else f"{sc_3d:.0f}"
         row_str = (
             f"{rank_str:<5} | {p['symbol']:<7} | {p['total_score']:<6.1f} | {p['tier']:<21} | {f_tot:<8.1f} | "
-            f"{sc_3d:<8.0f} | {sc_grid:<10.0f} | {sc_3ab:<8.0f} | {sc_opt:<11.0f} | "
+            f"{sc_3d_str:<8} | {sc_grid:<10.0f} | {sc_3ab:<8.0f} | {sc_opt:<11.0f} | "
             f"{mom:<7.1f} | {cash:<8.1f} | {mult_str:<6}"
         )
         print(row_str)
@@ -1037,6 +1135,19 @@ def print_14_day_summary_board(
         if super_wave_results:
             top5_3b = {str(sw.get('symbol', '')).upper().replace('/USDT', '').replace('USDT', '').strip() for sw in super_wave_results[:5]} - {''}
 
+        # Thu thập toàn bộ điểm sóng 3B (Backend Pipeline) để nội suy tuyến tính vào Móng
+        all_3b_scores = {}
+        try:
+            from strategies.super_trend_3d import get_last_all_super_wave_scores
+            all_3b_scores = get_last_all_super_wave_scores()
+        except Exception:
+            all_3b_scores = {}
+        if super_wave_results:
+            for sw in super_wave_results:
+                sw_sym = str(sw.get('symbol', '')).upper().replace('/USDT', '').replace('USDT', '').strip()
+                if sw_sym and sw_sym not in all_3b_scores:
+                    all_3b_scores[sw_sym] = float(sw.get('score', 0.0) or 0.0)
+
         # 2. Thu thập bản đồ cảnh báo sớm (ST 4H)
         warning_map = {}
         if warning_results:
@@ -1101,8 +1212,8 @@ def print_14_day_summary_board(
         except Exception as e_sig:
             logger.warning(f"Không thể đọc tín hiệu phiên từ signal_logs: {e_sig}")
 
-        # 4.5. Tập hợp toàn bộ danh sách mã trong phiên T-0
-        all_symbols = set(reb_map.keys()) | top5_3a | top5_3b | set(warning_map.keys()) | set(latest_signals_map.keys())
+        # 4.5. Tập hợp toàn bộ danh sách mã trong phiên T-0 (bao gồm cả mã có điểm 3B dải 40-69đ)
+        all_symbols = set(reb_map.keys()) | top5_3a | top5_3b | set(warning_map.keys()) | set(latest_signals_map.keys()) | set(all_3b_scores.keys())
         if convergence_ranks:
             all_symbols |= {s.upper().replace('/USDT', '').replace('USDT', '').strip() for s in convergence_ranks.keys()}
         all_symbols -= {''}
@@ -1132,6 +1243,10 @@ def print_14_day_summary_board(
             if not opt_tier:
                 opt_tier = rater.get_latest_convergence_tier(sym)
 
+            b3b_sc = all_3b_scores.get(sym, 0.0)
+            if b3b_sc == 0.0:
+                b3b_sc = rater.query_latest_3b_score(sym)
+
             coin_data = {
                 "Price": price,
                 "MA7_3D": ma7_3d,
@@ -1141,11 +1256,13 @@ def print_14_day_summary_board(
                 "Grid_Status": grid_status,
                 "In_Top_3A": in_3a,
                 "In_Top_3B": in_3b,
-                "Optimal_Conclusion_Tier": opt_tier
+                "Optimal_Conclusion_Tier": opt_tier,
+                "b3b_score": b3b_sc
             }
             raw_base = calculate_raw_base_score(coin_data)
 
             rater.record_daily_metric(today_str, sym, {
+                "b3b_score": b3b_sc,
                 "rebalance_score": reb_score,
                 "raw_base_score": raw_base,
                 "grid_rank": grid_rank,
