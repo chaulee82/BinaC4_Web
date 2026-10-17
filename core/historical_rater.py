@@ -585,7 +585,7 @@ class HistoricalDataQuery:
                         SUBSTR(timestamp, 1, 10) AS scan_date,
                         ROUND(AVG(mong_score), 2) AS mong_score,
                         MAX(day_score) AS day_score,
-                        MAX(tien_score) AS tien_score
+                        ROUND(AVG(tien_score), 2) AS tien_score
                     FROM session_scores
                     WHERE symbol = ?
                     GROUP BY scan_date
