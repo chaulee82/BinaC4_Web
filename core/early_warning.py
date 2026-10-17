@@ -214,10 +214,29 @@ class EarlyWarningMatrix:
             if df_1d is not None and len(df_1d) >= 12:
                 st_1d = self.engine.get_supertrend(df_1d, period=10, multiplier=3.0)
                 if st_1d['direction'] == -1:
-                    ew_triggers.append(
-                        "⛔ EW1-A: Supertrend 1D DOWNTREND — Gãy xu hướng dài hạn"
+                    # Kiểm tra đặc quyền Miễn Cấp 3 nhờ Uptrend 3D
+                    _d3 = None
+                    try:
+                        from core.macro_levels import get_3d_profile
+                        _d3 = get_3d_profile(sym)
+                    except Exception:
+                        pass
+                    _raw3d = (_d3 or {}).get('_raw') or {}
+                    is_3d_uptrend = (
+                        _raw3d
+                        and _raw3d.get('close_3d', 0) > _raw3d.get('ma7_3d', float('inf'))
+                        and _raw3d.get('st_dir_3d') == 1
                     )
-                    ew_level = min(ew_level, 1)
+                    if is_3d_uptrend:
+                        ew_triggers.append(
+                            "🛡️ EW1-A: Thủng ST 1D nhưng MIỄN PHẠT CẤP 3 (Uptrend 3D: Trên MA7 3D & ST 3D 🟢)"
+                        )
+                        # Được miễn phạt -> KHÔNG hạ ew_level xuống 1 (Fatal REJECT)
+                    else:
+                        ew_triggers.append(
+                            "⛔ EW1-A: Supertrend 1D DOWNTREND — Gãy xu hướng dài hạn"
+                        )
+                        ew_level = min(ew_level, 1)
 
             # ── KS-1B: Vol xả đỏ 1H > 3× MA20 ────────────────────
             if df_1h is not None and len(df_1h) >= 21:

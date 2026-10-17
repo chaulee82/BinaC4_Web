@@ -720,7 +720,7 @@ def is_convergence_engine_qualified(engine: str, sig_or_res: Any) -> bool:
         if sig_or_res.get("ew_level", 0) >= FATAL_EW_LEVEL:
             return False
         blob = f"{sig_or_res.get('action_label', '')} {sig_or_res.get('macro_3d_signal', '')} {sig_or_res.get('action_short', '')}"
-        if any(t in blob for t in FATAL_TEXTS) or "CẤP 3" in blob or "KHẨN CẤP" in blob:
+        if any(t in blob for t in FATAL_TEXTS) or ("CẤP 3" in blob and "Miễn Cấp 3" not in blob) or "KHẨN CẤP" in blob:
             return False
         score = _num(sig_or_res.get("target_score", sig_or_res.get("score", 0)))
     else:

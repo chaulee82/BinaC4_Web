@@ -381,6 +381,15 @@ def main():
                 renderer = ConsoleRenderer()
                 renderer.render_early_warning_matrix(warning_results, len(watchlist))
                 
+                # Cập nhật safety_map đồng bộ cho tất cả các động cơ (DC1, DC2, DC3, DC4, DC5)
+                for r in warning_results:
+                    if "Miễn Cấp 3" in r.get("label", ""):
+                        _sym = r.get("symbol", "")
+                        _tag = "🛡️ EW CẤP 1 (Miễn Cấp 3 - Uptrend 3D)"
+                        safety_map[_sym] = _tag
+                        safety_map[_sym.replace("/USDT", "")] = _tag
+                        safety_map[_sym.replace("/", "")] = _tag
+
                 # Cập nhật watchlist thành safe_watchlist
                 watchlist = safe_watchlist
                 

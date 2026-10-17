@@ -5,6 +5,7 @@ import os
 import queue
 import threading
 import time
+from core.symbol_inspector import get_available_symbols, get_symbol_dossier
 
 WORKSPACE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPT_PATH = os.path.join(WORKSPACE_DIR, 'main.py')
@@ -202,7 +203,71 @@ css = """
     min-height: 50px !important;
     border-radius: 8px !important;
 }
+.inspector-card {
+    background-color: #f8fafc !important;
+    padding: 16px 20px !important;
+    border-radius: 10px !important;
+    border: 1px solid #e2e8f0 !important;
+    margin-bottom: 15px !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+.inspector-card h3 {
+    color: #0f172a !important;
+    font-size: 18px !important;
+    font-weight: 700 !important;
+    margin-top: 0 !important;
+    margin-bottom: 10px !important;
+}
+.inspector-card p,
+.inspector-card ul,
+.inspector-card li,
+.inspector-card span {
+    color: #1e293b !important;
+    font-size: 14px !important;
+    line-height: 1.7 !important;
+}
+.inspector-card strong {
+    color: #0f172a !important;
+    font-weight: 700 !important;
+}
+.inspector-card em {
+    color: #64748b !important;
+}
+.inspector-card code {
+    background-color: #f1f5f9 !important;
+    color: #0284c7 !important;
+    border: 1px solid #cbd5e1 !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    font-family: Consolas, monospace !important;
+    font-weight: 600 !important;
+}
+.score-badge {
+    font-size: 22px !important;
+    font-weight: 800 !important;
+    color: #d97706 !important;
+}
+.table-header-title {
+    font-size: 15px !important;
+    font-weight: bold !important;
+    margin-top: 16px !important;
+    margin-bottom: 8px !important;
+    color: #0284c7 !important;
+}
 """
+
+def get_latest_page_state():
+    """Lấy dữ liệu đồng bộ cho trang: log text, file, danh sách mã và hồ sơ mã đang chọn."""
+    log_text, log_file = get_latest_log_data()
+    symbols = get_available_symbols()
+    target_sym = "BERA" if "BERA" in symbols else (symbols[0] if symbols else "")
+    summary_md, df1, df2 = get_symbol_dossier(target_sym)
+    return log_text, log_file, gr.update(choices=symbols, value=target_sym), summary_md, df1, df2
+
+# Pre-fetch initial data for symbol inspector
+_initial_symbols = get_available_symbols()
+_default_sym = "BERA" if "BERA" in _initial_symbols else (_initial_symbols[0] if _initial_symbols else "BERA")
+_init_summary, _init_df1, _init_df2 = get_symbol_dossier(_default_sym)
 
 # Build the Gradio interface
 with gr.Blocks(title="BinaC4 Web Interface") as demo:
@@ -216,7 +281,7 @@ with gr.Blocks(title="BinaC4 Web Interface") as demo:
     
     with gr.Row():
         copy_btn = gr.Button("📋 Copy Kết Quả", variant="secondary", size="lg", elem_classes=["mobile-btn"])
-    
+
     with gr.Row():
         output_box = gr.Textbox(
             value=initial_text,
@@ -234,12 +299,53 @@ with gr.Blocks(title="BinaC4 Web Interface") as demo:
             label="Tải xuống File Log để gửi cho Gemini (.txt)", 
             interactive=False
         )
+
+    # ── KHU VỰC TRA CỨU HỒ SƠ CHI TIẾT THEO MÃ (BÊN DƯỚI TERMINAL OUTPUT) ──
+    with gr.Accordion("🔍 TRA CỨU HỒ SƠ CHI TIẾT THEO MÃ (Symbol Inspector)", open=True):
+        with gr.Row():
+            symbol_select = gr.Dropdown(
+                choices=_initial_symbols,
+                value=_default_sym,
+                label="Chọn hoặc gõ tìm mã (Symbol)",
+                filterable=True,
+                scale=4,
+                interactive=True
+            )
+            inspect_btn = gr.Button("🔎 Xem Chi Tiết Mã", variant="primary", scale=1, elem_classes=["mobile-btn"])
+
+        summary_card = gr.Markdown(value=_init_summary, elem_classes=["inspector-card"])
+
+        gr.Markdown("#### 📊 BẢNG 1: Tín Hiệu Kỹ Thuật & Động Cơ Phiên Mới Nhất", elem_classes=["table-header-title"])
+        table1_output = gr.DataFrame(value=_init_df1, interactive=False, wrap=True)
+
+        gr.Markdown("#### 📈 BẢNG 2: Phân Rã Lịch Sử 4 Phiên & Tính Suy Hao (Aggressive Decay)", elem_classes=["table-header-title"])
+        table2_output = gr.DataFrame(value=_init_df2, interactive=False, wrap=True)
     
+    def on_inspect(sym=None):
+        target = sym or "BERA"
+        return get_symbol_dossier(target)
+
+    # Event: Xem chi tiết khi bấm nút hoặc đổi mã trên dropdown
+    inspect_btn.click(
+        fn=on_inspect,
+        inputs=[symbol_select],
+        outputs=[summary_card, table1_output, table2_output]
+    )
+    symbol_select.change(
+        fn=on_inspect,
+        inputs=[symbol_select],
+        outputs=[summary_card, table1_output, table2_output]
+    )
+
     # Connect run button
     run_btn.click(fn=run_binac4, inputs=None, outputs=[output_box, file_download])
 
-    # Tự động đọc dữ liệu log mới nhất từ file khi load hoặc refresh trang
-    demo.load(fn=get_latest_log_data, inputs=None, outputs=[output_box, file_download])
+    # Tự động đọc dữ liệu log & đồng bộ inspector khi load hoặc refresh trang
+    demo.load(
+        fn=get_latest_page_state,
+        inputs=None,
+        outputs=[output_box, file_download, symbol_select, summary_card, table1_output, table2_output]
+    )
     
     # Javascript fallback for copying on HTTP (non-secure) connections
     js_copy_text = """

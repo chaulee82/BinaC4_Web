@@ -150,16 +150,23 @@ class DC2SniperEngine(BaseEngine):
                 skip_rsi_check=bool(res.get('skip_rsi_check', False))
             )
             
+            # Ưu tiên hiển thị tag Miễn Cấp 3 nếu mã được miễn trừ theo hệ thống Cảnh Báo Sớm
+            ew_lbl = (ew_label_map or {}).get(sym) or (ew_label_map or {}).get(sym.replace('/', '')) or (ew_label_map or {}).get(sym + "USDT", "")
+            if "Miễn Cấp 3" in (ew_lbl or "") or res.get("skip_rsi_check"):
+                tag = "🛡️ EW CẤP 1 (Miễn Cấp 3 - Uptrend 3D)"
+            else:
+                tag = safety_map.get(sym, "⚠️ CHƯA XÉT")
+
             state = SymbolState(
                 symbol=sym, current_price=0.0, volume_24h=0.0, avg_vola_24h=0.0, coin_vola_24h=0.0,
-                safety_tag=safety_map.get(sym, "⚠️ CHƯA XÉT"),
+                safety_tag=tag,
                 macro_levels=(macro_levels_map or {}).get(sym),
                 scores={"DC2": score_ctx}
             )
             dc2_states.append(state)
         
         # Sắp xếp hiển thị 3 tầng:
-        #   1) ✅ AN TOÀN xếp trên ⚠️ Cạn Cầu / Trượt Giá
+        #   1) ✅ AN TOÀN / 🛡️ Miễn Cấp 3 xếp trên ⚠️ Cạn Cầu / Trượt Giá
         #   2) Điểm tổng cao hơn (đã gồm C0 Macro Bonus)
         #   3) Biên lãi kỳ vọng OCO-2 TP (%) lớn hơn
         def _oco2_tp_pct(st: SymbolState) -> float:
@@ -169,7 +176,7 @@ class DC2SniperEngine(BaseEngine):
             return 0.0
 
         dc2_states.sort(key=lambda st: (
-            1 if 'AN TOÀN' in (st.safety_tag or '') else 0,
+            1 if ('AN TOÀN' in (st.safety_tag or '') or 'Miễn Cấp 3' in (st.safety_tag or '')) else 0,
             float(st.scores["DC2"].total_score or 0),
             _oco2_tp_pct(st),
         ), reverse=True)
