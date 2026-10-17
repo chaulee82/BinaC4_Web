@@ -103,13 +103,71 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
             pass
 
     # =========================================================================
-    # 📊 BẢNG 1: Tín hiệu & Thông số kỹ thuật phiên mới nhất (Latest Scan Signals)
-    # Áp dụng cơ chế Data TTL: Nếu mã không có mặt trong phiên quét mới nhất -> Đã hết hạn (0đ)
+    # 🕒 Lấy mốc thời gian chi tiết (YYYY-MM-DD HH:MM:SS) cho từng ngày & từng mã
     # =========================================================================
+    date_timestamps = {}
+    if os.path.exists(db_path):
+        try:
+            with sqlite3.connect(db_path) as conn:
+                c = conn.cursor()
+                c.execute("""
+                    SELECT substr(timestamp, 1, 10) as d, MAX(timestamp) 
+                    FROM signal_logs 
+                    GROUP BY d 
+                    ORDER BY d DESC 
+                    LIMIT 10
+                """)
+                date_timestamps = dict(c.fetchall())
+        except Exception:
+            pass
+
+    trust_db = "trust_score_history.db"
+    if os.path.exists(trust_db):
+        try:
+            with sqlite3.connect(trust_db) as conn_t:
+                c_t = conn_t.cursor()
+                c_t.execute("""
+                    SELECT substr(scan_time, 1, 10) as d, MAX(scan_time) 
+                    FROM score_history 
+                    GROUP BY d 
+                    ORDER BY d DESC 
+                    LIMIT 10
+                """)
+                for d, ts in c_t.fetchall():
+                    if d not in date_timestamps or ts > date_timestamps[d]:
+                        date_timestamps[d] = ts
+        except Exception:
+            pass
+
     target_live_date = recent_dates[0] if recent_dates else datetime.now().strftime('%Y-%m-%d')
+    latest_live_ts = date_timestamps.get(target_live_date, target_live_date)
+
     record_date = str(latest_row["date"]) if latest_row else "—"
     is_expired = (latest_row is None) or (record_date < target_live_date)
 
+    # Lấy timestamp chính xác của mã đang xét
+    sym_ts = None
+    if os.path.exists(db_path) and record_date and record_date != "—":
+        try:
+            with sqlite3.connect(db_path) as conn:
+                c = conn.cursor()
+                c.execute("""
+                    SELECT MAX(timestamp) FROM signal_logs 
+                    WHERE symbol = ? AND substr(timestamp, 1, 10) = ?
+                """, (clean_sym, record_date))
+                r = c.fetchone()
+                if r and r[0]:
+                    sym_ts = r[0]
+        except Exception:
+            pass
+
+    if not sym_ts:
+        sym_ts = date_timestamps.get(record_date, record_date)
+
+    # =========================================================================
+    # 📊 BẢNG 1: Tín hiệu & Thông số kỹ thuật phiên mới nhất (Latest Scan Signals)
+    # Áp dụng cơ chế Data TTL: Nếu mã không có mặt trong phiên quét mới nhất -> Đã hết hạn (0đ)
+    # =========================================================================
     table1_data = []
     if latest_row and not is_expired:
         lr = dict(latest_row)
@@ -127,7 +185,7 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
         pen_str = f"🔴 Trừ -{pen_sum}đ" if pen_sum > 0 else "🟢 Không dính phạt"
 
         table1_data = [
-            {"Chỉ Số / Hạng Mục": "📅 Ngày Ghi Nhận Dữ Liệu", "Giá Trị": str(lr.get("date", "—")), "Ghi Chú": "Dữ liệu phiên mới nhất đang hoạt động"},
+            {"Chỉ Số / Hạng Mục": "📅 Thời Điểm Ghi Nhận Dữ Liệu", "Giá Trị": str(sym_ts), "Ghi Chú": "Dữ liệu phiên mới nhất đang hoạt động"},
             {"Chỉ Số / Hạng Mục": "🛡️ Trạng Thái 3D Strict", "Giá Trị": status_3d, "Ghi Chú": note_3d},
             {"Chỉ Số / Hạng Mục": "🌊 Cấu Trúc Đa Khung (P>MA7_3D & ST_4H)", "Giá Trị": f"P>MA7: {'✅ Có' if p_ma7 else '❌ Không'} | ST_4H: {'🟢 Xanh' if st_4h else '🔴 Đỏ'}", "Ghi Chú": "Kiểm định chân sóng xu hướng trung hạn"},
             {"Chỉ Số / Hạng Mục": "📦 Động Cơ 1 (Darvas Grid)", "Giá Trị": str(lr.get("grid_status", "—") or "—"), "Ghi Chú": f"Thứ hạng Grid: {g_rank_str}"},
@@ -141,9 +199,9 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
         ]
     else:
         # Đã hết hạn hoặc rớt top trong phiên mới nhất -> Đưa toàn bộ động cơ về 0đ để chống ảo giác
-        old_note = f" (Phiên cũ: {record_date})" if record_date != "—" else ""
+        old_note = f" (Phiên cũ: {sym_ts})" if sym_ts != "—" else ""
         table1_data = [
-            {"Chỉ Số / Hạng Mục": "📅 Ngày Ghi Nhận Dữ Liệu", "Giá Trị": f"⚠️ {record_date} (Đã hết hạn / Mất Live)", "Ghi Chú": f"Mã không lọt top trong phiên mới nhất [{target_live_date}]"},
+            {"Chỉ Số / Hạng Mục": "📅 Thời Điểm Ghi Nhận Dữ Liệu", "Giá Trị": f"⚠️ {sym_ts} (Đã hết hạn / Mất Live)", "Ghi Chú": f"Mã không lọt top trong phiên mới nhất [{latest_live_ts}]"},
             {"Chỉ Số / Hạng Mục": "🛡️ Trạng Thái 3D Strict", "Giá Trị": "0đ", "Ghi Chú": "⛔ Dưới chuẩn vĩ mô phiên hiện tại"},
             {"Chỉ Số / Hạng Mục": "🌊 Cấu Trúc Đa Khung (P>MA7_3D & ST_4H)", "Giá Trị": "P>MA7: ❌ Không | ST_4H: 🔴 Đỏ", "Ghi Chú": "Mất cấu trúc chân sóng"},
             {"Chỉ Số / Hạng Mục": "📦 Động Cơ 1 (Darvas Grid)", "Giá Trị": f"⛔ N/A - Rớt Top{old_note}", "Ghi Chú": "Không có trong top quét hiện tại"},
@@ -168,7 +226,7 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
     h_day = profile.get("breakdown", {}).get("history_day", [])
     h_tien = profile.get("breakdown", {}).get("history_tien", [])
 
-    row_date = {"Thành Phần Điểm": "📅 Ngày Quét"}
+    row_date = {"Thành Phần Điểm": "📅 Thời Điểm Quét"}
     row_weight = {"Thành Phần Điểm": "⚖️ Trọng Số Suy Hao"}
     row_mong = {"Thành Phần Điểm": "🧱 Điểm MÓNG (Tối đa 40đ)"}
     row_day = {"Thành Phần Điểm": "🚀 Điểm ĐẨY (Tối đa 40đ)"}
@@ -177,8 +235,9 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
 
     for i in range(min(4, len(recent_dates))):
         d_str = recent_dates[i]
+        ts_str = date_timestamps.get(d_str, d_str)
         col_name = f"{date_labels[i]} [{d_str}]"
-        row_date[col_name] = d_str
+        row_date[col_name] = ts_str
         row_weight[col_name] = f"{int(weights[i]*100)}%"
 
         m_val = h_mong[i] if i < len(h_mong) else 0.0
@@ -225,7 +284,7 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
     expired_alert = ""
     if is_expired:
         expired_alert = f"""
-> ⚠️ **CẢNH BÁO TÍN HIỆU CŨ (HẾT HẠN):** Phiên quét mới nhất `[{target_live_date}]` không ghi nhận mã **{clean_sym}** (đã rớt top / mất tín hiệu Live). Điểm số BẢNG 1 được đưa về **0đ**, điểm tín nhiệm BẢNG 2 chỉ còn giá trị suy hao từ dữ liệu cũ ngày `{record_date}`.
+> ⚠️ **CẢNH BÁO TÍN HIỆU CŨ (HẾT HẠN):** Phiên quét mới nhất `[{latest_live_ts}]` không ghi nhận mã **{clean_sym}** (đã rớt top / mất tín hiệu Live). Điểm số BẢNG 1 được đưa về **0đ**, điểm tín nhiệm BẢNG 2 chỉ còn giá trị suy hao từ dữ liệu cũ lúc `{sym_ts}`.
 """
 
     summary_md = f"""
