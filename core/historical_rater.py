@@ -197,6 +197,33 @@ class HistoricalDataQuery:
                         logger.debug(f"Col {col_name} check: {e}")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_metrics_symbol_date ON daily_metrics(symbol, date)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_metrics_date ON daily_metrics(date)")
+
+            # Khởi tạo bảng session_scores theo chuẩn V2.0 cho tần suất quét 30 phút
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS session_scores (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    mong_score REAL DEFAULT 0.0,
+                    day_score REAL DEFAULT 0.0,
+                    tien_score REAL DEFAULT 0.0
+                )
+            ''')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sess_sym_ts ON session_scores(symbol, timestamp)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sess_ts ON session_scores(timestamp)")
+            conn.commit()
+
+    def record_session_score(self, timestamp: str, symbol: str, mong: float, day: float, tien: float):
+        """
+        Ghi nhận điểm thành phần thô của một phiên quét 30 phút vào session_scores (V2.0 Spec).
+        """
+        clean_sym = symbol.replace('/USDT', '').replace('USDT', '').strip()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO session_scores (timestamp, symbol, mong_score, day_score, tien_score)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (timestamp, clean_sym, round(float(mong), 2), round(float(day), 2), round(float(tien), 2)))
             conn.commit()
 
     def record_daily_metric(self, date_str: str, symbol: str, metrics: Dict[str, Any]):
@@ -464,167 +491,166 @@ class HistoricalDataQuery:
         cnt_files = self.sync_from_log_files(workspace_dir)
         return {"signal_logs": cnt_logs, "log_files": cnt_files}
 
+    @staticmethod
+    def _calc_scores_from_daily_metric_row(r) -> Tuple[float, float, float]:
+        """
+        Tính điểm thô (Móng, Đẩy, Tiền) cho 1 bản ghi daily_metrics.
+        """
+        (
+            _, raw_base, b3a, b3b, reb, strict_3d,
+            dc2, dc3, dc4, dc5,
+            p_lvl3, p_xaray, p_fakeout,
+            g_rank, g_status, in_3a, in_3b, opt_tier,
+            p_ma7, ma_gt, st_4h,
+            mf_sc, dc2_sc_val, dc3_sc_val, dc4_sc_val, dc5_sc_val
+        ) = r
+
+        # 1. Điểm Móng
+        if raw_base and raw_base > 0:
+            day_base = float(raw_base)
+        else:
+            sc_strict = 0.0
+            if strict_3d and strict_3d >= 70:
+                sc_strict = 25.0
+            elif strict_3d and strict_3d >= 50:
+                sc_strict = 15.0
+            elif p_ma7 and st_4h:
+                sc_strict = 25.0 if ma_gt else 15.0
+
+            sc_reb = 0.0
+            if "NÉ GRID" not in (g_status or ''):
+                if (g_rank or 999) <= 5 or (reb and reb >= 65):
+                    sc_reb = 10.0
+                elif (g_rank or 999) <= 15 or (reb and reb >= 45):
+                    sc_reb = 5.0
+
+            sc_3ab = 5.0 if (in_3a or in_3b or (b3a and b3a >= 50) or (b3b and b3b >= 50)) else 0.0
+            sc_opt = 10.0 if "HẠNG S" in (opt_tier or '') else (5.0 if any(t in (opt_tier or '') for t in ["HẠNG A", "HẠNG B"]) else 0.0)
+            day_base = min(40.0, sc_strict + sc_reb + sc_3ab + sc_opt)
+
+        # 2. Điểm Đẩy (Tối đa 40đ: DC2 10đ, DC3 15đ, DC4 15đ)
+        sc_dc2 = min(10.0, max(5.0, (dc2_sc_val / 100.0) * 10.0 if dc2_sc_val > 0 else (dc2 or 0) * 5.0)) if (dc2_sc_val > 0 or (dc2 or 0) > 0) else 0.0
+        sc_dc3 = min(15.0, max(8.0, (dc3_sc_val / 100.0) * 15.0 if dc3_sc_val > 0 else (dc3 or 0) * 8.0)) if (dc3_sc_val > 0 or (dc3 or 0) > 0) else 0.0
+        sc_dc4 = min(15.0, max(8.0, (dc4_sc_val / 100.0) * 15.0 if dc4_sc_val > 0 else (dc4 or 0) * 8.0)) if (dc4_sc_val > 0 or (dc4 or 0) > 0) else 0.0
+        day_push = min(40.0, sc_dc2 + sc_dc3 + sc_dc4)
+
+        # 3. Điểm Tiền (Tối đa 20đ)
+        pen = ((p_lvl3 or 0) * -15) + ((p_xaray or 0) * -5) + ((p_fakeout or 0) * -10)
+        cash_sum = 0.0
+        if (mf_sc or 0) > 0:
+            cash_sum += 10.0
+        if sc_dc3 > 0:
+            cash_sum += 5.0
+        if (dc5_sc_val > 0 or (dc5 or 0) > 0):
+            cash_sum += min(10.0, max(5.0, (dc5_sc_val / 100.0) * 10.0 if dc5_sc_val > 0 else (dc5 or 0) * 5.0))
+        if "HẠNG S" in (opt_tier or ''):
+            cash_sum += 5.0
+        if cash_sum == 0.0 and (reb or 0) >= 45 and pen == 0:
+            cash_sum = 6.0
+
+        day_cash = max(0.0, min(20.0, cash_sum + pen))
+        return day_base, day_push, day_cash
+
     def query_14_day_profile(self, symbol: str, as_of_date: Optional[datetime] = None) -> Dict[str, Any]:
         """
-        Truy vấn dữ liệu 4 ngày gần nhất của 1 mã theo chuẩn V2.0.
-        Áp dụng Suy hao cực đại (Aggressive Decay) và Khuếch đại Dòng tiền (Cashflow Multiplier).
+        Truy vấn dữ liệu 4 ngày gần nhất của 1 mã theo chuẩn V2.0 (Hỗ trợ quét 30 phút/phiên).
+        Chuẩn hóa 3 lớp:
+        - Lớp I: SQL Aggregation Layer (AVG mong_score, MAX day_score, MAX tien_score).
+        - Lớp II: Date Alignment Layer (Ép chính xác 4 ngày dương lịch T0..T3, rớt top gán 0.0).
+        - Lớp III: Toán tử Tính Điểm (Aggressive Decay & Cashflow Multiplier).
         """
         clean_sym = symbol.replace('/USDT', '').replace('USDT', '').strip()
-        ref_date = as_of_date or datetime.now()
-        ref_date_str = ref_date.strftime('%Y-%m-%d')
+        ref_dt = as_of_date or datetime.now()
+        ref_d = ref_dt.date() if isinstance(ref_dt, datetime) else ref_dt
+
+        # ═════════════════════════════════════════════════════════════════════
+        # LỚP II: ĐỒNG BỘ CHUỖI THỜI GIAN (Date Alignment Layer)
+        # ═════════════════════════════════════════════════════════════════════
+        target_dates = [(ref_d - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(4)]
+        daily_agg = {}
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            
-            # Lấy tối đa 4 ngày quét gần nhất tính đến ref_date_str (T-0, T-1, T-2, T-3)
-            cursor.execute('''
-                SELECT DISTINCT date FROM daily_metrics
-                WHERE date <= ?
-                ORDER BY date DESC
-                LIMIT 4
-            ''', (ref_date_str,))
-            recent_dates = [r[0] for r in cursor.fetchall()]
-            
-            if not recent_dates:
-                return self._format_empty_profile(clean_sym)
 
-            # Kiểm tra ngày đầu tiên mã xuất hiện trong DB
-            cursor.execute('SELECT MIN(date) FROM daily_metrics WHERE symbol = ?', (clean_sym,))
-            row_min = cursor.fetchone()
-            first_seen_date = row_min[0] if row_min and row_min[0] else None
-            
-            if not first_seen_date:
-                return self._format_empty_profile(clean_sym)
+            # ═════════════════════════════════════════════════════════════════
+            # LỚP I: TRUY VẤN DỮ LIỆU TỔNG HỢP SQL (SQL Aggregation Layer)
+            # ═════════════════════════════════════════════════════════════════
+            has_session_table = cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='session_scores'"
+            ).fetchone()
 
-            # Chỉ xét các ngày từ khi mã bắt đầu có trong DB
-            target_dates = [d for d in recent_dates if d >= first_seen_date]
-            if not target_dates:
-                return self._format_empty_profile(clean_sym)
+            if has_session_table:
+                cursor.execute('''
+                    SELECT 
+                        SUBSTR(timestamp, 1, 10) AS scan_date,
+                        ROUND(AVG(mong_score), 2) AS mong_score,
+                        MAX(day_score) AS day_score,
+                        MAX(tien_score) AS tien_score
+                    FROM session_scores
+                    WHERE symbol = ?
+                    GROUP BY scan_date
+                    ORDER BY scan_date DESC
+                    LIMIT 14
+                ''', (clean_sym,))
+                for r in cursor.fetchall():
+                    daily_agg[r[0]] = {
+                        'mong': float(r[1] or 0.0),
+                        'day': float(r[2] or 0.0),
+                        'tien': float(r[3] or 0.0)
+                    }
 
-            # Lấy dữ liệu của mã trên các ngày target
-            placeholders = ', '.join(['?'] * len(target_dates))
-            cursor.execute(f'''
-                SELECT 
-                    date, raw_base_score, b3a_score, b3b_score, rebalance_score, strict_3d_score,
-                    dc2_sniper_count, dc3_breakout_count, dc4_hottrend_count, dc5_pingpong_score,
-                    penalty_level_3, penalty_xaray, penalty_fakeout,
-                    grid_rank, grid_status, in_top_3a, in_top_3b, optimal_tier,
-                    price_above_ma7_3d, ma7_gt_ma99_3d, st_4h_green,
-                    money_flow_score, dc2_score, dc3_score, dc4_score, dc5_score
-                FROM daily_metrics
-                WHERE symbol = ? AND date IN ({placeholders})
-            ''', [clean_sym] + target_dates)
+            # Dự phòng: Chỉ bổ sung những ngày HOÀN TOÀN chưa có trong session_scores từ daily_metrics (dữ liệu lịch sử cũ)
+            cursor.execute("SELECT DISTINCT SUBSTR(timestamp, 1, 10) FROM session_scores")
+            known_sess_dates = set(r[0] for r in cursor.fetchall())
+            truly_missing_dates = [d for d in target_dates if d not in known_sess_dates]
 
-            rows = cursor.fetchall()
-            metrics_by_date = {r[0]: r for r in rows}
+            if truly_missing_dates:
+                placeholders = ', '.join(['?'] * len(truly_missing_dates))
+                cursor.execute(f'''
+                    SELECT 
+                        date, raw_base_score, b3a_score, b3b_score, rebalance_score, strict_3d_score,
+                        dc2_sniper_count, dc3_breakout_count, dc4_hottrend_count, dc5_pingpong_score,
+                        penalty_level_3, penalty_xaray, penalty_fakeout,
+                        grid_rank, grid_status, in_top_3a, in_top_3b, optimal_tier,
+                        price_above_ma7_3d, ma7_gt_ma99_3d, st_4h_green,
+                        money_flow_score, dc2_score, dc3_score, dc4_score, dc5_score
+                    FROM daily_metrics
+                    WHERE symbol = ? AND date IN ({placeholders})
+                ''', [clean_sym] + truly_missing_dates)
+                for r in cursor.fetchall():
+                    d = r[0]
+                    m_val, d_val, t_val = self._calc_scores_from_daily_metric_row(r)
+                    daily_agg[d] = {'mong': m_val, 'day': d_val, 'tien': t_val}
 
-        history_mong = []
-        history_day = []
-        history_tien = []
-        t0_components = {}
+        # ═════════════════════════════════════════════════════════════════════
+        # LỚP II: ÉP MẢNG 4 NGÀY DƯƠNG LỊCH (Rớt top -> Gán 0.0)
+        # ═════════════════════════════════════════════════════════════════════
+        history_mong = [daily_agg.get(d, {}).get('mong', 0.0) for d in target_dates]
+        history_day  = [daily_agg.get(d, {}).get('day', 0.0) for d in target_dates]
+        history_tien = [daily_agg.get(d, {}).get('tien', 0.0) for d in target_dates]
 
-        for idx, d in enumerate(target_dates):
-            if d not in metrics_by_date:
-                # Mã bị rớt top / mất dữ liệu trong ngày này -> Phạt 0đ
-                history_mong.append(0.0)
-                history_day.append(0.0)
-                history_tien.append(0.0)
-                continue
+        # ═════════════════════════════════════════════════════════════════════
+        # LỚP III: TOÁN TỬ TÍNH ĐIỂM (Aggressive Decay & Cashflow Multiplier)
+        # ═════════════════════════════════════════════════════════════════════
+        weights = [0.50, 0.25, 0.15, 0.10]
+        diem_mong = round(sum(m * w for m, w in zip(history_mong, weights)), 1)
+        diem_day  = round(sum(d * w for d, w in zip(history_day, weights)), 1)
+        diem_tien = round(sum(t * w for t, w in zip(history_tien, weights)), 1)
 
-            r = metrics_by_date[d]
-            (
-                _, raw_base, b3a, b3b, reb, strict_3d,
-                dc2, dc3, dc4, dc5,
-                p_lvl3, p_xaray, p_fakeout,
-                g_rank, g_status, in_3a, in_3b, opt_tier,
-                p_ma7, ma_gt, st_4h,
-                mf_sc, dc2_sc_val, dc3_sc_val, dc4_sc_val, dc5_sc_val
-            ) = r
-
-            # 1. Điểm Móng ngày d
-            if raw_base and raw_base > 0:
-                day_base = float(raw_base)
-            else:
-                sc_strict = 0.0
-                if strict_3d and strict_3d >= 70:
-                    sc_strict = 25.0
-                elif strict_3d and strict_3d >= 50:
-                    sc_strict = 15.0
-                elif p_ma7 and st_4h:
-                    sc_strict = 25.0 if ma_gt else 15.0
-
-                sc_reb = 0.0
-                if "NÉ GRID" not in (g_status or ''):
-                    if (g_rank or 999) <= 5 or (reb and reb >= 65):
-                        sc_reb = 10.0
-                    elif (g_rank or 999) <= 15 or (reb and reb >= 45):
-                        sc_reb = 5.0
-
-                sc_3ab = 5.0 if (in_3a or in_3b or (b3a and b3a >= 50) or (b3b and b3b >= 50)) else 0.0
-                sc_opt = 10.0 if "HẠNG S" in (opt_tier or '') else (5.0 if any(t in (opt_tier or '') for t in ["HẠNG A", "HẠNG B"]) else 0.0)
-                day_base = min(40.0, sc_strict + sc_reb + sc_3ab + sc_opt)
-
-            # 2. Điểm Đẩy ngày d (Tối đa 40đ: DC2 10đ, DC3 15đ, DC4 15đ)
-            sc_dc2 = min(10.0, max(5.0, (dc2_sc_val / 100.0) * 10.0 if dc2_sc_val > 0 else (dc2 or 0) * 5.0)) if (dc2_sc_val > 0 or (dc2 or 0) > 0) else 0.0
-            sc_dc3 = min(15.0, max(8.0, (dc3_sc_val / 100.0) * 15.0 if dc3_sc_val > 0 else (dc3 or 0) * 8.0)) if (dc3_sc_val > 0 or (dc3 or 0) > 0) else 0.0
-            sc_dc4 = min(15.0, max(8.0, (dc4_sc_val / 100.0) * 15.0 if dc4_sc_val > 0 else (dc4 or 0) * 8.0)) if (dc4_sc_val > 0 or (dc4 or 0) > 0) else 0.0
-            day_push = min(40.0, sc_dc2 + sc_dc3 + sc_dc4)
-
-            # 3. Điểm Tiền ngày d (Tối đa 20đ)
-            pen = ((p_lvl3 or 0) * -15) + ((p_xaray or 0) * -5) + ((p_fakeout or 0) * -10)
-            cash_sum = 0.0
-            if (mf_sc or 0) > 0:
-                cash_sum += 10.0
-            if sc_dc3 > 0:
-                cash_sum += 5.0
-            if (dc5_sc_val > 0 or (dc5 or 0) > 0):
-                cash_sum += min(10.0, max(5.0, (dc5_sc_val / 100.0) * 10.0 if dc5_sc_val > 0 else (dc5 or 0) * 5.0))
-            if "HẠNG S" in (opt_tier or ''):
-                cash_sum += 5.0
-            # Baseline thanh khoản: mã có Rebalance Top 15 và không dính phạt -> ít nhất 6đ để tránh bị phạt oan x0.5
-            if cash_sum == 0.0 and (reb or 0) >= 45 and pen == 0:
-                cash_sum = 6.0
-
-            day_cash = max(0.0, min(20.0, cash_sum + pen))
-
-            history_mong.append(day_base)
-            history_day.append(day_push)
-            history_tien.append(day_cash)
-
-            if idx == 0:
-                p_ok = bool(p_ma7)
-                st_ok = bool(st_4h)
-                ma_ok = bool(ma_gt)
-                sc_3d = 25.0 if (p_ok and st_ok and ma_ok) else (15.0 if (p_ok and st_ok) else 0.0)
-                sc_reb = 0.0
-                if "NÉ GRID" not in (g_status or ''):
-                    if (g_rank or 999) <= 5:
-                        sc_reb = 10.0
-                    elif (g_rank or 999) <= 15:
-                        sc_reb = 5.0
-                sc_3ab = 5.0 if (in_3a or in_3b) else 0.0
-                sc_opt = 10.0 if "HẠNG S" in (opt_tier or '') else (5.0 if any(t in (opt_tier or '') for t in ["HẠNG A", "HẠNG B"]) else 0.0)
-                t0_components = {
-                    "3d_strict": sc_3d,
-                    "grid_reb": sc_reb,
-                    "radar_3ab": sc_3ab,
-                    "optimal_confluence": sc_opt,
-                    "raw_base": day_base
-                }
-
-        diem_mong = calculate_aggressive_decay(history_mong)
-        diem_day = calculate_aggressive_decay(history_day)
-        diem_tien = calculate_aggressive_decay(history_tien)
-
-
-        multiplier = 1.0
+        # Cashflow Multiplier
         if diem_tien >= 15.0:
             multiplier = 1.2
         elif diem_tien <= 5.0:
             multiplier = 0.5
+        else:
+            multiplier = 1.0
 
-        final_rating = round(min(100.0, (diem_mong + diem_day + diem_tien) * multiplier), 2)
+        # Total Cap: 100.0
+        raw_total = (diem_mong + diem_day + diem_tien) * multiplier
+        final_rating = round(min(100.0, max(0.0, raw_total)), 2)
         tier, action = self._determine_tier(final_rating, diem_mong)
+
+        is_live = bool(target_dates[0] in daily_agg and (history_mong[0] > 0 or history_day[0] > 0 or history_tien[0] > 0))
 
         return {
             "symbol": clean_sym,
@@ -632,14 +658,16 @@ class HistoricalDataQuery:
             "tier": tier,
             "action_recommendation": action,
             "multiplier": multiplier,
+            "target_dates": target_dates,
+            "is_live": is_live,
             "breakdown": {
-                "foundation_40": round(diem_mong, 1),
-                "momentum_40": round(diem_day, 1),
-                "cashflow_20": round(diem_tien, 1),
+                "foundation_40": diem_mong,
+                "momentum_40": diem_day,
+                "cashflow_20": diem_tien,
                 "history_mong": [round(x, 1) for x in history_mong],
                 "history_day": [round(x, 1) for x in history_day],
                 "history_tien": [round(x, 1) for x in history_tien],
-                "t0_components": t0_components
+                "t0_components": {}
             }
         }
 
@@ -691,6 +719,18 @@ class HistoricalDataQuery:
                 WHERE date >= ? AND date <= ?
             ''', (fourteen_days_ago, ref_date_str))
             symbols = [r[0] for r in cursor.fetchall()]
+
+            has_session_table = cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='session_scores'"
+            ).fetchone()
+            if has_session_table:
+                cursor.execute('''
+                    SELECT DISTINCT symbol FROM session_scores
+                    WHERE substr(timestamp, 1, 10) >= ? AND substr(timestamp, 1, 10) <= ?
+                ''', (fourteen_days_ago, ref_date_str))
+                for r in cursor.fetchall():
+                    if r[0] not in symbols:
+                        symbols.append(r[0])
 
         profiles = [self.query_14_day_profile(sym, as_of_date=ref_date) for sym in symbols]
         profiles.sort(key=lambda x: (x["total_score"], x["breakdown"]["foundation_40"]), reverse=True)
@@ -1072,6 +1112,22 @@ def print_14_day_summary_board(
                 "ma7_gt_ma99_3d": 1 if (ma7_3d > ma99_3d and ma99_3d > 0) else 0,
                 "st_4h_green": 1 if st_4h_green else 0
             })
+
+            # Ghi nhận điểm phiên quét 30 phút vào session_scores (V2.0 Spec)
+            sess_time = str(scan_time) if scan_time else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            dc2_sc = float(item.get('DC2_Score', 0) or 0)
+            dc3_sc = float(item.get('DC3_Score', 0) or 0)
+            dc4_sc = float(item.get('DC4_Score', 0) or 0)
+            p_dc2 = min(10.0, max(5.0, dc2_sc * 0.10)) if dc2_sc > 0 else 0.0
+            p_dc3 = min(15.0, max(8.0, dc3_sc * 0.15)) if dc3_sc > 0 else 0.0
+            p_dc4 = min(15.0, max(8.0, dc4_sc * 0.15)) if dc4_sc > 0 else 0.0
+            day_push = min(40.0, p_dc2 + p_dc3 + p_dc4)
+
+            has_mf = 1 if (item.get('TIỀN BẠO PHÁT') or item.get('Money_Flow')) else 0
+            opt_s = 1 if 'HẠNG S' in opt_tier else 0
+            day_cash = min(20.0, (10.0 if has_mf else 0.0) + (5.0 if p_dc3 > 0 else 0.0) + (5.0 if opt_s else 0.0))
+
+            rater.record_session_score(sess_time, sym, raw_base, day_push, day_cash)
 
         # 6. Đồng bộ tín hiệu Động cơ từ signal_logs
         rater.sync_from_signal_logs()

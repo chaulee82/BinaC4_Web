@@ -81,9 +81,14 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
             "breakdown": {"foundation_40": 0.0, "momentum_40": 0.0, "cashflow_20": 0.0, "history_mong": [], "history_day": [], "history_tien": []}
         }
 
-    # Truy vấn thông tin chi tiết phiên gần nhất từ daily_metrics
+    # Sử dụng chuỗi 4 ngày chuẩn hóa từ query_14_day_profile (Single Source of Truth)
+    recent_dates = profile.get("target_dates", [])
+    if not recent_dates:
+        ref_d = datetime.now().date()
+        recent_dates = [(ref_d - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(4)]
+
+    # Truy vấn thông tin chi tiết phiên gần nhất từ daily_metrics để hiển thị BẢNG 1
     latest_row = None
-    recent_dates = []
     if os.path.exists(db_path):
         try:
             with sqlite3.connect(db_path) as conn:
@@ -96,9 +101,6 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
                     LIMIT 1
                 """, (clean_sym,))
                 latest_row = cursor.fetchone()
-
-                cursor.execute("SELECT DISTINCT date FROM daily_metrics ORDER BY date DESC LIMIT 4")
-                recent_dates = [r[0] for r in cursor.fetchall()]
         except Exception:
             pass
 
@@ -139,11 +141,12 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
         except Exception:
             pass
 
-    target_live_date = recent_dates[0] if recent_dates else datetime.now().strftime('%Y-%m-%d')
+    target_live_date = recent_dates[0]
     latest_live_ts = date_timestamps.get(target_live_date, target_live_date)
 
     record_date = str(latest_row["date"]) if latest_row else "—"
-    is_expired = (latest_row is None) or (record_date < target_live_date)
+    # Đồng bộ cờ is_expired với kết quả tính điểm của HistoricalDataQuery
+    is_expired = not profile.get("is_live", False) or (record_date < target_live_date)
 
     # Lấy timestamp chính xác của mã đang xét
     sym_ts = None

@@ -33,3 +33,6 @@ main_run*.txt
 Thumbs.db
 data/
 *.db
+
+*.db-shm
+*.db-wal
