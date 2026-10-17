@@ -48,8 +48,12 @@ class EarlyWarningMatrix:
         try:
             # Helper to preprocess dataframe
             def prep_df(df, length_sma=7, length_ema=7, length_bb=20, length_st=10, st_mult=3.0):
+                df = df.rename(columns=str.lower)
                 if not isinstance(df.index, pd.DatetimeIndex):
-                    if 'timestamp' in df.columns:
+                    if 'open_time' in df.columns:
+                        df['datetime'] = pd.to_datetime(df['open_time'], unit='ms')
+                        df.set_index('datetime', inplace=True)
+                    elif 'timestamp' in df.columns:
                         df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
                         df.set_index('datetime', inplace=True)
 

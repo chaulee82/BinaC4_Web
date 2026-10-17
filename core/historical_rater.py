@@ -1230,7 +1230,21 @@ def print_14_day_summary_board(
             ma99_3d = float(raw3d.get('ma99_3d', 0.0) or 0.0)
 
             w_info = warning_map.get(sym, {})
-            st_4h_green = bool(w_info.get('st_4h_green', False))
+            if 'st_4h_green' in w_info:
+                st_4h_green = bool(w_info.get('st_4h_green', False))
+            else:
+                try:
+                    from core.klines_cache import get_klines_cached
+                    from core.macro_levels import _supertrend_val_dir
+                    sym_4h = sym + "USDT" if not sym.endswith("USDT") else sym
+                    df_4h_raw = get_klines_cached(sym_4h, "4h", 50)
+                    if df_4h_raw is not None and not df_4h_raw.empty and len(df_4h_raw) >= 20:
+                        _, st_dir_4h = _supertrend_val_dir(df_4h_raw.rename(columns=str.lower))
+                        st_4h_green = (st_dir_4h == 1)
+                    else:
+                        st_4h_green = False
+                except Exception:
+                    st_4h_green = False
 
             reb_info = reb_map.get(sym, {})
             grid_rank = reb_info.get('rank', 999)

@@ -163,9 +163,25 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
         sc_st = lr.get("strict_3d_score", 0.0) or 0.0
         p_ma7 = lr.get("price_above_ma7_3d", 0)
         st_4h = lr.get("st_4h_green", 0)
-        
+        ma_gt = lr.get("ma7_gt_ma99_3d", 0)
+        if not st_4h and clean_sym:
+            try:
+                from core.klines_cache import get_klines_cached
+                from core.macro_levels import _supertrend_val_dir
+                sym_4h = clean_sym + "USDT" if not clean_sym.endswith("USDT") else clean_sym
+                df_4h_raw = get_klines_cached(sym_4h, "4h", 50)
+                if df_4h_raw is not None and not df_4h_raw.empty and len(df_4h_raw) >= 20:
+                    _, st_dir_4h = _supertrend_val_dir(df_4h_raw.rename(columns=str.lower))
+                    if st_dir_4h == 1:
+                        st_4h = 1
+            except Exception:
+                pass
+
+        if sc_st == 0 and p_ma7 and st_4h:
+            sc_st = 25.0 if ma_gt else 15.0
+
         status_3d = f"{sc_st:.0f}đ"
-        note_3d = "✅ Đạt chuẩn vĩ mô 3D" if sc_st >= 70 else ("🟡 Tiệm cận chuẩn 3D" if sc_st >= 50 else "⛔ Dưới chuẩn vĩ mô 3D")
+        note_3d = "✅ Đạt chuẩn vĩ mô 3D" if sc_st >= 25 else ("🟡 Tiệm cận chuẩn 3D" if sc_st >= 15 else "⛔ Dưới chuẩn vĩ mô 3D")
         
         g_rank = lr.get("grid_rank", 999) or 999
         g_rank_str = f"#{g_rank}" if g_rank < 999 else "Chưa xếp hạng"
