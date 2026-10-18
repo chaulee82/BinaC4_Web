@@ -326,21 +326,31 @@ def render_gatekeeper_board(final_orders):
         if not orders: return
         print(f"🟢 {title} | {desc}" if "AUTO" in title else f"🟡 {title} | {desc}")
         print("-" * 100)
+
+        # Đếm số lượng lệnh của mỗi mã để phát hiện mã có cả OCO và GRID (như AVA)
+        sym_list = [o.get('symbol') for o in orders]
+        dual_symbols = {s for s in sym_list if sym_list.count(s) > 1}
+
         for idx, o in enumerate(orders, 1):
             engine_name = o.get('engine', 'UNKNOWN_ENGINE')
             mf = float(o.get('money_flow', 0.0) or 0.0)
             mf_str = f" [💥 BẠO PHÁT {mf:.1f}x]" if mf > 0 else ""
             tier_label = o.get('tier_label', '')
             tier_str = f" - {tier_label}" if tier_label else ""
+            sym = o.get('symbol')
+            has_dual = sym in dual_symbols
+            order_type = o.get('order_type', 'SPOT_OCO')
             
-            if o['order_type'] == 'SPOT_OCO':
+            if order_type == 'SPOT_OCO':
                 entry = o['entry']
                 raw_sl_pct = ((o['raw_sl'] - entry) / entry) * 100
                 raw_tp_pct = ((o['raw_tp'] - entry) / entry) * 100
                 new_sl_pct = ((o['sl'] - entry) / entry) * 100
                 new_tp_pct = ((o['tp'] - entry) / entry) * 100
                 
-                print(f"[{idx}] Mã: {o['symbol']} | Động cơ: {engine_name}{mf_str} | Loại: OCO | Cấp vốn: {int(o['volume_pct']*100)}% (Uy tín: {o['uy_tin_score']}đ{tier_str})")
+                type_tag = "🎯 [LỰA CHỌN 1: SPOT OCO]" if has_dual else "🎯 [LỆNH SPOT OCO]"
+                print(f"[{idx}] {type_tag} Mã: {o['symbol']} | Động cơ: {engine_name}{mf_str} | Cấp vốn: {int(o['volume_pct']*100)}% (Uy tín: {o['uy_tin_score']}đ{tier_str})")
+                print(f"    ↳ 📌 Trường phái: Lướt sóng nhanh / Bắn tỉa theo đà (Kèm lưới TP2 dự phòng)")
                 print(f"    ↳ ⚙️ OCO GỐC: Entry={entry} | SL={o['raw_sl']} ({raw_sl_pct:+.1f}%) | TP={o['raw_tp']} ({raw_tp_pct:+.1f}%)")
                 print(f"    ↳ 🛠️ OCO ĐÃ NẮN: Entry={entry} | SL={o['sl']} ({new_sl_pct:+.1f}%) [Nới đệm] | TP={o['tp']} ({new_tp_pct:+.1f}%) [Kéo R:R 1:2]")
                 
@@ -354,12 +364,15 @@ def render_gatekeeper_board(final_orders):
                 if o.get('auto_breakeven'):
                     print(f"    ↳ 🛡️ Option: Kích hoạt Auto-Breakeven (+1%).")
                     
-            elif o['order_type'] == 'GRID':
+            elif order_type == 'GRID':
                 trigger = o.get('entry', o.get('trigger', 'N/A'))
                 sl = o.get('sl', o.get('raw_sl', 'N/A'))
                 tp = o.get('tp', o.get('raw_upper', o['upper']))
+                strat_name = o.get('strategy_desc', 'GRID TÍCH LŨY')
                 
-                print(f"[{idx}] Mã: {o['symbol']} | Động cơ: {engine_name}{mf_str} | Loại: GRID TÍCH LŨY | Cấp vốn: {int(o['volume_pct']*100)}% (Uy tín: {o['uy_tin_score']}đ{tier_str})")
+                type_tag = "🥅 [LỰA CHỌN 2: GRID LƯỚI]" if has_dual else f"🥅 [{strat_name}]"
+                print(f"[{idx}] {type_tag} Mã: {o['symbol']} | Động cơ: {engine_name}{mf_str} | Cấp vốn: {int(o['volume_pct']*100)}% (Uy tín: {o['uy_tin_score']}đ{tier_str})")
+                print(f"    ↳ 📌 Trường phái: Nuôi lưới gom tích lũy 24 tầng (Bắt nhúng 2-5 ngày, không cắt lỗ sớm)")
                 
                 if 'raw_sl' in o and 'raw_tp' in o and trigger != 'N/A':
                     raw_sl_pct = ((o['raw_sl'] - trigger) / trigger) * 100

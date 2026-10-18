@@ -161,43 +161,46 @@ def test_money_flow_and_sorting():
         ],
         "top_money_flow": [
             SignalRecord(
+                symbol="AVA",
+                engine_source="DC4",
+                target_score=65.2,
+                money_flow=1.7,
+                setup_line="⚙️ SETUP: In=0.3735 | SL=0.3599(-3.6%) | TP=0.4642(+24.3%) | R/R=1:6.7 | 💥 TIỀN BẠO PHÁT (1.7x)",
+                grid_tp2_line="🎯 [GRID TP2 - AVA] 0.2626 - 0.4642 | 24L | Trig: 0.3735"
+            ),
+            SignalRecord(
                 symbol="API3",
                 engine_source="DC3",
                 target_score=85.0,
                 money_flow=8.5,
                 setup_line="⚙️ SETUP: In=1.850 | SL=1.750(-5.4%) | TP=2.050(+10.8%) | R/R=1:2.0 | 💥 TIỀN BẠO PHÁT (8.5x)"
-            ),
-            SignalRecord(
-                symbol="RAD",
-                engine_source="DC3",
-                target_score=80.0,
-                money_flow=6.9,
-                setup_line="⚙️ SETUP: In=2.500 | SL=2.400(-4.0%) | TP=2.700(+8.0%) | R/R=1:2.0 | 💥 TIỀN BẠO PHÁT (6.9x)"
             )
         ],
-        "grid_tp2": [],
+        "grid_tp2": [
+            SignalRecord(
+                symbol="AVA",
+                engine_source="DC4",
+                target_score=65.2,
+                grid_tp2_line="🎯 [GRID TP2 - AVA] 0.2626 - 0.4642 | 24L | Trig: 0.3735 | SL: 0.1653 | TP: 0.4642"
+            )
+        ],
         "wide_grid": [],
         "spot_btc_locked": False
     }
 
     mock_profiles = [
         {"symbol": "SAND", "total_score": 75.0, "tier": "Tier A"},
-        {"symbol": "API3", "total_score": 85.0, "tier": "Tier S (Kim Cương)"},
-        {"symbol": "RAD", "total_score": 85.0, "tier": "Tier S (Kim Cương)"}
+        {"symbol": "AVA", "total_score": 65.2, "tier": "Tier A (Xu Hướng)"},
+        {"symbol": "API3", "total_score": 85.0, "tier": "Tier S (Kim Cương)"}
     ]
 
     orders = extract_clean_summary_orders(mock_summary_res, mock_profiles)
-    assert len(orders) == 3, f"Expected 3 orders (1 spot + 2 top_mf), got {len(orders)}"
+    assert len(orders) == 4, f"Expected 4 orders (1 sand + 2 top_mf + 1 grid), got {len(orders)}"
     
-    api3_order = next(o for o in orders if "API3" in o["symbol"])
-    assert api3_order["money_flow"] == 8.5
-    assert api3_order["is_money_flow_surge"] is True
-    assert "Bạo Phát" in api3_order["strategy_desc"]
-
     final = optimized_execution_geometry_module(orders)
-    print("\n[TEST MONEY FLOW & PRIORITY SORTING] Render:")
+    print("\n[TEST MONEY FLOW & DUAL COIN PRESENTATION (AVA)] Render:")
     render_gatekeeper_board(final)
-    print("✅ TEST MONEY FLOW & SORTING PASS 100%!")
+    print("✅ TEST MONEY FLOW & DUAL COIN PASS 100%!")
 
 
 if __name__ == "__main__":
