@@ -487,7 +487,8 @@ class ConsoleRenderer:
 
             print(f"{'Mã':<8} | {'Điểm':<8} | {'Action':<15} | {'Bounces/Range':<20} | {'Center/Trigger/SL'}")
             
-            for state in symbol_states:
+            displayed_count = 0
+            for idx, state in enumerate(symbol_states):
                 score_ctx = state.scores.get("DC5_UPTREND") or state.scores.get("DC5")
                 if not score_ctx:
                     continue
@@ -501,25 +502,31 @@ class ConsoleRenderer:
                 c4 = score_ctx.c4_score # SL
                 
                 info = f"{c2} | {c3} | {c4}"
-                print(f"{sym:<8} | {score:<8.4f} | {act:<15} | {c1:<20} | {info}")
                 
-                # In Grid Setup (+ tag Strict 3D ✅ / ⛔)
-                g_setup = score_ctx.grid_setup
-                if g_setup:
-                    grid_label = "GRID ⚡" if g_setup.grid_quantity == 2 else "GRID"
-                    strict_tag = self._strict_tag(state, "DC5", "PINGPONG")
-                    print(f"  ↳ ⚙️ {grid_label}: Low={self.fmt_price(g_setup.lower_price)} | Up={self.fmt_price(g_setup.upper_price)} | Lưới={g_setup.grid_quantity} | SL Sell={self.fmt_price(g_setup.stop_loss)} | {strict_tag}")
+                # Chỉ in chi tiết lên Terminal Top 5 để giữ giao diện gọn gàng
+                if idx < 5:
+                    displayed_count += 1
+                    print(f"{sym:<8} | {score:<8.4f} | {act:<15} | {c1:<20} | {info}")
                     
-                if state.macro_levels:
-                    macro = state.macro_levels
-                    print(f"    ↳ [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}{self._d3_suffix(state)}")
-                else:
-                    print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới){self._d3_suffix(state)}")
+                    # In Grid Setup (+ tag Strict 3D ✅ / ⛔)
+                    g_setup = score_ctx.grid_setup
+                    if g_setup:
+                        grid_label = "GRID ⚡" if g_setup.grid_quantity == 2 else "GRID"
+                        strict_tag = self._strict_tag(state, "DC5", "PINGPONG")
+                        print(f"  ↳ ⚙️ {grid_label}: Low={self.fmt_price(g_setup.lower_price)} | Up={self.fmt_price(g_setup.upper_price)} | Lưới={g_setup.grid_quantity} | SL Sell={self.fmt_price(g_setup.stop_loss)} | {strict_tag}")
+                        
+                    if state.macro_levels:
+                        macro = state.macro_levels
+                        print(f"    ↳ [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}{self._d3_suffix(state)}")
+                    else:
+                        print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới){self._d3_suffix(state)}")
 
-                # 🦅 WIDE GRID 3D (DC5)
-                wide_line = self._print_wide_grid(state, "DC5")
+                # 🦅 WIDE GRID 3D (DC5) & Thu thập TOÀN BỘ Top 15 vào signals_pool cho Bảng Tín Nhiệm & DB
+                wide_line = self._print_wide_grid(state, "DC5") if idx < 5 else ""
                 self._collect(state, "DC5", score_ctx, wide_grid_line=wide_line)
 
+            if len(symbol_states) > displayed_count:
+                print(f"  ↳ ℹ️ [DATA POOL] Đã nạp {len(symbol_states)} mã đạt chuẩn đập nhả vào Database & Bảng Tín Nhiệm (Top 1-5: 10đ, Top 6-15: 5đ).")
             print("=" * 100)
         except Exception as e:
             print(f"Render Error (Grid Pingpong): {e}")

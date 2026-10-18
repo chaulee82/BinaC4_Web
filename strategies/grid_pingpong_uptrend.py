@@ -44,7 +44,7 @@ except Exception:
 PP_MIN_VOL_USDT = 2_000_000
 PP_TOP_N = 200
 PP_WORKERS = 20
-PP_RESULT_TOP = 5
+PP_RESULT_TOP = 15
 
 class GridPingpongUptrendScorer:
     """

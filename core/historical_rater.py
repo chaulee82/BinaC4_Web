@@ -191,7 +191,8 @@ class HistoricalDataQuery:
                 'dc2_score': 'REAL DEFAULT 0',
                 'dc3_score': 'REAL DEFAULT 0',
                 'dc4_score': 'REAL DEFAULT 0',
-                'dc5_score': 'REAL DEFAULT 0'
+                'dc5_score': 'REAL DEFAULT 0',
+                'dc5_rank': 'INTEGER DEFAULT 999'
             }
             for col_name, col_def in new_cols.items():
                 if col_name not in cols:
@@ -292,8 +293,9 @@ class HistoricalDataQuery:
                     dc5_pingpong_score,
                     penalty_level_3, penalty_xaray, penalty_fakeout,
                     raw_base_score, grid_rank, grid_status, in_top_3a, in_top_3b,
-                    optimal_tier, price_above_ma7_3d, ma7_gt_ma99_3d, st_4h_green
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    optimal_tier, price_above_ma7_3d, ma7_gt_ma99_3d, st_4h_green,
+                    dc5_rank
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(date, symbol) DO UPDATE SET
                     b3a_score = CASE WHEN excluded.b3a_score > 0 THEN excluded.b3a_score ELSE daily_metrics.b3a_score END,
                     b3b_score = CASE WHEN excluded.b3b_score > 0 THEN excluded.b3b_score ELSE daily_metrics.b3b_score END,
@@ -314,7 +316,8 @@ class HistoricalDataQuery:
                     optimal_tier = CASE WHEN excluded.optimal_tier != '' THEN excluded.optimal_tier ELSE daily_metrics.optimal_tier END,
                     price_above_ma7_3d = CASE WHEN excluded.price_above_ma7_3d IS NOT NULL THEN excluded.price_above_ma7_3d ELSE daily_metrics.price_above_ma7_3d END,
                     ma7_gt_ma99_3d = CASE WHEN excluded.ma7_gt_ma99_3d IS NOT NULL THEN excluded.ma7_gt_ma99_3d ELSE daily_metrics.ma7_gt_ma99_3d END,
-                    st_4h_green = CASE WHEN excluded.st_4h_green IS NOT NULL THEN excluded.st_4h_green ELSE daily_metrics.st_4h_green END
+                    st_4h_green = CASE WHEN excluded.st_4h_green IS NOT NULL THEN excluded.st_4h_green ELSE daily_metrics.st_4h_green END,
+                    dc5_rank = CASE WHEN excluded.dc5_rank < 999 THEN excluded.dc5_rank ELSE daily_metrics.dc5_rank END
             ''', (
                 date_str, clean_sym,
                 metrics.get('b3a_score', 0.0),
@@ -336,7 +339,8 @@ class HistoricalDataQuery:
                 metrics.get('optimal_tier', ''),
                 metrics.get('price_above_ma7_3d', 0),
                 metrics.get('ma7_gt_ma99_3d', 0),
-                metrics.get('st_4h_green', 0)
+                metrics.get('st_4h_green', 0),
+                metrics.get('dc5_rank', 999)
             ))
             conn.commit()
 
@@ -390,8 +394,9 @@ class HistoricalDataQuery:
                     dc5_pingpong_score,
                     penalty_level_3, penalty_xaray, penalty_fakeout,
                     optimal_tier, money_flow_score,
-                    dc2_score, dc3_score, dc4_score, dc5_score
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    dc2_score, dc3_score, dc4_score, dc5_score,
+                    dc5_rank
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(date, symbol) DO UPDATE SET
                     b3a_score = MAX(daily_metrics.b3a_score, excluded.b3a_score),
                     b3b_score = MAX(daily_metrics.b3b_score, excluded.b3b_score),
@@ -407,9 +412,25 @@ class HistoricalDataQuery:
                     dc2_score = MAX(daily_metrics.dc2_score, excluded.dc2_score),
                     dc3_score = MAX(daily_metrics.dc3_score, excluded.dc3_score),
                     dc4_score = MAX(daily_metrics.dc4_score, excluded.dc4_score),
-                    dc5_score = MAX(daily_metrics.dc5_score, excluded.dc5_score)
+                    dc5_score = MAX(daily_metrics.dc5_score, excluded.dc5_score),
+                    dc5_rank = CASE WHEN excluded.dc5_rank < 999 THEN excluded.dc5_rank ELSE daily_metrics.dc5_rank END
             '''
             
+            # Xếp hạng rank DC5 theo từng ngày (Top 1-5, Top 6-15)
+            date_dc5_map = {}
+            for r in rows:
+                log_d = r[0]
+                s_sym = r[1]
+                dc5_val = float(r[18] or 0.0) if len(r) > 18 else 0.0
+                if dc5_val > 0:
+                    date_dc5_map.setdefault(log_d, []).append((s_sym, dc5_val))
+            
+            date_sym_dc5_rank = {}
+            for log_d, items in date_dc5_map.items():
+                items.sort(key=lambda x: x[1], reverse=True)
+                for rnk, (s_sym, _) in enumerate(items):
+                    date_sym_dc5_rank[(log_d, s_sym)] = rnk + 1
+
             records = []
             for r in rows:
                 reb_val = r[4] if r[4] is not None else 0.0
@@ -420,6 +441,7 @@ class HistoricalDataQuery:
                 dc3_sc_val = float(r[16] or 0.0) if len(r) > 16 else 0.0
                 dc4_sc_val = float(r[17] or 0.0) if len(r) > 17 else 0.0
                 dc5_sc_val = float(r[18] or 0.0) if len(r) > 18 else 0.0
+                dc5_rnk = date_sym_dc5_rank.get((r[0], r[1]), 999)
                 records.append((
                     r[0], r[1],
                     r[2] or 0.0, r[3] or 0.0, reb_val, strict_val,
@@ -427,10 +449,12 @@ class HistoricalDataQuery:
                     r[9] or 0,
                     r[10] or 0, r[11] or 0, r[12] or 0,
                     opt_val, has_mf_val,
-                    dc2_sc_val, dc3_sc_val, dc4_sc_val, dc5_sc_val
+                    dc2_sc_val, dc3_sc_val, dc4_sc_val, dc5_sc_val,
+                    dc5_rnk
                 ))
                 
             cursor.executemany(upsert_query, records)
+            conn.commit()
             conn.commit()
             return len(records)
 
@@ -553,7 +577,8 @@ class HistoricalDataQuery:
             g_rank, g_status, in_3a, in_3b, opt_tier,
             p_ma7, ma_gt, st_4h,
             mf_sc, dc2_sc_val, dc3_sc_val, dc4_sc_val, dc5_sc_val
-        ) = r
+        ) = r[:26]
+        dc5_rnk_val = r[26] if len(r) > 26 else 999
 
         # 1. Điểm Móng
         if raw_base and raw_base > 0:
@@ -593,8 +618,13 @@ class HistoricalDataQuery:
             cash_sum += 10.0
         if sc_dc3 > 0:
             cash_sum += 5.0
-        if (dc5_sc_val > 0 or (dc5 or 0) > 0):
-            cash_sum += min(10.0, max(5.0, (dc5_sc_val / 100.0) * 10.0 if dc5_sc_val > 0 else (dc5 or 0) * 5.0))
+        # Động cơ 5 phân tầng: Top 1-5 nhận 10đ, Top 6-15 nhận 5đ đệm
+        if dc5_rnk_val and dc5_rnk_val <= 5:
+            cash_sum += 10.0
+        elif dc5_rnk_val and dc5_rnk_val <= 15:
+            cash_sum += 5.0
+        elif (dc5_sc_val > 0 or (dc5 or 0) > 0):
+            cash_sum += 10.0 if (dc5_sc_val >= 25.0 or (dc5 or 0) >= 5) else 5.0
         if "HẠNG S" in (opt_tier or ''):
             cash_sum += 5.0
         if cash_sum == 0.0 and (reb or 0) >= 45 and pen == 0:
@@ -665,7 +695,8 @@ class HistoricalDataQuery:
                         penalty_level_3, penalty_xaray, penalty_fakeout,
                         grid_rank, grid_status, in_top_3a, in_top_3b, optimal_tier,
                         price_above_ma7_3d, ma7_gt_ma99_3d, st_4h_green,
-                        money_flow_score, dc2_score, dc3_score, dc4_score, dc5_score
+                        money_flow_score, dc2_score, dc3_score, dc4_score, dc5_score,
+                        dc5_rank
                     FROM daily_metrics
                     WHERE symbol = ? AND date IN ({placeholders})
                 ''', [clean_sym] + truly_missing_dates)
@@ -1212,6 +1243,14 @@ def print_14_day_summary_board(
         except Exception as e_sig:
             logger.warning(f"Không thể đọc tín hiệu phiên từ signal_logs: {e_sig}")
 
+        # Xây dựng bảng xếp hạng Động cơ 5 trong phiên Live (Top 1-5: 10đ, Top 6-15: 5đ)
+        dc5_active_syms = sorted(
+            [s for s, d in latest_signals_map.items() if d.get('dc5_sc', 0.0) > 0],
+            key=lambda s: latest_signals_map[s].get('dc5_sc', 0.0),
+            reverse=True
+        )
+        dc5_live_rank_map = {s: rank + 1 for rank, s in enumerate(dc5_active_syms)}
+
         # 4.5. Tập hợp toàn bộ danh sách mã trong phiên T-0 (bao gồm cả mã có điểm 3B dải 40-69đ)
         all_symbols = set(reb_map.keys()) | top5_3a | top5_3b | set(warning_map.keys()) | set(latest_signals_map.keys()) | set(all_3b_scores.keys())
         if convergence_ranks:
@@ -1275,6 +1314,8 @@ def print_14_day_summary_board(
             }
             raw_base = calculate_raw_base_score(coin_data)
 
+            dc5_rnk = dc5_live_rank_map.get(sym, 999)
+
             rater.record_daily_metric(today_str, sym, {
                 "b3b_score": b3b_sc,
                 "rebalance_score": reb_score,
@@ -1286,7 +1327,8 @@ def print_14_day_summary_board(
                 "optimal_tier": opt_tier,
                 "price_above_ma7_3d": 1 if (price > ma7_3d and ma7_3d > 0) else 0,
                 "ma7_gt_ma99_3d": 1 if (ma7_3d > ma99_3d and ma99_3d > 0) else 0,
-                "st_4h_green": 1 if st_4h_green else 0
+                "st_4h_green": 1 if st_4h_green else 0,
+                "dc5_rank": dc5_rnk
             })
 
             # Ghi nhận điểm phiên quét 30 phút vào session_scores (V2.0 Spec)
@@ -1314,7 +1356,12 @@ def print_14_day_summary_board(
                 cash_sum += 10.0
             if p_dc3 > 0:
                 cash_sum += 5.0
-            if dc5_sc > 0:
+            # Động cơ 5 phân tầng: Top 1-5 nhận 10đ, Top 6-15 nhận 5đ đệm
+            if dc5_rnk <= 5:
+                cash_sum += 10.0
+            elif dc5_rnk <= 15:
+                cash_sum += 5.0
+            elif dc5_sc > 0:
                 cash_sum += min(10.0, max(5.0, dc5_sc * 0.10))
             if opt_s:
                 cash_sum += 5.0
