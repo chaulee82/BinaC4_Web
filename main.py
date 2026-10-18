@@ -652,7 +652,8 @@ def main():
                         if clean_orders:
                             final_orders = optimized_execution_geometry_module(clean_orders)
                             gatekeeper_board_str = render_gatekeeper_board(final_orders)
-                            print(gatekeeper_board_str)
+                            if gatekeeper_board_str is not None:
+                                print(gatekeeper_board_str)
                 except Exception as e:
                     logger.error(f"Render Error (Bảng Duyệt Lệnh Tối Ưu): {e}", exc_info=True)
 

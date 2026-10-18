@@ -42,9 +42,8 @@ def _fmt_price_val(val: float, decimals: Optional[int] = None) -> str:
 
 
 ENGINE_LABELS = {
-
     "DC1": "DC1 (Chân Sóng Vĩ Mô)",
-    "DC2": "DC2 (Bắt Đáy - Siêu Pullback)",
+    "DC2": "DC2 (Bắt Đáy)",
     "DC3": "DC3 (Bứt Phá - Breakout)",
     "DC4": "DC4 (Đu Trend - Hot Trend)",
     "DC5": "DC5 (Nén Vol Chờ Nổ)",
@@ -206,6 +205,7 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
                 'tp_adjusted': tp_adjusted,
                 'auto_breakeven': True,
                 'geometry_note': "Nới đệm SL (+1.5%), Bóp TP (Max R:R 1:2)",
+                'grid_tp2': grid_tp2_opt,
                 'grid_tp2_optimized': grid_tp2_opt
             })
 
@@ -228,6 +228,9 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
                 'geometry_note': "Bóp biên độ 15% hai đầu, chuẩn hóa 24 Lưới"
             })
 
+        if order_copy.get('engine') in ENGINE_LABELS:
+            order_copy['engine'] = ENGINE_LABELS[order_copy['engine']]
+
         # =========================================================
         # TIẾN TRÌNH 2: PHÂN LUỒNG KÍCH HOẠT (ROUTING)
         # =========================================================
@@ -244,171 +247,66 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
     return final_execution_orders
 
 
-def render_gatekeeper_board(final_execution_orders: List[Dict[str, Any]]) -> str:
-    """
-    Render giao diện Terminal UI cho Module Bảng Duyệt Lệnh Tối Ưu.
-    Khớp 100% đặc tả Giao diện hiển thị (Output Terminal UI).
-    """
-    lines = []
-    sep = "=" * 100
-    sub_sep = "-" * 100
+def render_gatekeeper_board(final_orders):
+    print("=" * 100)
+    print("🛡️ [MODULE BẢNG DUYỆT LỆNH TỐI ƯU] HÀNG ĐỢI THỰC THI (GIAI ĐOẠN 1)")
+    print("=" * 100)
+    print("💡 Bộ lọc hình học: Đệm SL chống quét râu (1.5%), Max R:R 1:2.0, Bóp lưới Grid 15% rìa.\n")
 
-    lines.append(sep)
-    lines.append("🛡️ [MODULE BẢNG DUYỆT LỆNH TỐI ƯU] HÀNG ĐỢI THỰC THI (GIAI ĐOẠN 1)")
-    lines.append(sep)
-    lines.append("💡 Bộ lọc hình học: Đệm SL chống quét râu (1.5%), Max R:R 1:2.0, Bóp lưới Grid 15% rìa.\n")
+    auto_exec = [o for o in final_orders if o['status'] == 'AUTO_EXECUTE']
+    manual_exec = [o for o in final_orders if o['status'] == 'MANUAL_APPROVAL']
 
-    auto_orders = [o for o in final_execution_orders if o.get('status') == 'AUTO_EXECUTE']
-    manual_orders = [o for o in final_execution_orders if o.get('status') == 'MANUAL_APPROVAL']
+    def print_order_block(orders, title, desc):
+        if not orders: return
+        print(f"🟢 {title} | {desc}" if "AUTO" in title else f"🟡 {title} | {desc}")
+        print("-" * 100)
+        for idx, o in enumerate(orders, 1):
+            engine_name = o.get('engine', 'UNKNOWN_ENGINE')
+            
+            if o['order_type'] == 'SPOT_OCO':
+                entry = o['entry']
+                raw_sl_pct = ((o['raw_sl'] - entry) / entry) * 100
+                raw_tp_pct = ((o['raw_tp'] - entry) / entry) * 100
+                new_sl_pct = ((o['sl'] - entry) / entry) * 100
+                new_tp_pct = ((o['tp'] - entry) / entry) * 100
+                
+                print(f"[{idx}] Mã: {o['symbol']} | Động cơ: {engine_name} | Loại: OCO | Cấp vốn: {int(o['volume_pct']*100)}% (Uy tín: {o['uy_tin_score']}đ)")
+                print(f"    ↳ ⚙️ OCO GỐC: Entry={entry} | SL={o['raw_sl']} ({raw_sl_pct:+.1f}%) | TP={o['raw_tp']} ({raw_tp_pct:+.1f}%)")
+                print(f"    ↳ 🛠️ OCO ĐÃ NẮN: Entry={entry} | SL={o['sl']} ({new_sl_pct:+.1f}%) [Nới đệm] | TP={o['tp']} ({new_tp_pct:+.1f}%) [Kéo R:R 1:2]")
+                
+                if 'grid_tp2' in o:
+                    g = o['grid_tp2']
+                    r_low = g.get('raw_lower', g.get('lower'))
+                    r_up = g.get('raw_upper', g.get('upper'))
+                    print(f"    ↳ 🎯 GRID TP2 (GỐC): Dải L={r_low} - U={r_up} | 24 Lưới")
+                    print(f"    ↳ 🛠️ GRID TP2 (ĐÃ NẮN): Dải L={g.get('lower')} - U={g.get('upper')} | 24 Lưới | Trig: {entry} | SL: {o['sl']} | TP: {g.get('upper')}")
+                
+                if o.get('auto_breakeven'):
+                    print(f"    ↳ 🛡️ Option: Kích hoạt Auto-Breakeven (+1%).")
+                    
+            elif o['order_type'] == 'GRID':
+                trigger = o.get('entry', o.get('trigger', 'N/A'))
+                sl = o.get('sl', o.get('raw_sl', 'N/A'))
+                tp = o.get('tp', o.get('raw_upper', o['upper']))
+                
+                print(f"[{idx}] Mã: {o['symbol']} | Động cơ: {engine_name} | Loại: GRID TÍCH LŨY | Cấp vốn: {int(o['volume_pct']*100)}% (Uy tín: {o['uy_tin_score']}đ)")
+                
+                if 'raw_sl' in o and 'raw_tp' in o and trigger != 'N/A':
+                    raw_sl_pct = ((o['raw_sl'] - trigger) / trigger) * 100
+                    raw_tp_pct = ((o['raw_tp'] - trigger) / trigger) * 100
+                    print(f"    ↳ 🎯 OCO THAM CHIẾU (GỐC): Entry={trigger} | SL={o['raw_sl']} ({raw_sl_pct:+.1f}%) | TP={o['raw_tp']} ({raw_tp_pct:+.1f}%)")
+                
+                print(f"    ↳ ⚙️ GRID GỐC: Lưới Macro (L={o.get('raw_lower', o['lower'])} - U={o.get('raw_upper', o['upper'])}) | {o.get('raw_grids', 35)} Lưới")
+                print(f"    ↳ 🛠️ GRID ĐÃ NẮN: Bóp 15% biên độ (L={o['lower']} - U={o['upper']}) | {o['grids']} Lưới | Trig: {trigger} | SL: {sl} | TP: {tp}")
+                print(f"    ↳ 🛡️ Option: Tăng tần suất khớp lệnh vùng tích lũy 72H.")
+            
+            if o['status'] == 'MANUAL_APPROVAL':
+                print(f"    ↳ ⚠️ Trạng thái: Treo chờ lệnh. Nhấn [Y] để đẩy lệnh lên sàn.")
+            print("")
 
-    current_idx = 1
-
-    # 🟢 KHỐI 1: LỆNH DUYỆT TỰ ĐỘNG (AUTO-EXECUTE)
-    lines.append("🟢 LỆNH DUYỆT TỰ ĐỘNG (AUTO-EXECUTE) | Điều kiện: Tier S/A (Uy tín >= 60đ)")
-    lines.append(sub_sep)
-    if not auto_orders:
-        lines.append("   (Không có lệnh nào đạt điều kiện tự động kích hoạt)")
-    else:
-        for order in auto_orders:
-            lines.extend(_format_order_item(current_idx, order))
-            lines.append("")
-            current_idx += 1
-        # Bỏ dòng trống cuối khối nếu có
-        if lines[-1] == "":
-            lines.pop()
-
-    lines.append("")
-
-    # 🟡 KHỐI 2: LỆNH CHỜ DUYỆT TAY (MANUAL APPROVAL)
-    lines.append("🟡 LỆNH CHỜ DUYỆT TAY (MANUAL APPROVAL) | Điều kiện: Tier B (Cửa hậu - Rủi ro vĩ mô)")
-    lines.append(sub_sep)
-    if not manual_orders:
-        lines.append("   (Không có lệnh nào trong danh sách chờ duyệt tay)")
-    else:
-        for order in manual_orders:
-            lines.extend(_format_order_item(current_idx, order))
-            lines.append("")
-            current_idx += 1
-        if lines[-1] == "":
-            lines.pop()
-
-    lines.append(sep)
-    return "\n".join(lines)
-
-
-def _format_order_item(idx: int, order: Dict[str, Any]) -> List[str]:
-    """Helper định dạng từng mục lệnh theo đúng mẫu đặc tả."""
-    res = []
-    symbol = order.get('symbol', 'UNKNOWN')
-    if not symbol.endswith('/USDT') and not symbol.endswith('USDT'):
-        sym_display = f"{symbol}/USDT"
-    elif not symbol.endswith('/USDT') and symbol.endswith('USDT'):
-        sym_display = f"{symbol[:-4]}/USDT"
-    else:
-        sym_display = symbol
-
-    order_type = order.get('order_type', 'SPOT_OCO')
-    uy_tin = float(order.get('uy_tin_score', 0.0))
-    tier_label = order.get('tier_label', '')
-    
-    # Uy tín string
-    if tier_label and "Tier S" in tier_label:
-        uy_tin_str = "Tier S"
-    elif uy_tin.is_integer():
-        uy_tin_str = f"{int(uy_tin)}đ"
-    else:
-        uy_tin_str = f"{uy_tin:.1f}đ"
-
-    vol_pct = float(order.get('volume_pct', 1.0))
-    status = order.get('status', 'AUTO_EXECUTE')
-
-    # Cấp vốn string
-    if status == 'AUTO_EXECUTE':
-        cap_str = f"100% (Uy tín: {uy_tin_str})"
-    else:
-        cap_str = f"Đề xuất {int(vol_pct * 100)}% (Uy tín: {uy_tin_str})"
-
-    strat_desc = order.get('strategy_desc', '')
-    engine_code = order.get('engine', '')
-    engine_label = order.get('engine_label') or ENGINE_LABELS.get(engine_code, engine_code)
-    if not engine_label and strat_desc:
-        engine_label = strat_desc
-    engine_str = f" | Động cơ: {engine_label}" if engine_label else ""
-
-    if order_type == 'SPOT_OCO':
-        type_str = "OCO"
-        res.append(f"[{idx}] Mã: {sym_display}{engine_str} | Loại: {type_str} | Cấp vốn: {cap_str}")
-        
-        entry = float(order['entry'])
-        raw_sl = float(order.get('raw_sl', entry * 0.985))
-        raw_tp = float(order.get('raw_tp', entry * 1.05))
-        sl = float(order.get('sl', raw_sl))
-        tp = float(order.get('tp', raw_tp))
-
-        raw_sl_pct = (entry - raw_sl) / entry * 100 if entry > 0 else 0
-        raw_tp_pct = (raw_tp - entry) / entry * 100 if entry > 0 else 0
-        sl_pct = (entry - sl) / entry * 100 if entry > 0 else 0
-        tp_pct = (tp - entry) / entry * 100 if entry > 0 else 0
-
-        # Note cho SL và TP
-        if order.get('sl_adjusted', False):
-            sl_note = "[Nới đệm né râu]" if status == 'AUTO_EXECUTE' else "[Nới an toàn]"
-        else:
-            sl_note = "[SL an toàn]"
-
-        if order.get('tp_adjusted', False):
-            tp_note = "[Kéo TP 1:2]" if status == 'AUTO_EXECUTE' else "[Chốt R:R 1:2]"
-        else:
-            tp_note = "[TP nguyên bản]"
-
-        dec = _count_decimals(entry)
-        f_entry = _fmt_price_val(entry, dec)
-        f_raw_sl = _fmt_price_val(raw_sl, dec)
-        f_raw_tp = _fmt_price_val(raw_tp, dec)
-        f_sl = _fmt_price_val(sl, dec)
-        f_tp = _fmt_price_val(tp, dec)
-
-        res.append(f"    ↳ ⚙️ Gốc: Entry={f_entry} | SL={f_raw_sl} (-{raw_sl_pct:.1f}%) | TP={f_raw_tp} (+{raw_tp_pct:.1f}%)")
-        res.append(f"    ↳ 🛠️ ĐÃ NẮN: Entry={f_entry} | SL={f_sl} (-{sl_pct:.1f}%) {sl_note} | TP={f_tp} (+{tp_pct:.1f}%) {tp_note}")
-        
-        if status == 'AUTO_EXECUTE':
-            res.append("    ↳ 🛡️ Option: Kích hoạt Auto-Breakeven (+1%).")
-
-        # 🥅 Kế hoạch B (Grid TP2 Fallback)
-        fallback_tp2 = _resolve_grid_tp2_fallback(order, symbol, entry, sl, tp)
-        if fallback_tp2:
-            res.append(f"    ↳ 🥅 Kế hoạch B (Grid TP2 Fallback): {fallback_tp2}")
-
-        if status != 'AUTO_EXECUTE':
-            res.append("    ↳ ⚠️ Trạng thái: Treo chờ lệnh. Nhấn [Y] để đẩy lệnh lên sàn.")
-
-    elif order_type == 'GRID':
-        type_str = strat_desc if strat_desc else "GRID TÍCH LŨY"
-        res.append(f"[{idx}] Mã: {sym_display}{engine_str} | Loại: {type_str} | Cấp vốn: {cap_str}")
-        
-        raw_low = float(order.get('raw_lower', order.get('lower', 0.0)))
-        raw_up = float(order.get('raw_upper', order.get('upper', 0.0)))
-        raw_grids = int(order.get('raw_grids', order.get('grids', 24)))
-
-        low = float(order.get('lower', raw_low))
-        up = float(order.get('upper', raw_up))
-        grids = int(order.get('grids', 24))
-
-        dec_g = _count_decimals(raw_low)
-        f_raw_low = _fmt_price_val(raw_low, dec_g)
-        f_raw_up = _fmt_price_val(raw_up, dec_g)
-        f_low = _fmt_price_val(low, dec_g)
-        f_up = _fmt_price_val(up, dec_g)
-
-        res.append(f"    ↳ ⚙️ Gốc: Lưới Macro (L={f_raw_low} - U={f_raw_up}) | {raw_grids} Lưới")
-        res.append(f"    ↳ 🛠️ ĐÃ NẮN: Bóp 15% biên độ (L={f_low} - U={f_up}) | {grids} Lưới")
-
-        if status == 'AUTO_EXECUTE':
-            res.append("    ↳ 🛡️ Option: Tăng tần suất khớp lệnh vùng tích lũy.")
-        else:
-            res.append("    ↳ ⚠️ Trạng thái: Treo chờ lệnh. Nhấn [Y] để đẩy lệnh lên sàn.")
-
-    return res
+    print_order_block(auto_exec, "LỆNH DUYỆT TỰ ĐỘNG (AUTO-EXECUTE)", "Điều kiện: Tier S/A (Uy tín >= 60đ)")
+    print_order_block(manual_exec, "LỆNH CHỜ DUYỆT TAY (MANUAL APPROVAL)", "Điều kiện: Tier B (Cửa hậu - Rủi ro vĩ mô)")
+    print("=" * 100)
 
 
 

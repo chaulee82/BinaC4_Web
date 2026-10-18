@@ -37,6 +37,21 @@ def test_spec_examples():
             "strategy_desc": "GRID TÍCH LŨY"
         },
         {
+            "symbol": "INJ/USDT",
+            "order_type": "GRID",
+            "lower": 7.20,
+            "upper": 9.54,
+            "grids": 35,
+            "entry": 8.533,
+            "raw_sl": 8.486,
+            "raw_tp": 8.811,
+            "sl": 6.541,
+            "uy_tin_score": 62.7,
+            "tier_label": "Tier A",
+            "engine": "DC2",
+            "strategy_desc": "GRID TÍCH LŨY"
+        },
+        {
             "symbol": "TIA/USDT",
             "order_type": "SPOT_OCO",
             "entry": 0.6284,
@@ -74,15 +89,14 @@ def test_spec_examples():
     assert near["grids"] == 24
 
     # 3. Kiểm tra TIA/USDT
-    tia = final_orders[2]
+    tia = final_orders[3]
     assert tia["status"] == "MANUAL_APPROVAL", f"Expected MANUAL_APPROVAL but got {tia['status']}"
     assert tia["volume_pct"] == 0.3
     assert abs(tia["sl"] - 0.6189) < 0.001, f"Expected safe SL ~0.6189, got {tia['sl']}"
     assert abs(tia["tp"] - 0.6474) < 0.001, f"Expected safe TP ~0.6474, got {tia['tp']}"
 
-    output_ui = render_gatekeeper_board(final_orders)
     print("OUTPUT TERMINAL UI RENDERED:")
-    print(output_ui)
+    render_gatekeeper_board(final_orders)
 
     print("\n✅ TẤT CẢ CÁC BƯỚC TEST KIỂM THỬ ĐẶC TẢ ĐÃ PASS 100%!")
 
@@ -128,7 +142,7 @@ def test_extract_adapter():
     final = optimized_execution_geometry_module(orders)
     assert len(final) == 3
     print("\n[TEST ADAPTER] Render từ Mock Summary Board + 14-Day Profiles:")
-    print(render_gatekeeper_board(final))
+    render_gatekeeper_board(final)
     print("✅ TEST ADAPTER PASS 100%!")
 
 
