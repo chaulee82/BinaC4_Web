@@ -214,17 +214,57 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
             macro_lower = float(order_copy['lower'])
             macro_upper = float(order_copy['upper'])
             macro_range = macro_upper - macro_lower
-            raw_grids = int(order_copy.get('grids', 24))
+            raw_grids = int(order_copy.get('raw_grids', order_copy.get('grids', 24)))
+            dec = _count_decimals(macro_lower)
             
             order_copy['raw_lower'] = macro_lower
             order_copy['raw_upper'] = macro_upper
             order_copy['raw_grids'] = raw_grids
             
             # Bóp 15% biên độ thừa ở mỗi đầu, chuẩn hóa 24 lưới
+            opt_lower = round(macro_lower + (macro_range * 0.15), 5)
+            opt_upper = round(macro_upper - (macro_range * 0.15), 5)
+
+            trigger = order_copy.get('entry', order_copy.get('trigger'))
+            if trigger is None or trigger == 'N/A':
+                trigger = round((macro_lower + macro_upper) / 2.0, dec)
+            else:
+                trigger = float(trigger)
+                
+            grid_sl = order_copy.get('sl')
+            if grid_sl is None or grid_sl == 'N/A':
+                grid_sl = round(macro_lower * 0.95, dec)
+            else:
+                grid_sl = float(grid_sl)
+                
+            grid_tp = order_copy.get('tp')
+            if grid_tp is None or grid_tp == 'N/A':
+                grid_tp = macro_upper
+            else:
+                grid_tp = float(grid_tp)
+                
+            raw_sl = order_copy.get('raw_sl')
+            if raw_sl is None or raw_sl == 'N/A':
+                raw_sl = round(trigger * 0.995, dec)
+            else:
+                raw_sl = float(raw_sl)
+                
+            raw_tp = order_copy.get('raw_tp')
+            if raw_tp is None or raw_tp == 'N/A':
+                raw_tp = round(trigger * 1.033, dec)
+            else:
+                raw_tp = float(raw_tp)
+            
             order_copy.update({
-                'lower': round(macro_lower + (macro_range * 0.15), 5),
-                'upper': round(macro_upper - (macro_range * 0.15), 5),
+                'lower': opt_lower,
+                'upper': opt_upper,
                 'grids': 24,
+                'entry': trigger,
+                'trigger': trigger,
+                'sl': grid_sl,
+                'tp': grid_tp,
+                'raw_sl': raw_sl,
+                'raw_tp': raw_tp,
                 'geometry_note': "Bóp biên độ 15% hai đầu, chuẩn hóa 24 Lưới"
             })
 
@@ -398,6 +438,14 @@ def extract_clean_summary_orders(
         ("wide_grid", summary_board_res.get("wide_grid", []) or [], "WIDE GRID 3D")
     ]
 
+    # Bản đồ OCO Setup từ Bảng Tổng Kết (để làm OCO Tham Chiếu cho lệnh GRID)
+    spot_setup_map = {}
+    for sp in (summary_board_res.get("spot", []) or []) + (summary_board_res.get("top_money_flow", []) or []):
+        sym_k = getattr(sp, "symbol", "").upper().replace("/USDT", "").replace("USDT", "").strip()
+        s_line = getattr(sp, "setup_line", "")
+        if sym_k and s_line and sym_k not in spot_setup_map:
+            spot_setup_map[sym_k] = s_line
+
     for source_key, signals, default_strat in grid_sources:
         for s in signals:
             sym_raw = getattr(s, "symbol", "")
@@ -410,6 +458,7 @@ def extract_clean_summary_orders(
             tier = str(p_info.get("tier", ""))
 
             grid_line = getattr(s, "grid_tp2_line", "") if source_key == "grid_tp2" else getattr(s, "wide_grid_line", "")
+            setup_line = getattr(s, "setup_line", "") or spot_setup_map.get(clean_sym, "")
             m_grid = _RE_GRID.search(grid_line)
 
             if m_grid:
@@ -417,13 +466,47 @@ def extract_clean_summary_orders(
                 upper = float(m_grid.group(2))
                 grids = int(m_grid.group(3))
                 engine = getattr(s, "engine_source", "") or ("DC1" if default_strat == "WIDE GRID 3D" else "DC1")
+                dec = _count_decimals(lower)
+
+                # 1. Trích xuất Trigger / Entry
+                m_trig = _RE_ENTRY.search(grid_line) or _RE_ENTRY.search(setup_line)
+                if m_trig:
+                    trigger_val = float(m_trig.group(1))
+                else:
+                    trigger_val = round((lower + upper) / 2.0, dec)
+
+                # 2. Trích xuất Grid SL & TP
+                m_sl_grid = _RE_SL.search(grid_line)
+                grid_sl_val = float(m_sl_grid.group(1)) if m_sl_grid else round(lower * 0.95, dec)
+
+                m_tp_grid = _RE_TP.search(grid_line)
+                grid_tp_val = float(m_tp_grid.group(1)) if m_tp_grid else upper
+
+                # 3. Trích xuất OCO Tham Chiếu (Gốc)
+                m_sl_oco = _RE_SL.search(setup_line)
+                m_tp_oco = _RE_TP.search(setup_line)
+                if m_sl_oco and m_tp_oco:
+                    raw_sl_val = float(m_sl_oco.group(1))
+                    raw_tp_val = float(m_tp_oco.group(1))
+                else:
+                    raw_sl_val = round(trigger_val * 0.995, dec)
+                    raw_tp_val = round(trigger_val * 1.033, dec)
 
                 clean_orders.append({
                     "symbol": f"{clean_sym}/USDT",
                     "order_type": "GRID",
                     "lower": lower,
                     "upper": upper,
+                    "raw_lower": lower,
+                    "raw_upper": upper,
                     "grids": grids,
+                    "raw_grids": grids,
+                    "entry": trigger_val,
+                    "trigger": trigger_val,
+                    "sl": grid_sl_val,
+                    "tp": grid_tp_val,
+                    "raw_sl": raw_sl_val,
+                    "raw_tp": raw_tp_val,
                     "uy_tin_score": score,
                     "tier_label": tier,
                     "engine": engine,
