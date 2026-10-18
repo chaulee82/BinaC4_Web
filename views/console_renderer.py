@@ -17,7 +17,8 @@ class ConsoleRenderer:
         self.signals_pool: list = []
 
     def _collect(self, state: SymbolState, engine: str, score_ctx: ScoreContext,
-                 setup=None, setup_line: str = "", grid_tp2_line: str = "", wide_grid_line: str = ""):
+                 setup=None, setup_line: str = "", grid_tp2_line: str = "", wide_grid_line: str = "",
+                 is_displayed: bool = True):
         """Đưa 1 tín hiệu (mã × Động cơ) vào signals_pool. Fail-safe: lỗi không làm vỡ bảng."""
         try:
             from core.grid_tp2_builder import _clean_symbol
@@ -50,6 +51,7 @@ class ConsoleRenderer:
                 wide_grid_line=clean_line(wide_grid_line),
                 bounces=bounces,
                 bounce_range=b_range,
+                is_displayed=is_displayed,
             ))
         except Exception:
             pass
@@ -522,8 +524,9 @@ class ConsoleRenderer:
                         print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới){self._d3_suffix(state)}")
 
                 # 🦅 WIDE GRID 3D (DC5) & Thu thập TOÀN BỘ Top 15 vào signals_pool cho Bảng Tín Nhiệm & DB
-                wide_line = self._print_wide_grid(state, "DC5") if idx < 5 else ""
-                self._collect(state, "DC5", score_ctx, wide_grid_line=wide_line)
+                is_disp = (idx < 5)
+                wide_line = self._print_wide_grid(state, "DC5") if is_disp else ""
+                self._collect(state, "DC5", score_ctx, wide_grid_line=wide_line, is_displayed=is_disp)
 
             if len(symbol_states) > displayed_count:
                 print(f"  ↳ ℹ️ [DATA POOL] Đã nạp {len(symbol_states)} mã đạt chuẩn đập nhả vào Database & Bảng Tín Nhiệm (Top 1-5: 10đ, Top 6-15: 5đ).")

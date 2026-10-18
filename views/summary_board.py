@@ -100,7 +100,8 @@ class SignalRecord:
     wide_grid_line: str = ""          # Chuỗi gốc `🦅 [WIDE GRID 3D - ...`
     bounces: float = 0.0              # DC5: số lần nảy (B:{bounces}x{range}%)
     bounce_range: float = 0.0         # DC5: biên độ nảy %
-    convergence_rank: str = ""        # 🏆 [HẠNG S] | 🥇 [HẠNG A1] | 🥈 [HẠNG A2] | 🥉 [HẠNG B]
+    convergence_rank: str = ""        # 🏆 [HẠNG S] | 🥇 [HẠNG A1] | 🥈 [HẠNG A2]
+    is_displayed: bool = True         # True: Đang thể hiện trên bảng Động cơ (Top hiển thị console); False: Chỉ lưu data pool
 
     @property
     def raw_setup_string(self) -> str:
@@ -294,7 +295,7 @@ def classify_pool(pool: List[SignalRecord], spot_enabled: bool = True) -> Dict[s
 
 # ── Hàm sắp xếp ──────────────────────────────────────────────────────────────
 def conv_tier_priority(rank: str) -> int:
-    """Ưu tiên Hạng: S (1) -> A1 (2) -> A2 (3) -> B (4). Không có hạng = 99."""
+    """Ưu tiên Hạng: S (1) -> A1 (2) -> A2 (3). Không có hạng = 99."""
     if not rank:
         return 99
     if "HẠNG S" in rank:
@@ -303,13 +304,11 @@ def conv_tier_priority(rank: str) -> int:
         return 2
     if "HẠNG A2" in rank:
         return 3
-    if "HẠNG B" in rank:
-        return 4
     return 99
 
 
 def conv_rank_weight(rank_str: str) -> int:
-    """Trọng số Hạng để sắp xếp từ cao xuống thấp (S > A1 > A2 > B)."""
+    """Trọng số Hạng để sắp xếp từ cao xuống thấp (S > A1 > A2)."""
     if not rank_str:
         return 0
     if "HẠNG S" in rank_str:
@@ -318,8 +317,6 @@ def conv_rank_weight(rank_str: str) -> int:
         return 30
     if "HẠNG A2" in rank_str:
         return 20
-    if "HẠNG B" in rank_str:
-        return 10
     return 0
 
 
@@ -479,8 +476,6 @@ def print_formatted_table(signals_list: List[SignalRecord], kind: str, backup_sy
                 components.append("🥇 HẠNG A1")
             elif "HẠNG A2" in conv_rank:
                 components.append("🥈 HẠNG A2")
-            elif "HẠNG B" in conv_rank:
-                components.append("🥉 HẠNG B")
         if engine:
             components.append(engine)
         if score:
@@ -698,17 +693,17 @@ CONVERGENCE_MIN_SCORES = {
     "DC2": 60.0,
     "DC3": 60.0,
     "DC4": 60.0,
-    "DC5": 15.0,
     "3B": 70.0,
 }
 
 def is_convergence_engine_qualified(engine: str, sig_or_res: Any) -> bool:
     """
     Kiểm tra tín hiệu động cơ cho Điểm Chạm Vàng:
+    - Chỉ các động cơ hội tụ (DC1, DC2, DC3, DC4, 3B)
     - Dựa vào điểm sàn là chính (score >= CONVERGENCE_MIN_SCORES[engine])
     - Loại bỏ mã vi phạm cảnh báo sớm cấp 3 hoặc gãy MA7 3D
     """
-    if sig_or_res is None:
+    if sig_or_res is None or engine not in CONVERGENCE_MIN_SCORES:
         return False
 
     # 1. Loại bỏ mã vi phạm cảnh báo sớm cấp 3 hoặc gãy MA7 3D
@@ -771,11 +766,6 @@ def _evaluate_convergence_candidates(current_signals: List[SignalRecord],
         for eng, ts in history:
             history_counts[eng] = history_counts.get(eng, 0) + 1
 
-        history_7_days = history_logger.get_symbol_history(symbol, days=7)
-        history_7_counts = {}
-        for eng, ts in history_7_days:
-            history_7_counts[eng] = history_7_counts.get(eng, 0) + 1
-
         rank = None
         phan_tich = ""
         chien_luoc = ""
@@ -807,15 +797,6 @@ def _evaluate_convergence_candidates(current_signals: List[SignalRecord],
                 trigger = "DC3"
                 phan_tich = "Đang ở giữa sóng lớn (3B), nghỉ ngơi tạo cờ (Flag) rồi nổ Breakout (DC3)."
                 chien_luoc = "Sóng đè sóng. Nếu chưa có hàng: Đánh Breakout thuận xu hướng. Nếu đã có hàng: Kích hoạt DCA Dương, nhồi thêm vốn và dời SL lên sát đáy nến Breakout."
-
-        # Priority 4: 🥉 [HẠNG B] CỖ MÁY CASHFLOW
-        # Lịch sử nẹp hộp DC1 trong 7 ngày qua VÀ DC5 đạt chuẩn
-        if not rank and ("DC5" in qualified_engines):
-            if history_7_counts.get("DC1", 0) >= 3:
-                rank = "🥉 [HẠNG B] CỖ MÁY CASHFLOW"
-                trigger = "DC5"
-                phan_tich = "Kẹp giữa 2 mức giá đều đặn (DC1 7 ngày qua) và nảy pingpong (DC5)."
-                chien_luoc = "Setup kẹp thịt: Cài lưới Bot Grid 24-35 lưới bám sát biên độ hộp Darvas để bào chênh lệch (Grid Profit). Cài SL an toàn cách 3% dưới đáy hộp."
 
         if rank:
             sig = qualified_engines.get(trigger)
