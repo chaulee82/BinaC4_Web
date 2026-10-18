@@ -24,6 +24,11 @@ if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', line_buffering=True)
 
 
+def is_target_main_cmd(args: list) -> bool:
+    """Kiểm tra chính xác tham số có nhắm tới main.py hay không (tránh trùng tên xxx_main.py)"""
+    return any(arg == "main.py" or arg.endswith("/main.py") or arg.endswith("\\main.py") for arg in args)
+
+
 def find_running_main_proc() -> Optional[Dict[str, Any]]:
     """
     Tìm tiến trình main.py đang chạy thực sự.
@@ -48,7 +53,7 @@ def find_running_main_proc() -> Optional[Dict[str, Any]]:
                 # Chỉ match khi tham số nhắm tới main.py và không phải auto_runner
                 if "auto_runner.py" in cmd_str:
                     continue
-                if any(arg.endswith("main.py") or arg == "main.py" for arg in cmdline):
+                if is_target_main_cmd(cmdline):
                     return {"pid": pid, "cmd": cmd_str[:120]}
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
@@ -84,7 +89,7 @@ def find_running_main_proc() -> Optional[Dict[str, Any]]:
                             cmd_str = " ".join(args)
                             if "auto_runner.py" in cmd_str:
                                 continue
-                            if any(arg.endswith("main.py") or arg == "main.py" for arg in args):
+                            if is_target_main_cmd(args):
                                 if "python" in cmd_str or "venv" in cmd_str:
                                     return {"pid": pid, "cmd": cmd_str[:120]}
                 except (FileNotFoundError, PermissionError, ProcessLookupError):
@@ -132,34 +137,31 @@ def auto_scan():
     """Hàm kích hoạt quét tự động định kỳ, đồng thời ghi log ra file cho Web UI."""
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
-    # 1. Kiểm tra an toàn tiến trình (Process Guard)
+    # 1. Kiểm tra an toàn tiến trình (Process Guard): Chỉ cảnh báo, vẫn ưu tiên tiếp tục chạy
     running_proc = find_running_main_proc()
+    warn_banner = ""
     if running_proc:
-        pid_info = f" (PID: {running_proc['pid']} | {running_proc['cmd']})"
-        print(f"[{timestamp}] ⚠️ [AUTO-RUNNER] Phát hiện main.py đang chạy{pid_info}.")
-        print(f"[{timestamp}] ⏳ [AUTO-RUNNER] Đang chờ tối đa 30 giây xem tiến trình cũ có hoàn tất không...")
-        for _ in range(6):
-            time.sleep(5)
-            running_proc = find_running_main_proc()
-            if not running_proc:
-                break
-
-        if running_proc:
-            skip_msg = (
-                f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ⏸️ [AUTO-RUNNER] Tiến trình main.py cũ vẫn đang hoạt động. "
-                f"Bỏ qua phiên quét tự động này để bảo vệ tài nguyên VPS và tránh bị Binance giới hạn API (HTTP 429)."
-            )
-            print(skip_msg)
-            return
-
-    # Dọn dẹp stale lock nếu hệ thống hoàn toàn rảnh
-    clean_stale_lock()
-    print(f"[{timestamp}] 🚀 [AUTO-RUNNER] Hệ thống rảnh. Bắt đầu kích hoạt phiên quét tự động...")
+        pid_info = f"PID: {running_proc['pid']} | {running_proc['cmd']}"
+        warn_msg = (
+            f"[{timestamp}] ⚠️ [AUTO-RUNNER] CẢNH BÁO TÀI NGUYÊN: Phát hiện main.py đang chạy ngầm ({pid_info}).\n"
+            f"[{timestamp}] ⚡ [AUTO-RUNNER] ƯU TIÊN TIẾP TỤC: Vẫn kích hoạt phiên quét tự động mới theo yêu cầu..."
+        )
+        print(warn_msg)
+        warn_banner = (
+            f"⚠️ [CẢNH BÁO TÀI NGUYÊN] Đang có tiến trình main.py chạy ngầm ({pid_info})\n"
+            f"⚡ Ưu tiên tiếp tục phiên quét tự động định kỳ...\n"
+            + "-" * 60 + "\n"
+        )
+    else:
+        # Dọn dẹp stale lock nếu hệ thống hoàn toàn rảnh
+        clean_stale_lock()
+        print(f"[{timestamp}] 🚀 [AUTO-RUNNER] Hệ thống rảnh. Bắt đầu kích hoạt phiên quét tự động...")
 
     # Header log cho file và UI
     header_banner = (
         f"🤖 [AUTO-RUNNER] PHIÊN QUÉT TỰ ĐỘNG ĐỊNH KỲ\n"
         f"⏰ Khởi động lúc: {timestamp}\n"
+        + warn_banner
         + "=" * 60 + "\n"
     )
 
