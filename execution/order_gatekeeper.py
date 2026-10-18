@@ -343,45 +343,33 @@ def render_gatekeeper_board(final_orders):
             
             if order_type == 'SPOT_OCO':
                 entry = o['entry']
-                raw_sl_pct = ((o['raw_sl'] - entry) / entry) * 100
-                raw_tp_pct = ((o['raw_tp'] - entry) / entry) * 100
-                new_sl_pct = ((o['sl'] - entry) / entry) * 100
-                new_tp_pct = ((o['tp'] - entry) / entry) * 100
+                sl_val = o['sl']
+                tp_val = o['tp']
+                sl_pct = ((sl_val - entry) / entry) * 100
+                tp_pct = ((tp_val - entry) / entry) * 100
+                rr_val = o.get('rr_ratio', 2.0)
                 
                 type_tag = "🎯 [LỰA CHỌN 1: SPOT OCO]" if has_dual else "🎯 [LỆNH SPOT OCO]"
                 print(f"[{idx}] {type_tag} Mã: {o['symbol']} | Động cơ: {engine_name}{mf_str} | Cấp vốn: {int(o['volume_pct']*100)}% (Uy tín: {o['uy_tin_score']}đ{tier_str})")
-                print(f"    ↳ 📌 Trường phái: Lướt sóng nhanh / Bắn tỉa theo đà (Kèm lưới TP2 dự phòng)")
-                print(f"    ↳ ⚙️ OCO GỐC: Entry={entry} | SL={o['raw_sl']} ({raw_sl_pct:+.1f}%) | TP={o['raw_tp']} ({raw_tp_pct:+.1f}%)")
-                print(f"    ↳ 🛠️ OCO ĐÃ NẮN: Entry={entry} | SL={o['sl']} ({new_sl_pct:+.1f}%) [Nới đệm] | TP={o['tp']} ({new_tp_pct:+.1f}%) [Kéo R:R 1:2]")
+                print(f"    ↳ 🎯 LỆNH OCO: Entry={entry} | SL={sl_val} ({sl_pct:+.1f}%) | TP={tp_val} ({tp_pct:+.1f}%) | R:R 1:{rr_val:.1f}")
                 
                 if 'grid_tp2' in o:
                     g = o['grid_tp2']
-                    r_low = g.get('raw_lower', g.get('lower'))
-                    r_up = g.get('raw_upper', g.get('upper'))
-                    print(f"    ↳ 🎯 GRID TP2 (GỐC): Dải L={r_low} - U={r_up} | 24 Lưới")
-                    print(f"    ↳ 🛠️ GRID TP2 (ĐÃ NẮN): Dải L={g.get('lower')} - U={g.get('upper')} | 24 Lưới | Trig: {entry} | SL: {o['sl']} | TP: {g.get('upper')}")
-                
-                if o.get('auto_breakeven'):
+                    opt_note = " | Kèm Auto-Breakeven (+1%)" if o.get('auto_breakeven') else ""
+                    print(f"    ↳ 🛡️ LƯỚI TP2: Dải L={g.get('lower')} - U={g.get('upper')} (24 Lưới){opt_note}")
+                elif o.get('auto_breakeven'):
                     print(f"    ↳ 🛡️ Option: Kích hoạt Auto-Breakeven (+1%).")
                     
             elif order_type == 'GRID':
                 trigger = o.get('entry', o.get('trigger', 'N/A'))
-                sl = o.get('sl', o.get('raw_sl', 'N/A'))
-                tp = o.get('tp', o.get('raw_upper', o['upper']))
+                sl = o.get('sl', 'N/A')
+                tp = o.get('tp', o.get('upper', 'N/A'))
                 strat_name = o.get('strategy_desc', 'GRID TÍCH LŨY')
                 
                 type_tag = "🥅 [LỰA CHỌN 2: GRID LƯỚI]" if has_dual else f"🥅 [{strat_name}]"
                 print(f"[{idx}] {type_tag} Mã: {o['symbol']} | Động cơ: {engine_name}{mf_str} | Cấp vốn: {int(o['volume_pct']*100)}% (Uy tín: {o['uy_tin_score']}đ{tier_str})")
-                print(f"    ↳ 📌 Trường phái: Nuôi lưới gom tích lũy 24 tầng (Bắt nhúng 2-5 ngày, không cắt lỗ sớm)")
-                
-                if 'raw_sl' in o and 'raw_tp' in o and trigger != 'N/A':
-                    raw_sl_pct = ((o['raw_sl'] - trigger) / trigger) * 100
-                    raw_tp_pct = ((o['raw_tp'] - trigger) / trigger) * 100
-                    print(f"    ↳ 🎯 OCO THAM CHIẾU (GỐC): Entry={trigger} | SL={o['raw_sl']} ({raw_sl_pct:+.1f}%) | TP={o['raw_tp']} ({raw_tp_pct:+.1f}%)")
-                
-                print(f"    ↳ ⚙️ GRID GỐC: Lưới Macro (L={o.get('raw_lower', o['lower'])} - U={o.get('raw_upper', o['upper'])}) | {o.get('raw_grids', 35)} Lưới")
-                print(f"    ↳ 🛠️ GRID ĐÃ NẮN: Bóp 15% biên độ (L={o['lower']} - U={o['upper']}) | {o['grids']} Lưới | Trig: {trigger} | SL: {sl} | TP: {tp}")
-                print(f"    ↳ 🛡️ Option: Tăng tần suất khớp lệnh vùng tích lũy 72H.")
+                print(f"    ↳ 🥅 LỆNH GRID: Dải L={o['lower']} - U={o['upper']} (24 Lưới) | Trig: {trigger} | SL: {sl} | TP: {tp}")
+                print(f"    ↳ 🛡️ Option: Bóp 15% biên độ, tăng tần suất khớp lệnh vùng tích lũy 72H.")
             
             if o['status'] == 'MANUAL_APPROVAL':
                 print(f"    ↳ ⚠️ Trạng thái: Treo chờ lệnh. Nhấn [Y] để đẩy lệnh lên sàn.")
