@@ -13,7 +13,7 @@ Module Bảng Duyệt Lệnh Tối Ưu (Optimized Gatekeeper).
 
 import re
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 logger = logging.getLogger("OrderGatekeeper")
 
@@ -196,6 +196,10 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
             # 3. Nắn Bóp Hình Học GRID TP2 Dự Phòng (Grid TP2 Geometry Optimization)
             grid_tp2_opt = optimize_grid_tp2_geometry(order_copy, entry, safe_sl, realistic_tp)
             
+            # Tính R:R sau nắn
+            reward_amount = realistic_tp - entry
+            rr_val = round(reward_amount / risk_amount, 2) if risk_amount > 0 else 2.0
+
             # Cập nhật thông số
             order_copy.update({
                 'entry': entry,
@@ -206,7 +210,9 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
                 'auto_breakeven': True,
                 'geometry_note': "Nới đệm SL (+1.5%), Bóp TP (Max R:R 1:2)",
                 'grid_tp2': grid_tp2_opt,
-                'grid_tp2_optimized': grid_tp2_opt
+                'grid_tp2_optimized': grid_tp2_opt,
+                'rr_ratio': rr_val,
+                'money_flow': float(order_copy.get('money_flow', 0.0) or 0.0)
             })
 
             
@@ -254,6 +260,10 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
                 raw_tp = round(trigger * 1.033, dec)
             else:
                 raw_tp = float(raw_tp)
+
+            grid_risk = trigger - grid_sl
+            grid_reward = grid_tp - trigger
+            grid_rr = round(grid_reward / grid_risk, 2) if grid_risk > 0 else 1.5
             
             order_copy.update({
                 'lower': opt_lower,
@@ -265,7 +275,9 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
                 'tp': grid_tp,
                 'raw_sl': raw_sl,
                 'raw_tp': raw_tp,
-                'geometry_note': "Bóp biên độ 15% hai đầu, chuẩn hóa 24 Lưới"
+                'geometry_note': "Bóp biên độ 15% hai đầu, chuẩn hóa 24 Lưới",
+                'rr_ratio': grid_rr,
+                'money_flow': float(order_copy.get('money_flow', 0.0) or 0.0)
             })
 
         if order_copy.get('engine') in ENGINE_LABELS:
@@ -287,14 +299,28 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
     return final_execution_orders
 
 
+def _order_sort_key(o: Dict[str, Any]) -> tuple:
+    """
+    Khóa sắp xếp đa tầng ưu tiên trong Hàng Đợi Thực Thi:
+    1. Điểm Tín Nhiệm 14 ngày (uy_tin_score) DESC
+    2. Hệ số Dòng Tiền Bạo Phát (money_flow) DESC
+    3. Tỷ lệ R:R sau nắn hình học DESC
+    """
+    uy_tin = float(o.get('uy_tin_score', 0.0) or 0.0)
+    mf = float(o.get('money_flow', 0.0) or 0.0)
+    rr = float(o.get('rr_ratio', 0.0) or 0.0)
+    return (uy_tin, mf, rr)
+
+
 def render_gatekeeper_board(final_orders):
     print("=" * 100)
     print("🛡️ [MODULE BẢNG DUYỆT LỆNH TỐI ƯU] HÀNG ĐỢI THỰC THI (GIAI ĐOẠN 1)")
     print("=" * 100)
-    print("💡 Bộ lọc hình học: Đệm SL chống quét râu (1.5%), Max R:R 1:2.0, Bóp lưới Grid 15% rìa.\n")
+    print("💡 Bộ lọc hình học: Đệm SL chống quét râu (1.5%), Max R:R 1:2.0, Bóp lưới Grid 15% rìa.")
+    print("🎯 Thứ tự ưu tiên: 1. Uy tín 14 ngày (Tier S > A > B) ➔ 2. Dòng tiền bạo phát ➔ 3. R:R tối ưu.\n")
 
-    auto_exec = [o for o in final_orders if o['status'] == 'AUTO_EXECUTE']
-    manual_exec = [o for o in final_orders if o['status'] == 'MANUAL_APPROVAL']
+    auto_exec = sorted([o for o in final_orders if o['status'] == 'AUTO_EXECUTE'], key=_order_sort_key, reverse=True)
+    manual_exec = sorted([o for o in final_orders if o['status'] == 'MANUAL_APPROVAL'], key=_order_sort_key, reverse=True)
 
     def print_order_block(orders, title, desc):
         if not orders: return
@@ -302,6 +328,10 @@ def render_gatekeeper_board(final_orders):
         print("-" * 100)
         for idx, o in enumerate(orders, 1):
             engine_name = o.get('engine', 'UNKNOWN_ENGINE')
+            mf = float(o.get('money_flow', 0.0) or 0.0)
+            mf_str = f" [💥 BẠO PHÁT {mf:.1f}x]" if mf > 0 else ""
+            tier_label = o.get('tier_label', '')
+            tier_str = f" - {tier_label}" if tier_label else ""
             
             if o['order_type'] == 'SPOT_OCO':
                 entry = o['entry']
@@ -310,7 +340,7 @@ def render_gatekeeper_board(final_orders):
                 new_sl_pct = ((o['sl'] - entry) / entry) * 100
                 new_tp_pct = ((o['tp'] - entry) / entry) * 100
                 
-                print(f"[{idx}] Mã: {o['symbol']} | Động cơ: {engine_name} | Loại: OCO | Cấp vốn: {int(o['volume_pct']*100)}% (Uy tín: {o['uy_tin_score']}đ)")
+                print(f"[{idx}] Mã: {o['symbol']} | Động cơ: {engine_name}{mf_str} | Loại: OCO | Cấp vốn: {int(o['volume_pct']*100)}% (Uy tín: {o['uy_tin_score']}đ{tier_str})")
                 print(f"    ↳ ⚙️ OCO GỐC: Entry={entry} | SL={o['raw_sl']} ({raw_sl_pct:+.1f}%) | TP={o['raw_tp']} ({raw_tp_pct:+.1f}%)")
                 print(f"    ↳ 🛠️ OCO ĐÃ NẮN: Entry={entry} | SL={o['sl']} ({new_sl_pct:+.1f}%) [Nới đệm] | TP={o['tp']} ({new_tp_pct:+.1f}%) [Kéo R:R 1:2]")
                 
@@ -329,7 +359,7 @@ def render_gatekeeper_board(final_orders):
                 sl = o.get('sl', o.get('raw_sl', 'N/A'))
                 tp = o.get('tp', o.get('raw_upper', o['upper']))
                 
-                print(f"[{idx}] Mã: {o['symbol']} | Động cơ: {engine_name} | Loại: GRID TÍCH LŨY | Cấp vốn: {int(o['volume_pct']*100)}% (Uy tín: {o['uy_tin_score']}đ)")
+                print(f"[{idx}] Mã: {o['symbol']} | Động cơ: {engine_name}{mf_str} | Loại: GRID TÍCH LŨY | Cấp vốn: {int(o['volume_pct']*100)}% (Uy tín: {o['uy_tin_score']}đ{tier_str})")
                 
                 if 'raw_sl' in o and 'raw_tp' in o and trigger != 'N/A':
                     raw_sl_pct = ((o['raw_sl'] - trigger) / trigger) * 100
@@ -356,6 +386,7 @@ _RE_ENTRY = re.compile(r"(?:In|Entry|Buy|Trig)\s*[:=]\s*([\d.]+)")
 _RE_SL    = re.compile(r"SL\s*[:=]\s*([\d.]+)")
 _RE_TP    = re.compile(r"TP1?\s*[:=]\s*([\d.]+)")
 _RE_GRID  = re.compile(r"([\d.]+)\s*-\s*([\d.]+)\s*\|\s*(\d+)\s*(?:L|Lưới)")
+_RE_MONEY_FLOW = re.compile(r"(?:TIỀN BẠO PHÁT|BẠO PHÁT)\s*\((\d+(?:\.\d+)?)x\)")
 
 
 def extract_clean_summary_orders(
@@ -365,6 +396,7 @@ def extract_clean_summary_orders(
     """
     Trích xuất danh sách lệnh sạch từ Tầng 2 (Bảng Tổng Kết & Hồ Sơ Tín Nhiệm).
     Tầng 2 đã lọc 100% rủi ro vĩ mô (chốt chặn sinh tử, BTC Gate, Blacklist...).
+    Bổ sung nhóm Dòng Tiền Bạo Phát (top_money_flow) đã qua chốt kiểm duyệt bóp cò.
     """
     clean_orders: List[Dict[str, Any]] = []
     if not summary_board_res:
@@ -377,16 +409,28 @@ def extract_clean_summary_orders(
         if sym:
             trust_map[sym] = p
 
-    # 2. Xử lý Lệnh SPOT (Lướt sóng OCO)
+    # 2. Xử lý Lệnh SPOT (Lướt sóng OCO & Top Dòng Tiền Bạo Phát)
     # Nếu BTC Gate khóa -> Tầng 2 đã dán nhãn spot_btc_locked = True
     btc_locked = bool(summary_board_res.get("spot_btc_locked", False))
     spot_signals = summary_board_res.get("spot", []) or []
+    top_mf_signals = summary_board_res.get("top_money_flow", []) or []
 
     if not btc_locked:
+        seen_spot_syms = set()
+        
+        # Gom nguồn tín hiệu: Spot thông thường + Top 3 Dòng tiền Bạo Phát
+        combined_spot: List[Tuple[Any, bool]] = []
         for s in spot_signals:
+            combined_spot.append((s, False))
+        for s in top_mf_signals:
+            combined_spot.append((s, True))
+
+        for s, is_top_mf in combined_spot:
             sym_raw = getattr(s, "symbol", "")
             clean_sym = sym_raw.upper().replace("/USDT", "").replace("USDT", "").strip()
-            
+            if not clean_sym or clean_sym in seen_spot_syms:
+                continue
+
             # Đọc điểm uy tín từ hồ sơ 14 ngày hoặc từ target_score
             p_info = trust_map.get(clean_sym, {})
             score = float(p_info.get("total_score", getattr(s, "target_score", 0.0) or 50.0))
@@ -398,6 +442,16 @@ def extract_clean_summary_orders(
             m_sl = _RE_SL.search(line)
             m_tp = _RE_TP.search(line)
 
+            # Trích xuất hệ số dòng tiền bạo phát
+            mf_val = float(getattr(s, "money_flow", 0.0) or 0.0)
+            if mf_val <= 0.0 and line:
+                m_mf = _RE_MONEY_FLOW.search(line)
+                if m_mf:
+                    try:
+                        mf_val = float(m_mf.group(1))
+                    except Exception:
+                        pass
+
             if m_entry and m_sl:
                 entry = float(m_entry.group(1))
                 raw_sl = float(m_sl.group(1))
@@ -408,14 +462,22 @@ def extract_clean_summary_orders(
                     raw_tp = entry + (entry - raw_sl) * rr
 
                 engine = getattr(s, "engine_source", "")
-                if engine == "DC2":
-                    strat = "Bắt Đáy - Siêu Pullback"
-                elif engine == "DC3":
-                    strat = "Breakout"
-                elif engine == "DC4":
-                    strat = "Hot Trend"
+                if is_top_mf or mf_val >= 3.0:
+                    if engine == "DC3":
+                        strat = f"Breakout - Bạo Phát ({mf_val:.1f}x)" if mf_val > 0 else "Breakout - Bạo Phát"
+                    elif engine == "DC4":
+                        strat = f"Hot Trend - Bạo Phát ({mf_val:.1f}x)" if mf_val > 0 else "Hot Trend - Bạo Phát"
+                    else:
+                        strat = f"Dòng Tiền Bạo Phát ({mf_val:.1f}x)" if mf_val > 0 else "Dòng Tiền Bạo Phát"
                 else:
-                    strat = "Spot Swing"
+                    if engine == "DC2":
+                        strat = "Bắt Đáy - Siêu Pullback"
+                    elif engine == "DC3":
+                        strat = "Breakout"
+                    elif engine == "DC4":
+                        strat = "Hot Trend"
+                    else:
+                        strat = "Spot Swing"
 
                 clean_orders.append({
                     "symbol": f"{clean_sym}/USDT",
@@ -428,8 +490,11 @@ def extract_clean_summary_orders(
                     "engine": engine,
                     "engine_label": ENGINE_LABELS.get(engine, engine),
                     "strategy_desc": strat,
+                    "money_flow": mf_val,
+                    "is_money_flow_surge": (mf_val >= 3.0 or is_top_mf),
                     "grid_tp2_line": getattr(s, "grid_tp2_line", "") or ""
                 })
+                seen_spot_syms.add(clean_sym)
 
     # 3. Xử lý Lệnh GRID (GRID TP2 & WIDE GRID 3D)
     seen_grid_syms = set()
@@ -492,6 +557,16 @@ def extract_clean_summary_orders(
                     raw_sl_val = round(trigger_val * 0.995, dec)
                     raw_tp_val = round(trigger_val * 1.033, dec)
 
+                # Trích xuất hệ số dòng tiền bạo phát cho GRID (nếu có)
+                mf_val = float(getattr(s, "money_flow", 0.0) or 0.0)
+                if mf_val <= 0.0 and (setup_line or grid_line):
+                    m_mf = _RE_MONEY_FLOW.search(setup_line) or _RE_MONEY_FLOW.search(grid_line)
+                    if m_mf:
+                        try:
+                            mf_val = float(m_mf.group(1))
+                        except Exception:
+                            pass
+
                 clean_orders.append({
                     "symbol": f"{clean_sym}/USDT",
                     "order_type": "GRID",
@@ -511,7 +586,9 @@ def extract_clean_summary_orders(
                     "tier_label": tier,
                     "engine": engine,
                     "engine_label": ENGINE_LABELS.get(engine, engine),
-                    "strategy_desc": default_strat
+                    "strategy_desc": default_strat,
+                    "money_flow": mf_val,
+                    "is_money_flow_surge": (mf_val >= 3.0)
                 })
                 seen_grid_syms.add(clean_sym)
 
