@@ -635,6 +635,27 @@ def main():
                 except Exception as e:
                     logger.error(f"Render Error (Bảng 14 Ngày / Delta Audit): {e}")
 
+                # -------------------------------------------------------------------------
+                # 🛡️ BẢNG DUYỆT LỆNH TỐI ƯU (OPTIMIZED GATEKEEPER - GIAI ĐOẠN 1)
+                # -------------------------------------------------------------------------
+                try:
+                    from execution.order_gatekeeper import (
+                        extract_clean_summary_orders,
+                        optimized_execution_geometry_module,
+                        render_gatekeeper_board
+                    )
+                    if '_summary_board_res' in locals() and _summary_board_res:
+                        clean_orders = extract_clean_summary_orders(
+                            summary_board_res=_summary_board_res,
+                            v2_profiles=_v2_profiles if '_v2_profiles' in locals() else None
+                        )
+                        if clean_orders:
+                            final_orders = optimized_execution_geometry_module(clean_orders)
+                            gatekeeper_board_str = render_gatekeeper_board(final_orders)
+                            print(gatekeeper_board_str)
+                except Exception as e:
+                    logger.error(f"Render Error (Bảng Duyệt Lệnh Tối Ưu): {e}", exc_info=True)
+
 
             from core.coin_filter import print_final_tables
             print_final_tables(early_list, df_summary, current_time_str,
