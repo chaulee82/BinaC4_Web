@@ -649,11 +649,10 @@ def main():
                             summary_board_res=_summary_board_res,
                             v2_profiles=_v2_profiles if '_v2_profiles' in locals() else None
                         )
-                        if clean_orders:
-                            final_orders = optimized_execution_geometry_module(clean_orders)
-                            gatekeeper_board_str = render_gatekeeper_board(final_orders)
-                            if gatekeeper_board_str is not None:
-                                print(gatekeeper_board_str)
+                        final_orders = optimized_execution_geometry_module(clean_orders) if clean_orders else []
+                        gatekeeper_board_str = render_gatekeeper_board(final_orders)
+                        if gatekeeper_board_str is not None:
+                            print(gatekeeper_board_str)
                 except Exception as e:
                     logger.error(f"Render Error (Bảng Duyệt Lệnh Tối Ưu): {e}", exc_info=True)
 

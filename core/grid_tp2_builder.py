@@ -83,18 +83,26 @@ def build_macro_grid_payload(symbol: str, entry: float, sl_short: float, tp_targ
 
     clean_sym = _clean_symbol(symbol)
 
-    # Fallback: khuyết dữ liệu 4H, <= 0, hoặc quá sát / cao hơn sl_short (>= 99% sl_short)
-    if macro_sl is None or macro_sl <= 0 or macro_sl >= sl_short * MACRO_SL_MIN_GAP_RATIO:
-        macro_sl = sl_short * fallback_ratio
+    # 1. Chốt chặn Cắt Lỗ Cứng (Stop-Loss): SL = P_trig * 0.88 (-12% từ Trigger)
+    grid_sl = entry * 0.88
 
-    grid_low = (sl_short + macro_sl) / 2.0
-    grid_up = tp_target
+    # 2. Cận Trên Tối Thiểu (Upper Bound): max(tp_target, entry * 1.20) (tối thiểu +20%)
+    grid_up = max(tp_target, entry * 1.20)
+
+    # 3. Cận Dưới (Lower Bound): max(P_raw_lower, SL * 1.015)
+    # Đảm bảo cách SL >= 1.5% và hướng về vùng gom -10%
+    raw_lower = (sl_short + grid_sl) / 2.0
+    min_safe_lower = grid_sl * 1.015
+    grid_low = max(raw_lower, min_safe_lower)
+    if grid_low >= entry:
+        grid_low = entry * 0.90
+    grid_low = max(grid_low, min_safe_lower)
 
     # Làm tròn giá trị về bội số tick_size (chặn lỗi PRICE_FILTER khi nhập lên Binance)
     if tick_size and tick_size > 0:
         grid_low = _round_tick(grid_low, tick_size)
         grid_up = _round_tick(grid_up, tick_size)
-        macro_sl = _round_tick(macro_sl, tick_size)
+        grid_sl = _round_tick(grid_sl, tick_size)
         entry = _round_tick(entry, tick_size)
 
     if grid_low <= 0 or grid_low >= entry or grid_up <= entry or grid_low >= grid_up:
@@ -108,7 +116,7 @@ def build_macro_grid_payload(symbol: str, entry: float, sl_short: float, tp_targ
     f_low = fmt(grid_low)
     f_up = fmt(grid_up)
     f_trig = fmt(entry)
-    f_sl = fmt(macro_sl)
+    f_sl = fmt(grid_sl)
     f_tp = fmt(grid_up)
 
     display_str = (

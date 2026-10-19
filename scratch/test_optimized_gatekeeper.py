@@ -76,17 +76,18 @@ def test_spec_examples():
     assert "grid_tp2_optimized" in sand, "sand phải có grid_tp2_optimized"
     sand_grid = sand["grid_tp2_optimized"]
     assert sand_grid["grids"] == 24, "Lưới dự phòng phải cố định 24 Lưới"
-    assert sand_grid["upper"] <= sand["tp"] + 1e-4, f"Đỉnh lưới {sand_grid['upper']} không được vượt Realistic TP {sand['tp']}"
-    assert sand_grid["lower"] > sand_grid["raw_lower"], "Đáy lưới phải được bóp nâng lên 15%"
-
+    assert sand_grid["upper"] >= round(sand["entry"] * 1.20, 5), f"Đỉnh lưới {sand_grid['upper']} phải đạt tối thiểu +20% so với Entry {sand['entry']}"
+    assert sand_grid["sl"] == round(sand["entry"] * 0.88, 5), f"SL phải ghim cứng ở -12% ({sand_grid['sl']})"
+    assert sand_grid["lower"] >= round(sand_grid["sl"] * 1.015, 5), "Đáy lưới phải cách SL tối thiểu +1.5%"
 
     # 2. Kiểm tra NEAR/USDT
     near = final_orders[1]
     assert near["status"] == "AUTO_EXECUTE"
     assert near["volume_pct"] == 1.0
-    assert abs(near["lower"] - 4.576) < 0.001, f"Expected lower ~4.576, got {near['lower']}"
-    assert abs(near["upper"] - 6.140) < 0.001, f"Expected upper ~6.140, got {near['upper']}"
     assert near["grids"] == 24
+    assert near["upper"] >= round(near["entry"] * 1.20, 3)
+    assert near["sl"] == round(near["entry"] * 0.88, 3)
+    assert near["lower"] >= round(near["sl"] * 1.015, 3)
 
     # 3. Kiểm tra TIA/USDT
     tia = final_orders[3]

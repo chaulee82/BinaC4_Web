@@ -146,14 +146,16 @@ class ConsoleRenderer:
                 tick_size = None
 
             # [3D ROUTER] Chiến thuật 3 — Khóa cứng trần TP2 ≤ Cản vĩ mô 3D × 1.015
+            # PRD: Cận trên tối thiểu >= entry * 1.20 để bảo đảm đủ không gian sinh lời
             d3 = ConsoleRenderer._get_d3(state)
             cap_note = ""
             try:
                 from core.macro_levels import apply_3d_tp2_cap
                 capped = apply_3d_tp2_cap(tp2_target, d3)
                 if capped and tp2_target and capped < tp2_target:
-                    cap_note = f" [🔒 Khóa TP2 ≤ {d3['overhead_cap_name']}×1.015]"
-                    tp2_target = capped
+                    if capped >= entry * 1.20:
+                        cap_note = f" [🔒 Khóa TP2 ≤ {d3['overhead_cap_name']}×1.015]"
+                        tp2_target = capped
             except Exception:
                 pass
 
@@ -300,12 +302,15 @@ class ConsoleRenderer:
                     macro = state.macro_levels
                     print(f"    ↳ [{sym}] [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}{self._d3_suffix(state)}")
 
-                # GRID TP2 (DC2): Trig=OCO-2 Buy | SL ngắn=OCO-2 SL | Trần=OCO-2 TP | Fallback 0.96
-                # OCO-2 bị ẩn → fallback OCO-1 để 100% mã có setup đều in GRID TP2
+                # GRID TP2 (DC2): Trig=OCO-2 Buy | SL ngắn=OCO-2 SL | Trần=OCO-2 TP (hoặc TP 4H) | Fallback 0.96
+                # OCO-2 bị ẩn → fallback OCO-1 nhưng trần TP2 ưu tiên lấy TP 4H để bảo đảm biên độ cho 24 lưới
                 s_grid = score_ctx.entry_setup2 or score_ctx.entry_setup1
                 grid_line = ""
                 if s_grid:
-                    grid_line = self._print_grid_tp2(state, s_grid.entry_price, s_grid.sl_price, s_grid.tp1_price, fallback_ratio=0.96, engine="DC2")
+                    macro_tp = state.macro_levels.tp_4h if state.macro_levels else None
+                    # PRD: Cận trên tối thiểu +20% độc lập hoàn toàn với TP lệnh OCO lướt sóng
+                    tp2_target = max(s_grid.entry_price * 1.20, (macro_tp or 0.0))
+                    grid_line = self._print_grid_tp2(state, s_grid.entry_price, s_grid.sl_price, tp2_target, fallback_ratio=0.96, engine="DC2")
 
                 # 🦅 WIDE GRID 3D (DC2)
                 wide_line = self._print_wide_grid(state, "DC2")
@@ -377,11 +382,13 @@ class ConsoleRenderer:
                     if _sfx:
                         print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô 4H{_sfx}")
 
-                # GRID TP2 (DC3): Trig=In | SL ngắn=SL | Trần=TP2 (rỗng → TP1×1.05) | Fallback 0.95
+                # GRID TP2 (DC3): Trig=In | SL ngắn=SL | Trần=TP2 (hoặc TP 4H) | Fallback 0.95
                 grid_line = ""
                 if score_ctx.entry_setup1:
                     setup = score_ctx.entry_setup1
-                    tp2_target = setup.tp2_price if setup.tp2_price and setup.tp2_price > 0 else setup.tp1_price * 1.05
+                    macro_tp = state.macro_levels.tp_4h if state.macro_levels else None
+                    # PRD: Cận trên tối thiểu +20% độc lập hoàn toàn với TP lệnh OCO lướt sóng
+                    tp2_target = max(setup.entry_price * 1.20, (macro_tp or 0.0))
                     grid_line = self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95, engine="DC3")
 
                 self._collect(state, "DC3", score_ctx, setup=score_ctx.entry_setup1, setup_line=setup_line, grid_tp2_line=grid_line)
@@ -444,10 +451,8 @@ class ConsoleRenderer:
                 if score_ctx.entry_setup1:
                     setup = score_ctx.entry_setup1
                     macro_tp = state.macro_levels.tp_4h if state.macro_levels else None
-                    if macro_tp and macro_tp > 0:
-                        tp2_target = max(setup.tp1_price, macro_tp)
-                    else:
-                        tp2_target = setup.tp1_price * 1.04
+                    # PRD: Cận trên tối thiểu +20% độc lập hoàn toàn với TP lệnh OCO lướt sóng
+                    tp2_target = max(setup.entry_price * 1.20, (macro_tp or 0.0))
                     grid_line = self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95, engine="DC4")
 
                 # 🦅 WIDE GRID 3D (DC4)
