@@ -615,23 +615,11 @@ def main():
                     if _v2_profiles:
                         try:
                             from trust_history import record_and_analyze, print_delta_tables
-                            scores_payload = []
-                            for item in _v2_profiles:
-                                bdown = item.get('breakdown', {})
-                                scores_payload.append({
-                                    'symbol': item['symbol'],
-                                    'tier': item.get('tier', ''),
-                                    'action_recommendation': item.get('action_recommendation', ''),
-                                    'total': float(item.get('total_score', 0.0)),
-                                    'mong': float(bdown.get('foundation_40', 0.0)),
-                                    'day': float(bdown.get('momentum_40', 0.0)),
-                                    'tien': float(bdown.get('cashflow_20', 0.0))
-                                })
-                            top_gainers, top_losers = record_and_analyze(scores_payload, keep_snapshots=24)
+                            top_gainers, top_losers = record_and_analyze(_v2_profiles, keep_snapshots=24)
                             print_delta_tables(top_gainers, top_losers)
                         except Exception as err:
                             import logging
-                            logging.getLogger("CN4-Controller").error(f"Lỗi phân tích Trust History: {err}", exc_info=True)
+                            logging.getLogger("CN4-Controller").error(f"Lỗi phân tích Trust History (Multi-Day Delta Audit): {err}", exc_info=True)
                 except Exception as e:
                     logger.error(f"Render Error (Bảng 14 Ngày / Delta Audit): {e}")
 

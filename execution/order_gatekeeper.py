@@ -179,6 +179,8 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
     Input: Danh sách lệnh ĐÃ ĐƯỢC LỌC SẠCH RỦI RO từ Tầng 2.
     """
     final_execution_orders = []
+    rejected_tier_f = []
+    rejected_tier_c = []
     
     for order in clean_summary_orders:
         # Tạo bản sao shallow dict để không làm hỏng dữ liệu gốc
@@ -307,7 +309,9 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
         # =========================================================
         # 1. CHỐT CHẶN CỨNG: Loại bỏ hoàn toàn Tier F (< 25đ - Rủi ro cao / Bắt dao rơi)
         if uy_tin < 25.0:
-            logger.info(f"🚫 [GATEKEEPER] Loại bỏ {order_copy.get('symbol')} khỏi Hàng Đợi Thực Thi do thuộc Tier F (Uy tín: {uy_tin:.1f}đ < 25đ - ⛔ Từ Chối)")
+            sym_clean = str(order_copy.get('symbol', '')).replace('/USDT', '').replace('USDT', '').strip()
+            if sym_clean and sym_clean not in rejected_tier_f:
+                rejected_tier_f.append(sym_clean)
             continue
 
         # 2. XỬ LÝ TIER C (25 - 39.9đ - Theo dõi):
@@ -323,7 +327,9 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
                 order_copy['tier_c_surge'] = True
                 final_execution_orders.append(order_copy)
             else:
-                logger.info(f"👀 [GATEKEEPER] Loại bỏ {order_copy.get('symbol')} khỏi Hàng Đợi Thực Thi do thuộc Tier C (Uy tín: {uy_tin:.1f}đ, không có bạo phát >= 3x)")
+                sym_clean = str(order_copy.get('symbol', '')).replace('/USDT', '').replace('USDT', '').strip()
+                if sym_clean and sym_clean not in rejected_tier_c:
+                    rejected_tier_c.append(sym_clean)
             continue
 
         # 3. PHÂN LUỒNG TIER S / TIER A (>= 60đ) VÀ TIER B (40 - 59.9đ)
@@ -337,6 +343,12 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
             order_copy['volume_pct'] = 0.3  # 30% Vol thăm dò
 
         final_execution_orders.append(order_copy)
+
+    # Ghi nhận tóm tắt danh sách các mã bị loại bỏ (gọn gàng, không in tràn log từng dòng)
+    if rejected_tier_f:
+        logger.info(f"🚫 [GATEKEEPER] Loại bỏ {len(rejected_tier_f)} mã Tier F (< 25đ - Từ Chối): {', '.join(rejected_tier_f)}")
+    if rejected_tier_c:
+        logger.info(f"👀 [GATEKEEPER] Loại bỏ {len(rejected_tier_c)} mã Tier C (< 40đ - Theo Dõi): {', '.join(rejected_tier_c)}")
         
     return final_execution_orders
 
