@@ -621,7 +621,8 @@ def main():
                                 top_losers,
                                 live_data_map=locals().get('live_data_map'),
                                 df_summary=locals().get('df_summary'),
-                                global_signals_pool=_renderer.signals_pool if _renderer else None
+                                global_signals_pool=_renderer.signals_pool if _renderer else None,
+                                warning_results=_warning_results if '_warning_results' in locals() else None
                             )
                         except Exception as err:
                             import logging

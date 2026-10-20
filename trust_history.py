@@ -562,6 +562,156 @@ def record_and_analyze(
     return top_gainers, top_losers
 
 
+def _wrap_coin_tokens(coins: List[str], max_width: int = 64) -> List[str]:
+    """Bọc các mã tiền thành các dòng vừa vặn, không làm gãy đứt chuỗi của từng mã"""
+    lines = []
+    curr_line = ""
+    for c in coins:
+        if not curr_line:
+            curr_line = c
+        elif len(curr_line) + 3 + len(c) <= max_width:
+            curr_line += " | " + c
+        else:
+            lines.append(curr_line)
+            curr_line = c
+    if curr_line:
+        lines.append(curr_line)
+    return lines
+
+
+def render_downgrade_warning_table(
+    losers_pool: List[Dict[str, Any]],
+    live_data_map: Optional[Dict[str, Any]] = None,
+    warning_results: Optional[List[Dict[str, Any]]] = None
+) -> None:
+    """
+    Hiển thị BẢNG CẢNH BÁO SUY GIẢM & PHÂN PHỐI theo:
+    - Cấp Độ (Mức Rủi Ro)
+    - Tín Hiệu Kỹ Thuật
+    - Danh Sách Mã
+    kèm Dòng Kết Luận Hành Động Phòng Thủ.
+    """
+    sep_width = 145
+    print("\n" + "=" * sep_width)
+    print("📉 BẢNG CẢNH BÁO SUY GIẢM & PHÂN PHỐI (DOWNGRADE & SELL-OFF RADAR)")
+    print("⚠️ BỘ LỌC CẢNH BÁO: Phân loại theo cấp độ suy thoái dòng tiền & gãy cấu trúc kỹ thuật")
+    print("=" * sep_width)
+
+    if not losers_pool:
+        print("  (Không có mã uy tín nào ghi nhận áp lực xả dốc hoặc suy giảm bất thường)")
+        print("=" * sep_width)
+        return
+
+    # Thu thập ew_map từ warning_results nếu có
+    ew_map = {}
+    if warning_results:
+        for r in warning_results:
+            sym_w = str(r.get("symbol", "")).upper().replace("/USDT", "").replace("USDT", "").strip()
+            if sym_w:
+                ew_map[sym_w] = {
+                    "level": int(r.get("level", 0) or 0),
+                    "label": str(r.get("label", "") or ""),
+                    "trigger": str(r.get("trigger", "") or "")
+                }
+
+    # Phân loại thành 3 Cấp Độ
+    cap_1_coins = []  # Xả dốc mạnh / Nguy hiểm
+    cap_2_coins = []  # Suy yếu đà tăng / Mất bệ đỡ
+    cap_3_coins = []  # Hạ nhiệt ngắn / Chốt lời thoái lui
+
+    for item in losers_pool:
+        sym = str(item.get("symbol", "")).upper().replace("/USDT", "").replace("USDT", "").strip()
+        if not sym:
+            continue
+
+        d24 = float(item.get("delta_24h", item.get("delta_1", 0.0)) or 0.0)
+        d72 = float(item.get("delta_72h", item.get("delta_4", 0.0)) or 0.0)
+        score = float(item.get("decay_score", item.get("total_score", item.get("current", 0.0))) or 0.0)
+
+        state = None
+        if live_data_map:
+            state = live_data_map.get(sym) or live_data_map.get(f"{sym}/USDT") or live_data_map.get(f"{sym}USDT")
+
+        p_live = float(getattr(state, "last_price", 0.0) or 0.0)
+        ma7_3d = None
+        macro = getattr(state, "macro_levels", None)
+        if macro is not None:
+            if isinstance(macro, dict):
+                ma7_3d = macro.get("ma7_3d")
+            else:
+                ma7_3d = getattr(macro, "ma7_3d", None)
+
+        w_info = ew_map.get(sym, {})
+        ew_lvl = w_info.get("level", 0)
+
+        # Định dạng chuỗi hiển thị mã kèm điểm và delta nổi bật
+        if d72 <= -20.0:
+            coin_str = f"{sym} ({score:.1f}đ | Δ72H: 🔴 {d72:.1f}đ)"
+        elif d24 <= -8.0:
+            coin_str = f"{sym} ({score:.1f}đ | Δ24H: 🔴 {d24:.1f}đ)"
+        elif d24 < 0:
+            coin_str = f"{sym} ({score:.1f}đ | 🔴 {d24:.1f}đ)"
+        else:
+            coin_str = f"{sym} ({score:.1f}đ | Δ72H: 🔴 {d72:.1f}đ)"
+
+        # Phân loại cấp độ rủi ro:
+        # Cấp 1: Xả dốc mạnh (d72 <= -20đ HOẶC d24 <= -15đ HOẶC ew_level >= 3 HOẶC gãy sâu MA7 3D kèm d72 < -10đ)
+        if d72 <= -20.0 or d24 <= -15.0 or ew_lvl >= 3 or (ma7_3d and p_live > 0 and p_live < ma7_3d * 0.95 and d72 < -10.0):
+            cap_1_coins.append(coin_str)
+        # Cấp 2: Suy giảm đà tăng (d24 <= -8.0đ HOẶC d72 <= -10.0đ HOẶC ew_lvl == 2 HOẶC mất MA7 3D kèm d24 < -3đ)
+        elif d24 <= -8.0 or d72 <= -10.0 or ew_lvl == 2 or (ma7_3d and p_live > 0 and p_live < ma7_3d and d24 < -3.0):
+            cap_2_coins.append(coin_str)
+        # Cấp 3: Hạ nhiệt ngắn / thoái lui nhẹ
+        else:
+            cap_3_coins.append(coin_str)
+
+    header = f"{'Cấp Độ (Mức Rủi Ro)':<30} | {'Tín Hiệu Kỹ Thuật Cảnh Báo':<45} | {'Danh Sách Mã'}"
+    print(header)
+    print("-" * sep_width)
+
+    levels_def = [
+        (
+            "🔴 CẤP 1: XẢ DỐC MẠNH / NGUY HIỂM",
+            "Δ72H ≤ -20đ / Δ24H ≤ -15đ (Xả dốc tháo chạy)",
+            cap_1_coins
+        ),
+        (
+            "🟠 CẤP 2: SUY YẾU / MẤT BỆ ĐỠ",
+            "Δ24H ≤ -8đ / Mất ray MA7 3D (Đứt gãy đà tăng)",
+            cap_2_coins
+        ),
+        (
+            "🟡 CẤP 3: HẠ NHIỆT / CHỐT LỜI",
+            "Δ24H < 0đ (-1đ đến -7đ) (Hấp thụ chốt lời ngắn)",
+            cap_3_coins
+        )
+    ]
+
+    col3_w = 64
+    for lvl_name, sig_desc, coins in levels_def:
+        if coins:
+            lines = _wrap_coin_tokens(coins, max_width=col3_w)
+            for i, line in enumerate(lines):
+                if i == 0:
+                    print(f"{lvl_name:<30} | {sig_desc:<45} | {line}")
+                else:
+                    print(f"{'':<30} | {'':<45} | {line}")
+        else:
+            print(f"{lvl_name:<30} | {sig_desc:<45} | (Không có mã vi phạm)")
+
+    print("-" * sep_width)
+    print("💡 HÀNH ĐỘNG PHÒNG THỦ:")
+    if cap_1_coins:
+        print("• CẤP 1 (Rủi ro cao): Thoát vị thế dứt khoát, dời SL bảo toàn vốn, tuyệt đối KHÔNG bắt dao rơi.")
+    if cap_2_coins:
+        print("• CẤP 2 (Suy yếu): Hạ 50% tỷ trọng, ngừng mua gia tăng, chờ tín hiệu tạo đáy cân bằng mới.")
+    if cap_3_coins:
+        print("• CẤP 3 (Hạ nhiệt): Theo dõi nền tích lũy, quan sát phản ứng tại các mốc hỗ trợ kỹ thuật.")
+    if not (cap_1_coins or cap_2_coins or cap_3_coins):
+        print("• Thị trường duy trì ổn định, không ghi nhận mã suy yếu nghiêm trọng.")
+    print("=" * sep_width)
+
+
 def print_delta_tables(
     top_gainers: List[Dict[str, Any]],
     top_losers: List[Dict[str, Any]],
@@ -569,12 +719,13 @@ def print_delta_tables(
     db_path: Optional[str] = None,
     live_data_map: Optional[Dict[str, Any]] = None,
     df_summary: Optional[Any] = None,
-    global_signals_pool: Optional[List[Any]] = None
+    global_signals_pool: Optional[List[Any]] = None,
+    warning_results: Optional[List[Dict[str, Any]]] = None
 ) -> None:
     """
     Hiển thị BẢNG BIẾN THIÊN TÍN NHIỆM & BÁO GOM BỨT PHÁ (PRE-BREAKOUT RADAR)
     thay thế bảng số thô, lọc sạch nhiễu và hiển thị vùng gom, trạng thái cùng dòng kết luận.
-    Giữ lại bảng cảnh báo giảm điểm và thiết lập lệnh Top 3.
+    Đồng thời hiển thị BẢNG CẢNH BÁO SUY GIẢM & PHÂN PHỐI theo cấp độ, tín hiệu và danh sách mã.
     """
     # 1. Render Bảng Pre-Breakout Radar
     radar_candidates = render_pre_breakout_radar_table(
@@ -586,17 +737,12 @@ def print_delta_tables(
 
     sep_width = 145
 
-    # 2. Render [TOP 10 GIẢM ĐIỂM CẢNH BÁO] (nếu có)
-    if top_losers:
-        print(f"\n📉 [TOP 10 GIẢM ĐIỂM CẢNH BÁO] (Lực mua suy yếu / Bị phân phối)")
-        print("-" * sep_width)
-        print(f"{'Mã':<8} | {'Tier':<22} | {'Hiện Tại':<9} | {'Δ 24H (T0-T1)':<15} | {'Δ 72H (T0-T3)':<15} | {'Đánh Giá':<20}")
-        print("-" * sep_width)
-        for item in top_losers:
-            c1 = _format_delta_cell(item.get('delta_24h', item.get('delta_1', 0.0)))
-            c4 = _format_delta_cell(item.get('delta_72h', item.get('delta_4', 0.0)))
-            print(f"{item['symbol']:<8} | {item['tier']:<22} | {item['current']:<9.1f} | {c1:<15} | {c4:<15} | {item['eval']:<20}")
-        print("=" * sep_width)
+    # 2. Render BẢNG CẢNH BÁO SUY GIẢM & PHÂN PHỐI (theo Cấp độ, Tín hiệu, Danh sách mã)
+    render_downgrade_warning_table(
+        losers_pool=top_losers,
+        live_data_map=live_data_map,
+        warning_results=warning_results
+    )
 
     # 3. 🚀 Thiết lập lệnh tự động cho Top 3 mã bứt phá nhiều nhất (Dòng tiền gia tốc)
     targets_for_orders = radar_candidates if radar_candidates else top_gainers
