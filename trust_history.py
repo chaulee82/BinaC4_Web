@@ -744,78 +744,25 @@ def print_delta_tables(
         warning_results=warning_results
     )
 
-    # 3. 🚀 Thiết lập lệnh tự động: ƯU TIÊN nhóm BUY_READY (BÁO GOM ĐÓN BỨT PHÁ) từ Radar
-    buy_ready_targets = [r for r in radar_candidates if r.get('action_group') == "BUY_READY"]
-    other_radar = [r for r in radar_candidates if r.get('action_group') != "BUY_READY"]
-
-    # Ưu tiên các mã đang ở Vùng gom tối ưu đón bứt phá (như CRV, ARB, NIL) lên hàng đầu
-    targets_for_orders = (buy_ready_targets + other_radar) if radar_candidates else top_gainers
-    top_3_targets = targets_for_orders[:3] if targets_for_orders else []
-    if top_3_targets:
-        try:
-            from core.historical_rater import calculate_tier_s_setups
-        except Exception:
-            calculate_tier_s_setups = None
-
-        if calculate_tier_s_setups:
-            has_buy_ready = any(item.get("action_group") == "BUY_READY" for item in top_3_targets)
-            if has_buy_ready:
-                title_orders = f"\n🚀 THIẾT LẬP LỆNH CHO TOP 3 MÃ BÁO GOM ĐÓN BỨT PHÁ (VÙNG GOM TỐI ƯU) [{len(top_3_targets)} mã]:"
-            else:
-                title_orders = f"\n🚀 THIẾT LẬP LỆNH CHO TOP 3 MÃ BỨT PHÁ NHIỀU NHẤT (DÒNG TIỀN GIA TỐC) [{len(top_3_targets)} mã]:"
-            print(title_orders)
-            for item in top_3_targets:
-                sym = item["symbol"]
-                setups = calculate_tier_s_setups(sym)
-                if setups:
-                    score_val = item.get("decay_score", item.get("current", 0.0))
-                    tier_str = item.get("tier", "")
-                    rec = item.get("action_recommendation")
-                    if not rec:
-                        if item.get("action_group") == "BUY_READY":
-                            rec = "🟢 BÁO GOM ĐÓN BỨT PHÁ (Ưu tiên Grid +8% / -12%)"
-                        elif "Tier S" in tier_str or score_val >= 80.0:
-                            rec = "🟢 DUYỆT TỰ ĐỘNG (Đánh Full Volume)"
-                        elif "Tier A" in tier_str or score_val >= 60.0:
-                            rec = "🟢 DUYỆT TỰ ĐỘNG (Cấu trúc ổn định)"
-                        elif "Tier B" in tier_str or score_val >= 40.0:
-                            rec = "🟠 ĐÁNH 30% VOL (Bắt Pullback hoặc ăn ngắn)"
-                        else:
-                            rec = "👀 THEO DÕI"
-
-                    print(f"  ⭐ {sym} ({score_val:.1f}đ - {tier_str}) - Khuyến nghị: {rec}")
-                    if setups.get("oco"):
-                        print(f"     ↳ {setups['oco']}")
-                    if setups.get("grid_tp2"):
-                        line_tp2 = setups['grid_tp2'].strip()
-                        if line_tp2.startswith("↳"):
-                            line_tp2 = line_tp2[1:].strip()
-                        print(f"     ↳ {line_tp2}")
-                    if setups.get("wide_grid"):
-                        line_wg = setups['wide_grid'].strip()
-                        if line_wg.startswith("↳"):
-                            line_wg = line_wg[1:].strip()
-                        print(f"     ↳ {line_wg}")
-
-            # In Bảng thông số Grid gom hàng chuẩn hình học (+8% / -12%) cho nhóm BUY_READY
-            buy_ready_items = [item for item in top_3_targets if item.get("action_group") == "BUY_READY"]
-            if buy_ready_items:
-                print("\n📋 BẢNG THÔNG SỐ GRID GOM HÀNG CHUẨN HÌNH HỌC (+8% / -12%) (CÀI ĐẶT SPOT GRID):")
-                print("-" * sep_width)
-                grid_fmt_hdr = f"{'Mã Cặp':<12} | {'Dải Lưới & Số Lưới':<38} | {'Trig (Trigger)':<18} | {'SL (Stop-Loss)':<18} | {'TP (Take-Profit)':<18} | {'Biên Độ/Lưới'}"
-                print(grid_fmt_hdr)
-                print("-" * sep_width)
-                for b_item in buy_ready_items:
-                    b_sym = b_item["symbol"]
-                    b_trig = float(b_item.get("ref_buy", 0.0))
-                    if b_trig > 0:
-                        b_low = b_trig * 0.90
-                        b_up = b_trig * 1.20
-                        b_sl = b_trig * 0.88
-                        grid_str = f"Dải L={_format_price(b_low)} - U={_format_price(b_up)} (24 Lưới)"
-                        print(f"{b_sym + '/USDT':<12} | {grid_str:<38} | {_format_price(b_trig):<18} | {_format_price(b_sl):<18} | {_format_price(b_up):<18} | ~1.04%")
-                print("-" * sep_width)
-            print("=" * sep_width)
+    # 3. 📋 BẢNG THÔNG SỐ GRID GOM HÀNG CHUẨN HÌNH HỌC (+8% / -12%) (CÀI ĐẶT SPOT GRID)
+    buy_ready_items = [r for r in radar_candidates if r.get('action_group') == "BUY_READY"]
+    if buy_ready_items:
+        print("\n📋 BẢNG THÔNG SỐ GRID GOM HÀNG CHUẨN HÌNH HỌC (+8% / -12%) (CÀI ĐẶT SPOT GRID):")
+        print("-" * sep_width)
+        grid_fmt_hdr = f"{'Mã Cặp':<12} | {'Dải Lưới & Số Lưới':<38} | {'Trig (Trigger)':<18} | {'SL (Stop-Loss)':<18} | {'TP (Take-Profit)':<18} | {'Biên Độ/Lưới'}"
+        print(grid_fmt_hdr)
+        print("-" * sep_width)
+        for b_item in buy_ready_items:
+            b_sym = b_item["symbol"]
+            b_trig = float(b_item.get("ref_buy", 0.0))
+            if b_trig > 0:
+                b_low = b_trig * 0.90
+                b_up = b_trig * 1.20
+                b_sl = b_trig * 0.88
+                grid_str = f"Dải L={_format_price(b_low)} - U={_format_price(b_up)} (24 Lưới)"
+                print(f"{b_sym + '/USDT':<12} | {grid_str:<38} | {_format_price(b_trig):<18} | {_format_price(b_sl):<18} | {_format_price(b_up):<18} | ~1.04%")
+        print("-" * sep_width)
+        print("=" * sep_width)
     print("\n")
 
 
