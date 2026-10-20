@@ -616,7 +616,13 @@ def main():
                         try:
                             from trust_history import record_and_analyze, print_delta_tables
                             top_gainers, top_losers = record_and_analyze(_v2_profiles, keep_snapshots=24)
-                            print_delta_tables(top_gainers, top_losers)
+                            print_delta_tables(
+                                top_gainers,
+                                top_losers,
+                                live_data_map=locals().get('live_data_map'),
+                                df_summary=locals().get('df_summary'),
+                                global_signals_pool=_renderer.signals_pool if _renderer else None
+                            )
                         except Exception as err:
                             import logging
                             logging.getLogger("CN4-Controller").error(f"Lỗi phân tích Trust History (Multi-Day Delta Audit): {err}", exc_info=True)
