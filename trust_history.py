@@ -99,13 +99,18 @@ def extract_buy_zone_and_action(
     delta_72h: float,
     df_summary: Optional[Any] = None,
     global_signals_pool: Optional[List[Any]] = None
-) -> Tuple[str, str, str, float, str, Optional[float]]:
+) -> Tuple[str, str, str, float, str, Optional[float], float]:
     """
     Trích xuất vùng giá đón gom, xác định trạng thái hành động và động cơ cốt lõi nổi bật
     dựa trên PRD PRE-BREAKOUT RADAR.
     """
     sym = str(item.get("symbol", "")).upper().replace("/USDT", "").replace("USDT", "").strip()
-    p_live = float(getattr(state, "last_price", 0.0) or 0.0)
+    p_live = 0.0
+    if state is not None:
+        if isinstance(state, dict):
+            p_live = float(state.get("last_price") or state.get("close") or 0.0)
+        else:
+            p_live = float(getattr(state, "last_price", 0.0) or getattr(state, "close", 0.0) or 0.0)
     macro = getattr(state, "macro_levels", None)
 
     ma7_3d = None
@@ -285,7 +290,7 @@ def extract_buy_zone_and_action(
         action_status = "🟡 THEO DÕI NỀN"
         action_group = "WATCH"
 
-    return buy_zone, action_status, action_group, ref_buy, highlight_engine, swing_high
+    return buy_zone, action_status, action_group, ref_buy, highlight_engine, swing_high, p_live
 
 
 def render_pre_breakout_radar_table(
@@ -327,7 +332,7 @@ def render_pre_breakout_radar_table(
                 or live_data_map.get(f"{sym}USDT")
             )
 
-        buy_zone, action_status, action_group, ref_buy, highlight_engine, swing_high = extract_buy_zone_and_action(
+        buy_zone, action_status, action_group, ref_buy, highlight_engine, swing_high, p_live = extract_buy_zone_and_action(
             state=state,
             item=item,
             delta_24h=d24,
@@ -348,7 +353,8 @@ def render_pre_breakout_radar_table(
             "action_group": action_group,
             "ref_buy": ref_buy,
             "highlight_engine": highlight_engine,
-            "swing_high": swing_high
+            "swing_high": swing_high,
+            "live_price": p_live
         })
 
     sep_width = 145
@@ -749,18 +755,52 @@ def print_delta_tables(
     if buy_ready_items:
         print("\n📋 BẢNG THÔNG SỐ GRID GOM HÀNG CHUẨN HÌNH HỌC (+8% / -12%) (CÀI ĐẶT SPOT GRID):")
         print("-" * sep_width)
-        grid_fmt_hdr = f"{'Mã Cặp':<12} | {'Dải Lưới & Số Lưới':<38} | {'Trig (Trigger)':<18} | {'SL (Stop-Loss)':<18} | {'TP (Take-Profit)':<18} | {'Biên Độ/Lưới'}"
+        grid_fmt_hdr = f"{'Mã Cặp':<12} | {'Giá Live (% giảm)':<22} | {'Dải Lưới & Số Lưới':<38} | {'Trig (Trigger)':<18} | {'SL (Stop-Loss)':<18} | {'TP (Take-Profit)':<18} | {'Biên Độ/Lưới'}"
         print(grid_fmt_hdr)
         print("-" * sep_width)
         for b_item in buy_ready_items:
             b_sym = b_item["symbol"]
             b_trig = float(b_item.get("ref_buy", 0.0))
             if b_trig > 0:
+                p_live = float(b_item.get("live_price", 0.0) or 0.0)
+                if p_live <= 0 and live_data_map:
+                    st = live_data_map.get(b_sym) or live_data_map.get(f"{b_sym}/USDT") or live_data_map.get(f"{b_sym}USDT")
+                    if st:
+                        p_live = float(st.get("last_price") or st.get("close") or 0.0) if isinstance(st, dict) else float(getattr(st, "last_price", 0.0) or getattr(st, "close", 0.0) or 0.0)
+                if p_live <= 0:
+                    try:
+                        from core.cache_service import CacheService
+                        ldm = CacheService().get_live_data_map()
+                        if ldm:
+                            st = ldm.get(b_sym) or ldm.get(f"{b_sym}USDT") or ldm.get(f"{b_sym}/USDT")
+                            if st and isinstance(st, dict):
+                                p_live = float(st.get("last_price") or st.get("close") or 0.0)
+                    except Exception:
+                        pass
+                if p_live <= 0:
+                    try:
+                        from core.macro_levels import get_3d_profile
+                        d3 = get_3d_profile(b_sym)
+                        if d3:
+                            raw_ind = d3.get("_raw") or {}
+                            p_live = float(raw_ind.get("close_3d", 0.0) or d3.get("close", 0.0) or 0.0)
+                    except Exception:
+                        pass
+
+                if p_live > 0:
+                    pct_drop = ((b_trig - p_live) / p_live) * 100
+                    if pct_drop < 0:
+                        live_str = f"{_format_price(p_live)} ({pct_drop:.1f}%)"
+                    else:
+                        live_str = f"{_format_price(p_live)} (0.0%)"
+                else:
+                    live_str = "-"
+
                 b_low = b_trig * 0.90
                 b_up = b_trig * 1.20
                 b_sl = b_trig * 0.88
                 grid_str = f"Dải L={_format_price(b_low)} - U={_format_price(b_up)} (24 Lưới)"
-                print(f"{b_sym + '/USDT':<12} | {grid_str:<38} | {_format_price(b_trig):<18} | {_format_price(b_sl):<18} | {_format_price(b_up):<18} | ~1.04%")
+                print(f"{b_sym + '/USDT':<12} | {live_str:<22} | {grid_str:<38} | {_format_price(b_trig):<18} | {_format_price(b_sl):<18} | {_format_price(b_up):<18} | ~1.04%")
         print("-" * sep_width)
         print("=" * sep_width)
     print("\n")
