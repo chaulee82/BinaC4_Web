@@ -168,15 +168,16 @@ def calculate_waterfall_tp(
        min_tp = entry + (entry - safe_sl) * min_rr
        (Ranh giới 'không ăn non').
 
-    2. Bước 2: Thu thập tất cả Ứng viên TP (TP Candidates):
-       - Kháng cự kỹ thuật: tp_1h, tp_4h, boll_up_3d
-       - Kháng cự động cơ gốc: raw_tp
-       - Các mốc tâm lý tròn số (Psychological Levels)
+    2. Bước 2: Tôn trọng tuyệt đối Động cơ gốc (Macro TP / Đỉnh hộp Darvas):
+       NẾU raw_tp >= min_tp:
+       -> GIỮ NGUYÊN 100% target tự nhiên của Động cơ (như mã S, ALT, PHA ăn siêu sóng),
+          TUYỆT ĐỐI KHÔNG GỌT TRẦN!
 
-    3. Bước 3: Bộ Lọc Lựa Chọn (Selection Filter):
-       - Lọc bỏ tất cả các ứng viên < min_tp (để tránh R:R kém)
-       - Trong số ứng viên còn lại, CHỌN MỐC THẤP NHẤT / GẦN NHẤT.
-       - Nếu không có ứng viên nào hợp lệ: Fallback chọn min_tp.
+    3. Bước 3: Bộ Lọc Thác Nước (khi raw_tp bị ăn non hoặc khuyết thiếu):
+       NẾU raw_tp < min_tp:
+       - Thu thập ứng viên: Kháng cự kỹ thuật (1H, 4H, Boll Up 3D) và Mốc tâm lý tròn số >= min_tp.
+       - CHỌN MỐC THẤP NHẤT / GẦN NHẤT để nâng vị thế lên tỷ lệ R:R an toàn khả thi nhất.
+       - Fallback: min_tp nếu không có ứng viên nào.
     """
     if entry <= 0 or safe_sl <= 0 or safe_sl >= entry:
         return raw_tp, "Gốc", {}
@@ -184,11 +185,17 @@ def calculate_waterfall_tp(
     risk = entry - safe_sl
     min_tp = entry + (risk * min_rr)
 
-    candidates: Dict[str, float] = {}
+    # 1. TÔN TRỌNG TUYỆT ĐỐI ĐỘNG CƠ GỐC NẾU ĐÃ ĐẠT CHUẨN R:R >= MIN_RR
+    # Tránh làm đổ sông đổ bể nỗ lực đo lường sóng Darvas / Bollinger Bands vĩ mô của Động cơ
+    if raw_tp and raw_tp >= min_tp - 1e-8:
+        return raw_tp, "Động cơ gốc (Macro TP)", {
+            "min_tp": min_tp,
+            "source": "Động cơ gốc (Macro TP)",
+            "raw_tp": raw_tp
+        }
 
-    # Kháng cự động cơ gốc
-    if raw_tp and raw_tp > entry:
-        candidates["raw_tp"] = raw_tp
+    # 2. Thu thập ứng viên khi raw_tp bị ăn non (< min_tp) hoặc khuyết thiếu
+    candidates: Dict[str, float] = {}
 
     # Kháng cự kỹ thuật (1H, 4H, Boll Up 3D)
     tech_res = get_technical_resistances(symbol)
@@ -207,9 +214,7 @@ def calculate_waterfall_tp(
     if valid_candidates:
         best_k = min(valid_candidates, key=lambda k: valid_candidates[k])
         chosen_tp = valid_candidates[best_k]
-        if best_k == "raw_tp":
-            source_desc = "Kháng cự gốc"
-        elif best_k == "boll_up_3d":
+        if best_k == "boll_up_3d":
             source_desc = "Cản Boll Up 3D"
         elif best_k == "tp_4h":
             source_desc = "Đỉnh 4H"
