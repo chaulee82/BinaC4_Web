@@ -26,23 +26,51 @@ def calculate_tier_s_setups(symbol: str):
     if close <= 0:
         return None
 
-    # 1. OCO Setup (Spot Swing)
-    # Entry: quanh MA7 3D (đón nhúng) hoặc sát giá hiện tại
-    entry = min(close, max(ma7 * 1.01, close * 0.98)) if ma7 > 0 else close
-    sl = ma7 * 0.96 if ma7 > 0 else entry * 0.95
-    tp = boll_up if boll_up > entry * 1.05 else entry * 1.15
-    sl_pct = (entry - sl) / entry * 100 if entry > 0 else 0
-    tp_pct = (tp - entry) / entry * 100 if entry > 0 else 0
-    rr = tp_pct / sl_pct if sl_pct > 0 else 2.5
+    # 1. OCO Setup (Spot Scalp / Momentum 15M)
+    from core.klines_cache import get_klines_cached
+    sym_api = f"{symbol}USDT" if not symbol.endswith("USDT") else symbol
+
+    entry = close
+    sl = None
+
+    df_15m = None
+    try:
+        df_15m = get_klines_cached(sym_api, "15m", limit=30)
+    except Exception:
+        pass
+
+    if df_15m is not None and not df_15m.empty and len(df_15m) >= 10:
+        low_col = 'Low' if 'Low' in df_15m.columns else 'low'
+        recent_low = float(df_15m[low_col].iloc[-10:].min())
+        sl_cand = recent_low * 0.995  # trừ 0.5% buffer né quét râu
+        dist_pct = (entry - sl_cand) / entry * 100.0
+
+        if 2.5 <= dist_pct <= 5.0:
+            sl = sl_cand
+        elif dist_pct > 5.0:
+            sl = entry * 0.955
+        else:
+            sl = entry * 0.975
+    
+    if sl is None or sl <= 0 or sl >= entry:
+        sl = entry * 0.96
+
+    sl_pct = (entry - sl) / entry * 100.0
+    min_tp_rr2 = entry * (1.0 + (sl_pct * 2.0) / 100.0)
+    tp = boll_up if boll_up >= min_tp_rr2 else min_tp_rr2
+
+    tp_pct = (tp - entry) / entry * 100.0
+    rr = tp_pct / sl_pct if sl_pct > 0 else 2.0
     oco_line = f"⚙️ SETUP OCO: Buy={f(entry)} | SL={f(sl)}(-{sl_pct:.1f}%) | TP={f(tp)}(+{tp_pct:.1f}%) | R:R=1:{rr:.1f}"
 
     # 2. Grid TP2
+    tp_grid = max(boll_up, entry * 1.20)
     grid_payload = build_macro_grid_payload(
         symbol=symbol,
         entry=entry,
         sl_short=sl,
-        tp_target=tp,
-        macro_sl=sl * 0.96,
+        tp_target=tp_grid,
+        macro_sl=ma7 * 0.96 if ma7 > 0 else sl * 0.95,
         tick_size=tick_size
     )
     grid_line = grid_payload["display_line"].strip() if grid_payload else ""

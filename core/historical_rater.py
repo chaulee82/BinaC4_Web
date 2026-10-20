@@ -969,23 +969,59 @@ def calculate_tier_s_setups(symbol: str) -> Optional[Dict[str, Any]]:
         if close <= 0:
             return None
 
-        # 1. OCO Setup (Spot Swing)
-        # Entry: quanh MA7 3D (đón nhúng) hoặc sát giá hiện tại
-        entry = min(close, max(ma7 * 1.01, close * 0.98)) if ma7 > 0 else close
-        sl = ma7 * 0.96 if ma7 > 0 else entry * 0.95
-        tp = boll_up if boll_up > entry * 1.05 else entry * 1.15
-        sl_pct = (entry - sl) / entry * 100 if entry > 0 else 0
-        tp_pct = (tp - entry) / entry * 100 if entry > 0 else 0
-        rr = tp_pct / sl_pct if sl_pct > 0 else 2.5
+        # 1. OCO Setup (Spot Scalp / Momentum 15M)
+        # Thay vì lấy nhầm SL/TP vĩ mô của khung 3D (dẫn đến SL -15% ~ -26%, TP +6.5%, R:R đảo ngược),
+        # OCO lướt sóng phải dựa trên nến 15M (Swing Low gần nhất) hoặc biên độ chuẩn (SL -3.5% ~ -4.5%, R:R >= 1:2.0).
+        from core.klines_cache import get_klines_cached
+        sym_api = f"{symbol}USDT" if not symbol.endswith("USDT") else symbol
+
+        entry = close
+        sl = None
+
+        df_15m = None
+        try:
+            df_15m = get_klines_cached(sym_api, "15m", limit=30)
+        except Exception:
+            pass
+
+        if df_15m is not None and not df_15m.empty and len(df_15m) >= 10:
+            low_col = 'Low' if 'Low' in df_15m.columns else 'low'
+            recent_low = float(df_15m[low_col].iloc[-10:].min())
+            sl_cand = recent_low * 0.995  # trừ 0.5% buffer né quét râu
+            dist_pct = (entry - sl_cand) / entry * 100.0
+
+            # Capping an toàn: SL lệnh lướt sóng dao động trong vùng 2.5% <= SL <= 5.0%
+            if 2.5 <= dist_pct <= 5.0:
+                sl = sl_cand
+            elif dist_pct > 5.0:
+                sl = entry * 0.955  # Khống chế tối đa SL = -4.5%
+            else:
+                sl = entry * 0.975  # Cắt lỗ tối thiểu 2.5% né noise
+        
+        if sl is None or sl <= 0 or sl >= entry:
+            # Fallback nếu không có nến 15m: SL chuẩn -4.0%
+            sl = entry * 0.96
+
+        sl_pct = (entry - sl) / entry * 100.0
+
+        # Chốt lời TP: Đảm bảo tỷ lệ R:R tối thiểu 1:2.0
+        min_tp_rr2 = entry * (1.0 + (sl_pct * 2.0) / 100.0)
+        # Nếu cản boll_up 3D cao hơn mốc R:R 1:2 thì lấy boll_up làm mục tiêu lớn, ngược lại khóa R:R = 1:2.0
+        tp = boll_up if boll_up >= min_tp_rr2 else min_tp_rr2
+
+        tp_pct = (tp - entry) / entry * 100.0
+        rr = tp_pct / sl_pct if sl_pct > 0 else 2.0
         oco_line = f"⚙️ SETUP OCO: Buy={f(entry)} | SL={f(sl)}(-{sl_pct:.1f}%) | TP={f(tp)}(+{tp_pct:.1f}%) | R:R=1:{rr:.1f}"
 
         # 2. Grid TP2
+        # Cận trên lưới TP2 tối thiểu +20%
+        tp_grid = max(boll_up, entry * 1.20)
         grid_payload = build_macro_grid_payload(
             symbol=symbol,
             entry=entry,
             sl_short=sl,
-            tp_target=tp,
-            macro_sl=sl * 0.96,
+            tp_target=tp_grid,
+            macro_sl=ma7 * 0.96 if ma7 > 0 else sl * 0.95,
             tick_size=tick_size
         )
         grid_line = grid_payload["display_line"].strip() if grid_payload else ""
@@ -1020,7 +1056,6 @@ def render_profiles_table(
     """
     In bảng hiển thị V2.0:
     - Bảng chi tiết: Các mã đạt chuẩn giao dịch (Tier S, Tier A, Tier B - Điểm >= 40.0).
-    - Thiết lập lệnh Tier S: Tính và in chi tiết OCO, Grid TP2, Wide Grid 3D cho các mã Tier S (Kim Cương).
     - Danh sách rút gọn: Liệt kê các mã Tier C (25–39đ) và Tier F (< 25đ) cách nhau bằng dấu phẩy.
     """
     # 📅 Xác định khoảng ngày dữ liệu (từ...đến...) để người dùng nhận diện data mới hay cũ
@@ -1096,32 +1131,6 @@ def render_profiles_table(
         )
         print(row_str)
     print(sep)
-
-    # 💎 Thiết lập lệnh tự động cho các mã đạt Tier S (Kim Cương) (giới hạn tối đa Top 3 mã điểm cao nhất)
-    tier_s_profiles = [p for p in display_profiles if "Tier S" in p.get("tier", "")]
-    if tier_s_profiles:
-        top_tier_s = tier_s_profiles[:3]
-        total_s_count = len(tier_s_profiles)
-        limit_str = f" [Top 3/{total_s_count} mã]" if total_s_count > 3 else f" [{total_s_count} mã]"
-        print(f"\n💎 THIẾT LẬP LỆNH CHO CÁC MÃ ĐẠT TIÊU CHUẨN TIER S (KIM CƯƠNG){limit_str}:")
-        for sp in top_tier_s:
-            sym = sp["symbol"]
-            setups = calculate_tier_s_setups(sym)
-            if setups:
-                print(f"  ⭐ {sym} ({sp['total_score']:.1f}đ - {sp['tier']}) - Khuyến nghị: {sp.get('action_recommendation', 'Đánh Full Volume')}")
-                if setups.get("oco"):
-                    print(f"     ↳ {setups['oco']}")
-                if setups.get("grid_tp2"):
-                    line_tp2 = setups['grid_tp2'].strip()
-                    if line_tp2.startswith("↳"):
-                        line_tp2 = line_tp2[1:].strip()
-                    print(f"     ↳ {line_tp2}")
-                if setups.get("wide_grid"):
-                    line_wg = setups['wide_grid'].strip()
-                    if line_wg.startswith("↳"):
-                        line_wg = line_wg[1:].strip()
-                    print(f"     ↳ {line_wg}")
-        print(sep)
 
     if tier_c_symbols:
         c_str = ", ".join(tier_c_symbols)
