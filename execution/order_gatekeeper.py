@@ -13,6 +13,7 @@ Module Bảng Duyệt Lệnh Tối Ưu (Optimized Gatekeeper).
 
 import re
 import sys
+import math
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -73,6 +74,161 @@ ENGINE_LABELS = {
     "DC4": "DC4 (Đu Trend - Hot Trend)",
     "DC5": "DC5 (Nén Vol Chờ Nổ)",
 }
+
+
+# ── THUẬT TOÁN THÁC NƯỚC KHÁNG CỰ & MỐC TÂM LÝ ───────────────────────────────
+
+def get_psychological_levels(entry: float, max_ratio: float = 2.5) -> List[float]:
+    """
+    Sinh các mốc tâm lý số tròn (Psychological Levels) cao hơn entry dựa trên thị giá.
+    Ví dụ:
+    - entry = 0.0088 -> [0.0090, 0.0095, 0.0100, 0.0105, 0.0110, 0.0120, 0.0150, 0.0200]
+    - entry = 0.36   -> [0.40, 0.45, 0.50, 0.55, 0.60, 0.70, 0.75, 0.80, 0.90, 1.00]
+    - entry = 8.53   -> [9.0, 9.5, 10.0, 10.5, 11.0, 12.0, 15.0]
+    """
+    if entry <= 0:
+        return []
+    levels = set()
+    upper_bound = entry * max_ratio
+    mag_order = math.floor(math.log10(entry))
+    base_mag = 10 ** mag_order
+
+    steps = [base_mag * 0.5, base_mag * 1.0, base_mag * 2.0, base_mag * 5.0, base_mag * 10.0]
+    for step in steps:
+        if step <= 0:
+            continue
+        start_k = math.ceil(entry / step)
+        for k in range(start_k, start_k + 20):
+            val = round(k * step, 8)
+            if entry < val <= upper_bound:
+                levels.add(val)
+            elif val > upper_bound:
+                break
+    return sorted(levels)
+
+
+def get_technical_resistances(symbol: str) -> Dict[str, float]:
+    """
+    Thu thập các mức kháng cự kỹ thuật: tp_1h, tp_4h, boll_up_3d
+    từ cache klines và macro 3D profile.
+    """
+    res = {}
+    sym_clean = (symbol or "").upper().replace("/USDT", "").replace("USDT", "").strip()
+    if not sym_clean:
+        return res
+    sym_api = f"{sym_clean}USDT"
+
+    # 1. boll_up_3d
+    try:
+        from core.macro_levels import get_3d_profile
+        d3 = get_3d_profile(sym_clean)
+        if d3:
+            raw = d3.get('_raw') or {}
+            boll_up_3d = float(raw.get('boll_up_3d', 0.0) or d3.get('boll_up_3d', 0.0) or 0.0)
+            if boll_up_3d > 0:
+                res['boll_up_3d'] = boll_up_3d
+    except Exception:
+        pass
+
+    # 2. tp_1h & tp_4h
+    try:
+        from core.klines_cache import get_klines_cached
+        # Kháng cự 1H: Đỉnh 24 nến 1H gần nhất
+        df_1h = get_klines_cached(sym_api, "1h", limit=48)
+        if df_1h is not None and not df_1h.empty:
+            high_col = 'High' if 'High' in df_1h.columns else 'high'
+            tp_1h = float(df_1h[high_col].iloc[-24:].max())
+            if tp_1h > 0:
+                res['tp_1h'] = tp_1h
+
+        # Kháng cự 4H: Đỉnh 18 nến 4H gần nhất (3 ngày)
+        df_4h = get_klines_cached(sym_api, "4h", limit=30)
+        if df_4h is not None and not df_4h.empty:
+            high_col = 'High' if 'High' in df_4h.columns else 'high'
+            tp_4h = float(df_4h[high_col].iloc[-18:].max())
+            if tp_4h > 0:
+                res['tp_4h'] = tp_4h
+    except Exception:
+        pass
+
+    return res
+
+
+def calculate_waterfall_tp(
+    symbol: str,
+    entry: float,
+    safe_sl: float,
+    raw_tp: float,
+    min_rr: float = 2.0
+) -> Tuple[float, str, Dict[str, Any]]:
+    """
+    Thuật Toán Mới: "Thác Nước Kháng Cự & Mốc Tâm Lý" (Waterfall Resistance & Psychological Levels)
+
+    1. Bước 1: Xác định mức R:R tối thiểu (Min Target):
+       min_tp = entry + (entry - safe_sl) * min_rr
+       (Ranh giới 'không ăn non').
+
+    2. Bước 2: Thu thập tất cả Ứng viên TP (TP Candidates):
+       - Kháng cự kỹ thuật: tp_1h, tp_4h, boll_up_3d
+       - Kháng cự động cơ gốc: raw_tp
+       - Các mốc tâm lý tròn số (Psychological Levels)
+
+    3. Bước 3: Bộ Lọc Lựa Chọn (Selection Filter):
+       - Lọc bỏ tất cả các ứng viên < min_tp (để tránh R:R kém)
+       - Trong số ứng viên còn lại, CHỌN MỐC THẤP NHẤT / GẦN NHẤT.
+       - Nếu không có ứng viên nào hợp lệ: Fallback chọn min_tp.
+    """
+    if entry <= 0 or safe_sl <= 0 or safe_sl >= entry:
+        return raw_tp, "Gốc", {}
+
+    risk = entry - safe_sl
+    min_tp = entry + (risk * min_rr)
+
+    candidates: Dict[str, float] = {}
+
+    # Kháng cự động cơ gốc
+    if raw_tp and raw_tp > entry:
+        candidates["raw_tp"] = raw_tp
+
+    # Kháng cự kỹ thuật (1H, 4H, Boll Up 3D)
+    tech_res = get_technical_resistances(symbol)
+    for k, v in tech_res.items():
+        if v > entry:
+            candidates[k] = v
+
+    # Mốc tâm lý tròn số
+    psy_levels = get_psychological_levels(entry, max_ratio=2.5)
+    for p in psy_levels:
+        candidates[f"psy_{p}"] = p
+
+    # Lọc bỏ ứng viên < min_tp (trừ epsilon 1e-8 né sai số float)
+    valid_candidates = {k: v for k, v in candidates.items() if v >= min_tp - 1e-8}
+
+    if valid_candidates:
+        best_k = min(valid_candidates, key=lambda k: valid_candidates[k])
+        chosen_tp = valid_candidates[best_k]
+        if best_k == "raw_tp":
+            source_desc = "Kháng cự gốc"
+        elif best_k == "boll_up_3d":
+            source_desc = "Cản Boll Up 3D"
+        elif best_k == "tp_4h":
+            source_desc = "Đỉnh 4H"
+        elif best_k == "tp_1h":
+            source_desc = "Đỉnh 1H"
+        elif best_k.startswith("psy_"):
+            source_desc = f"Mốc tâm lý {chosen_tp}"
+        else:
+            source_desc = best_k
+    else:
+        chosen_tp = min_tp
+        source_desc = f"Sàn Min R:R 1:{min_rr:.1f}"
+
+    return chosen_tp, source_desc, {
+        "min_tp": min_tp,
+        "valid_count": len(valid_candidates),
+        "source": source_desc,
+        "best_key": best_k if valid_candidates else "fallback"
+    }
 
 
 def optimize_grid_tp2_geometry(
@@ -209,11 +365,18 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
             else:
                 safe_sl = raw_sl
                 sl_adjusted = False
-                
-            # 2. Realistic TP: Ép R:R tối đa về 1:2.0
+
             risk_amount = entry - safe_sl
-            realistic_tp = min(raw_tp, entry + (risk_amount * 2.0))
-            tp_adjusted = (realistic_tp < raw_tp - 1e-9)
+
+            # 2. Realistic TP: Thuật toán "Thác Nước Kháng Cự & Mốc Tâm Lý" (Waterfall Resistance & Psychological Levels)
+            realistic_tp, tp_source_desc, waterfall_meta = calculate_waterfall_tp(
+                symbol=symbol,
+                entry=entry,
+                safe_sl=safe_sl,
+                raw_tp=raw_tp,
+                min_rr=2.0
+            )
+            tp_adjusted = (abs(realistic_tp - raw_tp) > 1e-6)
 
             # 3. Nắn Bóp Hình Học GRID TP2 Dự Phòng (Grid TP2 Geometry Optimization)
             grid_tp2_opt = optimize_grid_tp2_geometry(order_copy, entry, safe_sl, realistic_tp)
@@ -222,15 +385,23 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
             reward_amount = realistic_tp - entry
             rr_val = round(reward_amount / risk_amount, 2) if risk_amount > 0 else 2.0
 
+            # Ghi chú hình học
+            note_parts = []
+            if sl_adjusted:
+                note_parts.append("Nới đệm SL (+1.5%)")
+            note_parts.append(f"TP: {tp_source_desc}")
+            geom_note = ", ".join(note_parts)
+
             # Cập nhật thông số
             order_copy.update({
                 'entry': entry,
                 'sl': round(safe_sl, 5),
                 'tp': round(realistic_tp, 5),
+                'tp_source': tp_source_desc,
                 'sl_adjusted': sl_adjusted,
                 'tp_adjusted': tp_adjusted,
                 'auto_breakeven': True,
-                'geometry_note': "Nới đệm SL (+1.5%), Bóp TP (Max R:R 1:2)",
+                'geometry_note': geom_note,
                 'grid_tp2': grid_tp2_opt,
                 'grid_tp2_optimized': grid_tp2_opt,
                 'rr_ratio': rr_val,
@@ -370,7 +541,7 @@ def render_gatekeeper_board(final_orders):
     print("=" * 100)
     print("🛡️ [MODULE BẢNG DUYỆT LỆNH TỐI ƯU] HÀNG ĐỢI THỰC THI (GIAI ĐOẠN 1)")
     print("=" * 100)
-    print("💡 Bộ lọc hình học: Đệm SL chống quét râu (1.5%), Max R:R 1:2.0, Bóp lưới Grid 15% rìa.")
+    print("💡 Bộ lọc hình học: Đệm SL chống quét râu (1.5%), Thác Nước Kháng Cự & Mốc Tâm Lý (Min R:R 1:2.0), Bóp lưới Grid 15% rìa.")
     print("🎯 Thứ tự ưu tiên: 1. Uy tín 14 ngày (Tier S > A > B) ➔ 2. Dòng tiền bạo phát ➔ 3. R:R tối ưu.\n")
 
     final_orders = final_orders or []

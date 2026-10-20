@@ -66,12 +66,12 @@ def test_spec_examples():
 
     final_orders = optimized_execution_geometry_module(sample_clean_orders)
     
-    # 1. Kiểm tra SAND/USDT
+    # 1. Kiểm tra SAND/USDT: Chọn mốc tâm lý gần nhất đạt chuẩn R:R >= 1:2.0 (0.06000)
     sand = final_orders[0]
     assert sand["status"] == "AUTO_EXECUTE", f"Expected AUTO_EXECUTE but got {sand['status']}"
     assert sand["volume_pct"] == 1.0
     assert abs(sand["sl"] - 0.05670) < 0.0001, f"Expected safe SL ~0.05670, got {sand['sl']}"
-    assert abs(sand["tp"] - 0.05931) < 0.0001, f"Expected safe TP ~0.05931, got {sand['tp']}"
+    assert abs(sand["tp"] - 0.06000) < 0.0001, f"Expected safe TP ~0.06000 (Mốc tâm lý), got {sand['tp']}"
     assert sand["auto_breakeven"] is True
     assert "grid_tp2_optimized" in sand, "sand phải có grid_tp2_optimized"
     sand_grid = sand["grid_tp2_optimized"]
@@ -89,12 +89,12 @@ def test_spec_examples():
     assert near["sl"] == round(near["entry"] * 0.88, 3)
     assert near["lower"] >= round(near["sl"] * 1.015, 3)
 
-    # 3. Kiểm tra TIA/USDT
+    # 3. Kiểm tra TIA/USDT: Chọn mốc tâm lý gần nhất đạt chuẩn R:R >= 1:2.0 (0.6500)
     tia = final_orders[3]
     assert tia["status"] == "MANUAL_APPROVAL", f"Expected MANUAL_APPROVAL but got {tia['status']}"
     assert tia["volume_pct"] == 0.3
     assert abs(tia["sl"] - 0.6189) < 0.001, f"Expected safe SL ~0.6189, got {tia['sl']}"
-    assert abs(tia["tp"] - 0.6474) < 0.001, f"Expected safe TP ~0.6474, got {tia['tp']}"
+    assert abs(tia["tp"] - 0.6500) < 0.001, f"Expected safe TP ~0.6500 (Mốc tâm lý), got {tia['tp']}"
 
     print("OUTPUT TERMINAL UI RENDERED:")
     render_gatekeeper_board(final_orders)
