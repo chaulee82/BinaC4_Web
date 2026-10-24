@@ -633,13 +633,21 @@ class HistoricalDataQuery:
         day_cash = max(0.0, min(20.0, cash_sum + pen))
         return day_base, day_push, day_cash
 
-    def query_14_day_profile(self, symbol: str, as_of_date: Optional[datetime] = None) -> Dict[str, Any]:
+    def query_14_day_profile(
+        self, 
+        symbol: str, 
+        as_of_date: Optional[datetime] = None,
+        warning_info: Optional[Dict[str, Any]] = None,
+        reb_info: Optional[Dict[str, Any]] = None,
+        downgrade_info: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Truy vấn dữ liệu 4 ngày gần nhất của 1 mã theo chuẩn V2.0 (Hỗ trợ quét 30 phút/phiên).
-        Chuẩn hóa 3 lớp:
+        Chuẩn hóa 4 lớp:
         - Lớp I: SQL Aggregation Layer (AVG mong_score, MAX day_score, MAX tien_score).
         - Lớp II: Date Alignment Layer (Ép chính xác 4 ngày dương lịch T0..T3, rớt top gán 0.0).
         - Lớp III: Toán tử Tính Điểm (Aggressive Decay & Cashflow Multiplier).
+        - Lớp IV: Ma Trận Phạt Điểm Vĩ Mô V2.0 (Dynamic Macro Penalty Matrix: Downgrade 1 Tier).
         """
         clean_sym = symbol.replace('/USDT', '').replace('USDT', '').strip()
         ref_dt = as_of_date or datetime.now()
@@ -730,13 +738,71 @@ class HistoricalDataQuery:
 
         # Total Cap: 100.0
         raw_total = (diem_mong + diem_day + diem_tien) * multiplier
-        final_rating = round(min(100.0, max(0.0, raw_total)), 2)
+
+        # ═════════════════════════════════════════════════════════════════════
+        # LỚP IV: MA TRẬN PHẠT ĐIỂM VĨ MÔ V2.0 (DYNAMIC MACRO PENALTY MATRIX)
+        # ═════════════════════════════════════════════════════════════════════
+        # Tính delta 24h và delta 72h dựa trên mảng 4 ngày
+        m0 = history_mong[0] if len(history_mong) > 0 else 0.0
+        m1 = history_mong[1] if len(history_mong) > 1 else 0.0
+        m3 = history_mong[3] if len(history_mong) > 3 else 0.0
+
+        d0 = history_day[0] if len(history_day) > 0 else 0.0
+        d1 = history_day[1] if len(history_day) > 1 else 0.0
+        d3 = history_day[3] if len(history_day) > 3 else 0.0
+
+        t0 = history_tien[0] if len(history_tien) > 0 else 0.0
+        t1 = history_tien[1] if len(history_tien) > 1 else 0.0
+        t3 = history_tien[3] if len(history_tien) > 3 else 0.0
+
+        raw0 = m0 + d0 + t0
+        raw1 = m1 + d1 + t1
+        raw3 = m3 + d3 + t3
+        d24 = round(raw0 - raw1, 1)
+        d72 = round(raw0 - raw3, 1)
+
+        macro_penalties = []
+        total_penalty = 0.0
+
+        # 1. Bảng Cảnh Báo Sớm: Cấp 3 Khẩn Cấp (Gãy ST 1D) -> Phạt -12.0đ
+        if warning_info:
+            w_lvl = int(warning_info.get('level', 0) or 0)
+            w_lbl = str(warning_info.get('label', '') or '')
+            if w_lvl == 3 or "CẤP 3" in w_lbl:
+                macro_penalties.append(("💀 Gãy ST 1D", 12.0))
+                total_penalty += 12.0
+
+        # 2. Bảng Suy Giảm: Cấp 1 (-15.0đ) hoặc Cấp 2 (-8.0đ) (Loại trừ nội bộ)
+        dg_lvl = str((downgrade_info or {}).get('level', '') or '').upper()
+        if d72 <= -20.0 or d24 <= -15.0 or dg_lvl == "CAP_1":
+            macro_penalties.append(("🔴 Xả Dốc C1", 15.0))
+            total_penalty += 15.0
+        elif d24 <= -8.0 or d72 <= -10.0 or dg_lvl == "CAP_2":
+            macro_penalties.append(("🟠 Suy Yếu C2", 8.0))
+            total_penalty += 8.0
+
+        # 3. Bảng Rebalance: ⛔ NÉ GRID -> Phạt -10.0đ
+        if reb_info:
+            g_stat = str(reb_info.get('status', '') or '')
+            if "NÉ GRID" in g_stat:
+                macro_penalties.append(("⛔ Né Grid", 10.0))
+                total_penalty += 10.0
+
+        # 4. Bảng Rebalance: ⚠️ RSI 1H Quá Mua (>= 75.0) -> Phạt -5.0đ
+        if reb_info:
+            rsi_val = float(reb_info.get('rsi_1h', 0.0) or 0.0)
+            if rsi_val >= 75.0:
+                macro_penalties.append(("⚠️ RSI>75", 5.0))
+                total_penalty += 5.0
+
+        # Áp dụng khấu trừ trực tiếp vào Tổng Điểm
+        final_rating = round(max(0.0, min(100.0, raw_total - total_penalty)), 2)
         tier, action = self._determine_tier(final_rating, diem_mong)
 
         is_live = bool(target_dates[0] in daily_agg and (history_mong[0] > 0 or history_day[0] > 0 or history_tien[0] > 0))
 
         # ═════════════════════════════════════════════════════════════════════
-        # LỚP IV: TRÍCH XUẤT THÀNH PHẦN MÓNG T-0 CHO BẢNG HIỂN THỊ
+        # LỚP V: TRÍCH XUẤT THÀNH PHẦN MÓNG T-0 CHO BẢNG HIỂN THỊ
         # ═════════════════════════════════════════════════════════════════════
         t0_components = {}
         with self._get_connection() as conn:
@@ -785,14 +851,24 @@ class HistoricalDataQuery:
                         'optimal_confluence': 0.0
                     }
 
+        penalty_tags = [
+            f"{tag} (-{pts:.0f}đ)" if (pts % 1 == 0) else f"{tag} (-{pts:.1f}đ)"
+            for tag, pts in macro_penalties
+        ]
+
         return {
             "symbol": clean_sym,
+            "raw_score": round(raw_total, 2),
+            "macro_penalty": round(total_penalty, 1),
+            "penalty_tags": penalty_tags,
             "total_score": final_rating,
             "tier": tier,
             "action_recommendation": action,
             "multiplier": multiplier,
             "target_dates": target_dates,
             "is_live": is_live,
+            "delta_24h": d24,
+            "delta_72h": d72,
             "breakdown": {
                 "foundation_40": diem_mong,
                 "momentum_40": diem_day,
@@ -822,10 +898,15 @@ class HistoricalDataQuery:
     def _format_empty_profile(self, symbol: str) -> Dict[str, Any]:
         return {
             "symbol": symbol,
+            "raw_score": 0.0,
+            "macro_penalty": 0.0,
+            "penalty_tags": [],
             "total_score": 0.0,
             "tier": "Unknown",
             "action_recommendation": "⛔ TỪ CHỐI (Không có dữ liệu)",
             "multiplier": 1.0,
+            "delta_24h": 0.0,
+            "delta_72h": 0.0,
             "breakdown": {
                 "foundation_40": 0.0,
                 "momentum_40": 0.0,
@@ -837,9 +918,16 @@ class HistoricalDataQuery:
             }
         }
 
-    def query_all_14_day_profiles(self, as_of_date: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    def query_all_14_day_profiles(
+        self, 
+        as_of_date: Optional[datetime] = None,
+        warning_map: Optional[Dict[str, Any]] = None,
+        reb_map: Optional[Dict[str, Any]] = None,
+        downgrade_map: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
         """
         Truy vấn toàn bộ các mã có dữ liệu, sắp xếp theo điểm tín nhiệm giảm dần.
+        Hỗ trợ nạp ma trận cảnh báo vĩ mô thời gian thực (warning_map, reb_map, downgrade_map).
         """
         ref_date = as_of_date or datetime.now()
         fourteen_days_ago = (ref_date - timedelta(days=14)).strftime('%Y-%m-%d')
@@ -865,7 +953,16 @@ class HistoricalDataQuery:
                     if r[0] not in symbols:
                         symbols.append(r[0])
 
-        profiles = [self.query_14_day_profile(sym, as_of_date=ref_date) for sym in symbols]
+        profiles = [
+            self.query_14_day_profile(
+                sym, 
+                as_of_date=ref_date,
+                warning_info=(warning_map or {}).get(sym),
+                reb_info=(reb_map or {}).get(sym),
+                downgrade_info=(downgrade_map or {}).get(sym)
+            ) 
+            for sym in symbols
+        ]
         profiles.sort(key=lambda x: (x["total_score"], x["breakdown"]["foundation_40"]), reverse=True)
         return profiles
 
@@ -1093,11 +1190,11 @@ def render_profiles_table(
                 display_title = f"{display_title}{date_tag}"
 
     print(f"\n📊 {display_title}")
-    sep = "=" * 148
-    line = "-" * 148
+    sep = "=" * 158
+    line = "-" * 158
     print(sep)
     header = (
-        f"{'Hạng':<5} | {'Mã':<7} | {'Tổng':<6} | {'Tier (Phân Hạng)':<21} | {'MÓNG(40)':<8} | "
+        f"{'Hạng':<5} | {'Mã':<7} | {'Tổng':<6} | {'Phạt':<7} | {'Tier (Phân Hạng)':<21} | {'MÓNG(40)':<8} | "
         f"{'└ 3D(25)':<8} | {'└ Grid(10)':<10} | {'└ 3AB(5)':<8} | {'└ HộiTụ(10)':<11} | "
         f"{'Đẩy(40)':<7} | {'Tiền(20)':<8} | {'×HệSố':<6}"
     )
@@ -1124,8 +1221,10 @@ def render_profiles_table(
 
         rank_str = f"#{idx}"
         sc_3d_str = f"{sc_3d:.1f}" if (sc_3d % 1 != 0) else f"{sc_3d:.0f}"
+        pen_val = float(p.get('macro_penalty', 0.0) or 0.0)
+        pen_str = f"-{pen_val:.0f}đ" if (pen_val % 1 == 0 and pen_val > 0) else (f"-{pen_val:.1f}đ" if pen_val > 0 else "-")
         row_str = (
-            f"{rank_str:<5} | {p['symbol']:<7} | {p['total_score']:<6.1f} | {p['tier']:<21} | {f_tot:<8.1f} | "
+            f"{rank_str:<5} | {p['symbol']:<7} | {p['total_score']:<6.1f} | {pen_str:<7} | {p['tier']:<21} | {f_tot:<8.1f} | "
             f"{sc_3d_str:<8} | {sc_grid:<10.0f} | {sc_3ab:<8.0f} | {sc_opt:<11.0f} | "
             f"{mom:<7.1f} | {cash:<8.1f} | {mult_str:<6}"
         )
@@ -1134,16 +1233,27 @@ def render_profiles_table(
 
     if tier_c_symbols:
         c_str = ", ".join(tier_c_symbols)
-        wrapped_c = textwrap.fill(c_str, width=140, initial_indent="   ", subsequent_indent="   ")
+        wrapped_c = textwrap.fill(c_str, width=150, initial_indent="   ", subsequent_indent="   ")
         print(f"👀 TIER C (25–39đ - Theo Dõi / Chờ Xác Nhận) [{len(tier_c_symbols)} mã]:")
         print(wrapped_c)
         print(line)
 
     if tier_f_symbols:
         f_str = ", ".join(tier_f_symbols)
-        wrapped_f = textwrap.fill(f_str, width=140, initial_indent="   ", subsequent_indent="   ")
+        wrapped_f = textwrap.fill(f_str, width=150, initial_indent="   ", subsequent_indent="   ")
         print(f"⛔ TIER F (< 25đ - Rủi Ro / Mất Đà Tăng / Cạn Thanh Khoản) [{len(tier_f_symbols)} mã]:")
         print(wrapped_f)
+        print(line)
+
+    # Khối kiểm toán chi tiết các mã bị phạt vĩ mô
+    penalized = [p for p in profiles if p.get('macro_penalty', 0.0) > 0]
+    if penalized:
+        print("⚠️ CHI TIẾT PHẠT ĐIỂM VĨ MÔ LIVE (DYNAMIC MACRO PENALTY AUDIT):")
+        for p in penalized[:12]:
+            tags_s = ", ".join(p.get('penalty_tags', []))
+            print(f"   • {p['symbol']:<6}: Gốc {p.get('raw_score', 0.0):.1f}đ ➔ Điểm mới {p['total_score']:.1f}đ ({p['tier']}) | Phạt -{p['macro_penalty']:.1f}đ [{tags_s}]")
+        if len(penalized) > 12:
+            print(f"   • ... và {len(penalized) - 12} mã khác bị trừ điểm.")
         print(sep)
 
 
@@ -1196,7 +1306,7 @@ def print_14_day_summary_board(
                 if sym_w:
                     warning_map[sym_w] = w
 
-        # 3. Thu thập bản đồ Rebalance (Thứ hạng + Trạng thái Grid)
+        # 3. Thu thập bản đồ Rebalance (Thứ hạng + Trạng thái Grid + RSI 1H)
         reb_map = {}
         if df_summary is not None and not getattr(df_summary, 'empty', True):
             for rank_idx, (_, r_reb) in enumerate(df_summary.iterrows(), start=1):
@@ -1207,10 +1317,15 @@ def print_14_day_summary_board(
                     except (ValueError, TypeError):
                         sc_reb = 0.0
                     g_status = str(r_reb.get('Phân Loại Grid', '') or '')
+                    try:
+                        rsi_1h_v = float(r_reb.get('RSI1H', 0.0) or 0.0)
+                    except (ValueError, TypeError):
+                        rsi_1h_v = 0.0
                     reb_map[sym_r] = {
                         "rank": rank_idx,
                         "status": g_status,
-                        "score": sc_reb
+                        "score": sc_reb,
+                        "rsi_1h": rsi_1h_v
                     }
 
         # 4. Thu thập tín hiệu động cơ phiên quét hiện tại từ signal_logs
@@ -1383,8 +1498,11 @@ def print_14_day_summary_board(
         # 6. Đồng bộ tín hiệu Động cơ từ signal_logs
         rater.sync_from_signal_logs()
 
-        # 7. Truy vấn toàn bộ hồ sơ
-        profiles = rater.query_all_14_day_profiles()
+        # 7. Truy vấn toàn bộ hồ sơ (kèm Ma Trận Phạt Vĩ Mô Live)
+        profiles = rater.query_all_14_day_profiles(
+            warning_map=warning_map,
+            reb_map=reb_map
+        )
         min_date, max_date = rater.get_data_date_range()
         if scan_time:
             max_date = str(scan_time)
