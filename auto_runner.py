@@ -269,6 +269,16 @@ def auto_scan():
             f_html.write(finish_msg.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
             f_html.flush()
 
+        # Cập nhật snapshot tĩnh (danh sách mã + hồ sơ mã) cho Web UI, tránh truy vấn DB mỗi lần load trang
+        try:
+            if WORKSPACE_DIR not in sys.path:
+                sys.path.insert(0, WORKSPACE_DIR)
+            from core.symbol_inspector import save_web_snapshot
+            if save_web_snapshot():
+                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🗂️ [AUTO-RUNNER] Đã cập nhật snapshot Web UI.")
+        except Exception as e_snap:
+            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ⚠️ [AUTO-RUNNER] Không thể cập nhật snapshot Web UI: {e_snap}")
+
     except Exception as e:
         err_msg = f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] 💥 [AUTO-RUNNER] Lỗi ngoại lệ khi chạy main.py: {e}\n"
         sys.stdout.write(err_msg)

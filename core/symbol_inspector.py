@@ -7,18 +7,56 @@ Mục đích: Tra cứu và tạo 2 bảng dữ liệu quét chuyên sâu cho t�
 
 import os
 import re
+import time
 import sqlite3
+import threading
 import pandas as pd
+from datetime import datetime, timedelta
 from typing import Tuple, List, Dict, Any, Optional
 
-DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "binac4_history.db")
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_DB_PATH = os.path.join(PROJECT_ROOT, "data", "binac4_history.db")
+TRUST_DB_PATH = os.path.join(PROJECT_ROOT, "trust_score_history.db")
+# Snapshot tĩnh cho Web UI (danh sách mã + hồ sơ mã mặc định), ghi cạnh file log sau mỗi phiên quét
+SNAPSHOT_FILE = os.path.join(PROJECT_ROOT, "BinaC4_latest_snapshot.json")
+
+# ── Cache danh sách mã (tránh tính lại toàn bộ profile mỗi lần load trang Web) ──
+# Key: (db_path, mtime .db, mtime -wal, ngày hiện tại). Tự làm mới khi DB thay đổi hoặc sang ngày mới.
+_SYMBOLS_CACHE_MAX_AGE = 300  # giây - giới hạn an toàn, buộc làm mới định kỳ
+_symbols_cache: Dict[str, Any] = {"key": None, "time": 0.0, "value": None}
+_symbols_cache_lock = threading.Lock()
+
+
+def _db_state_key(db_path: str) -> tuple:
+    def _mtime(p: str) -> float:
+        try:
+            return os.path.getmtime(p)
+        except OSError:
+            return 0.0
+    return (os.path.abspath(db_path), _mtime(db_path), _mtime(db_path + "-wal"), datetime.now().strftime('%Y-%m-%d'))
+
 
 def get_available_symbols(db_path: str = DEFAULT_DB_PATH) -> List[str]:
     """
     Lấy danh sách mã coin đã quét, ưu tiên thứ hạng theo Bảng Hồ Sơ Tín Nhiệm V2.0 lên đầu.
+    Kết quả được cache theo trạng thái file DB (mtime) để Web UI load nhanh.
     """
     if not os.path.exists(db_path):
         return ["PYTH", "AMP", "TIA", "DUSK", "SOLV"]
+
+    key = _db_state_key(db_path)
+    with _symbols_cache_lock:
+        if (_symbols_cache["key"] == key and _symbols_cache["value"] is not None
+                and time.time() - _symbols_cache["time"] < _SYMBOLS_CACHE_MAX_AGE):
+            return list(_symbols_cache["value"])
+
+        symbols = _compute_available_symbols(db_path)
+        _symbols_cache.update(key=key, time=time.time(), value=list(symbols))
+        return symbols
+
+
+def _compute_available_symbols(db_path: str) -> List[str]:
+    """Tính danh sách mã thực tế (không cache)."""
 
     try:
         from core.historical_rater import HistoricalDataQuery
@@ -109,7 +147,7 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
         except Exception:
             pass
 
-    trust_db = "trust_score_history.db"
+    trust_db = TRUST_DB_PATH
     if os.path.exists(trust_db):
         try:
             with sqlite3.connect(trust_db) as conn_t:
@@ -343,3 +381,59 @@ def format_dossier_for_clipboard(summary_md: str, df1: pd.DataFrame, df2: pd.Dat
         parts.append("#### 📈 BẢNG 2: Phân Rã Lịch Sử 4 Ngày & Tính Suy Hao (Aggressive Decay)\n" + t2_md)
 
     return "\n\n".join(parts) + "\n"
+
+
+# =============================================================================
+# 🗂️ SNAPSHOT TĨNH CHO WEB UI (Không truy vấn DB khi load trang)
+# =============================================================================
+
+def save_web_snapshot(db_path: str = DEFAULT_DB_PATH, path: str = SNAPSHOT_FILE) -> Optional[Dict[str, Any]]:
+    """
+    Tính danh sách mã + hồ sơ mã đứng đầu rồi ghi ra file JSON tĩnh.
+    Gọi sau mỗi phiên quét (web_app / auto_runner). Ghi atomic để Web không đọc phải file dở dang.
+    """
+    import json
+    try:
+        symbols = _compute_available_symbols(db_path) if os.path.exists(db_path) else []
+        default_sym = symbols[0] if symbols else ""
+        summary_md, df1, df2 = get_symbol_dossier(default_sym, db_path=db_path)
+        snap = {
+            "generated_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "symbols": symbols,
+            "default_symbol": default_sym,
+            "summary_md": summary_md,
+            "table1": df1.to_dict(orient="split", index=False),
+            "table2": df2.to_dict(orient="split", index=False),
+            "copy_payload": format_dossier_for_clipboard(summary_md, df1, df2),
+        }
+        tmp_path = path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(snap, f, ensure_ascii=False)
+        os.replace(tmp_path, path)
+        # Đồng bộ luôn cache trong RAM của tiến trình hiện tại
+        with _symbols_cache_lock:
+            _symbols_cache.update(key=_db_state_key(db_path), time=time.time(), value=list(symbols))
+        return snap
+    except Exception as e:
+        print(f"⚠️ [SNAPSHOT] Không thể ghi snapshot Web UI: {e}")
+        return None
+
+
+def load_web_snapshot(path: str = SNAPSHOT_FILE) -> Optional[Dict[str, Any]]:
+    """
+    Đọc snapshot tĩnh (không chạm DB). Trả về dict với df1/df2 dạng DataFrame, hoặc None nếu chưa có/lỗi.
+    """
+    import json
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            snap = json.load(f)
+        t1 = snap.get("table1") or {}
+        t2 = snap.get("table2") or {}
+        snap["df1"] = pd.DataFrame(t1.get("data", []), columns=t1.get("columns"))
+        snap["df2"] = pd.DataFrame(t2.get("data", []), columns=t2.get("columns"))
+        return snap
+    except Exception:
+        return None
+

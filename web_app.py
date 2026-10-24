@@ -5,7 +5,18 @@ import os
 import queue
 import threading
 import time
-from core.symbol_inspector import get_available_symbols, get_symbol_dossier, format_dossier_for_clipboard
+from core.symbol_inspector import (
+    get_symbol_dossier, format_dossier_for_clipboard,
+    save_web_snapshot, load_web_snapshot,
+)
+
+# Đảm bảo in emoji/tiếng Việt không lỗi trên console Windows (cp1252)
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, 'reconfigure'):
+        try:
+            _stream.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
 
 WORKSPACE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPT_PATH = os.path.join(WORKSPACE_DIR, 'main.py')
@@ -178,6 +189,9 @@ def run_binac4():
             f_html.write(html_footer)
             f_txt.flush()
             f_html.flush()
+
+        # Cập nhật snapshot tĩnh cho Symbol Inspector (để các lần load trang sau không phải truy vấn DB)
+        save_web_snapshot()
             
         yield output_str, TXT_LOG_FILE
     finally:
@@ -259,20 +273,36 @@ css = """
 }
 """
 
-def get_latest_page_state():
-    """Lấy dữ liệu đồng bộ cho trang: log text, file, danh sách mã và hồ sơ mã đang chọn."""
-    log_text, log_file = get_latest_log_data()
-    symbols = get_available_symbols()
-    target_sym = symbols[0] if symbols else ""
-    summary_md, df1, df2 = get_symbol_dossier(target_sym)
-    copy_payload = format_dossier_for_clipboard(summary_md, df1, df2)
-    return log_text, log_file, gr.update(choices=symbols, value=target_sym), summary_md, df1, df2, copy_payload
+def get_snapshot_state():
+    """Đọc dữ liệu Symbol Inspector từ snapshot tĩnh (KHÔNG truy vấn DB)."""
+    snap = load_web_snapshot()
+    if not snap:
+        summary_md, df1, df2 = get_symbol_dossier(None)  # placeholder, không chạm DB
+        summary_md = "ℹ️ Chưa có snapshot dữ liệu. Chọn/gõ mã rồi bấm **🔎 Xem Chi Tiết Mã** để tính toán."
+        return [], "", summary_md, df1, df2, ""
+    note = (
+        f"> 🗂️ *Dữ liệu tĩnh từ phiên quét lúc `{snap.get('generated_at', '—')}`. "
+        f"Bấm **🔎 Xem Chi Tiết Mã** để tính lại theo dữ liệu mới nhất.*\n"
+    )
+    return (
+        snap.get("symbols", []),
+        snap.get("default_symbol", ""),
+        note + snap.get("summary_md", ""),
+        snap["df1"],
+        snap["df2"],
+        snap.get("copy_payload", ""),
+    )
 
-# Pre-fetch initial data for symbol inspector
-_initial_symbols = get_available_symbols()
-_default_sym = _initial_symbols[0] if _initial_symbols else ""
-_init_summary, _init_df1, _init_df2 = get_symbol_dossier(_default_sym)
-_init_copy_payload = format_dossier_for_clipboard(_init_summary, _init_df1, _init_df2)
+def get_latest_page_state():
+    """Lấy dữ liệu tĩnh cho trang: log text, file, danh sách mã và hồ sơ mã từ snapshot (0 truy vấn DB)."""
+    log_text, log_file = get_latest_log_data()
+    symbols, target_sym, summary_md, df1, df2, copy_payload = get_snapshot_state()
+    return log_text, log_file, gr.update(choices=symbols, value=target_sym or None), summary_md, df1, df2, copy_payload
+
+# Tạo snapshot một lần duy nhất nếu chưa tồn tại (lần đầu cài đặt), sau đó chỉ đọc file tĩnh
+if load_web_snapshot() is None:
+    save_web_snapshot()
+_initial_symbols, _default_sym, _init_summary, _init_df1, _init_df2, _init_copy_payload = get_snapshot_state()
 
 # Build the Gradio interface
 with gr.Blocks(title="BinaC4 Web Interface") as demo:
@@ -306,9 +336,10 @@ with gr.Blocks(title="BinaC4 Web Interface") as demo:
         with gr.Row():
             symbol_select = gr.Dropdown(
                 choices=_initial_symbols,
-                value=_default_sym,
+                value=_default_sym or None,
                 label="Chọn hoặc gõ tìm mã (Symbol)",
                 filterable=True,
+                allow_custom_value=True,
                 scale=3,
                 interactive=True
             )
@@ -337,13 +368,8 @@ with gr.Blocks(title="BinaC4 Web Interface") as demo:
         c_payload = format_dossier_for_clipboard(s_md, d1, d2)
         return s_md, d1, d2, c_payload
 
-    # Event: Xem chi tiết khi bấm nút hoặc đổi mã trên dropdown
+    # Event: CHỈ tính lại khi bấm nút "Xem Chi Tiết Mã" (đổi mã trên dropdown không tự truy vấn DB)
     inspect_btn.click(
-        fn=on_inspect,
-        inputs=[symbol_select],
-        outputs=[summary_card, table1_output, table2_output, history_copy_payload]
-    )
-    symbol_select.change(
         fn=on_inspect,
         inputs=[symbol_select],
         outputs=[summary_card, table1_output, table2_output, history_copy_payload]
