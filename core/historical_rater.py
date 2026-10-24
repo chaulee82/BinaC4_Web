@@ -131,6 +131,135 @@ def calculate_final_rating(coin_data: dict) -> float:
     return round(total, 2)
 
 
+def calculate_macro_penalties_v2(
+    raw_total: float,
+    warning_info: Optional[Dict[str, Any]] = None,
+    reb_info: Optional[Dict[str, Any]] = None,
+    downgrade_info: Optional[Dict[str, Any]] = None,
+    d24: float = 0.0,
+    d72: float = 0.0
+) -> Tuple[float, float, List[Tuple[str, float]]]:
+    """
+    [TÁI CẤU TRÚC BẢNG TÍN NHIỆM: MACRO PENALTY V2.0]
+    Ma Trận Khấu Trừ Vĩ Mô Động (Dynamic Macro Penalty Matrix)
+    Triết lý: Graceful Degradation - Đánh tụt 1 hạng thay vì bức tử về 0.
+
+    1. Gãy Supertrend 1D (Cấp 3): -12.0đ
+    2. Xả dốc mạnh / Cây thông (Cấp 1): -15.0đ
+    3. Suy yếu / Mất bệ đỡ (Cấp 2): -8.0đ (Chỉ lấy max của Cấp 1 hoặc Cấp 2)
+    4. Cảnh báo NÉ GRID (Rebalance): -10.0đ
+    5. RSI 1H Quá Mua (>= 75.0): -5.0đ
+
+    Returns:
+        final_rating, total_penalty, macro_penalties
+    """
+    macro_penalties: List[Tuple[str, float]] = []
+    total_penalty = 0.0
+
+    # 1. Bảng Cảnh Báo Sớm: Cấp 3 Khẩn Cấp (Gãy ST 1D) -> Phạt -12.0đ
+    if warning_info:
+        w_lvl = int(warning_info.get('level', 0) or 0)
+        w_lbl = str(warning_info.get('label', '') or '')
+        if w_lvl == 3 or "CẤP 3" in w_lbl:
+            macro_penalties.append(("💀 Gãy ST 1D", 12.0))
+            total_penalty += 12.0
+
+    # 2. Bảng Suy Giảm: Cấp 1 (-15.0đ) hoặc Cấp 2 (-8.0đ) (Loại trừ nội bộ)
+    dg_lvl = str((downgrade_info or {}).get('level', '') or '').upper()
+    if d72 <= -20.0 or d24 <= -15.0 or dg_lvl == "CAP_1":
+        macro_penalties.append(("🔴 Xả Dốc C1", 15.0))
+        total_penalty += 15.0
+    elif d24 <= -8.0 or d72 <= -10.0 or dg_lvl == "CAP_2":
+        macro_penalties.append(("🟠 Suy Yếu C2", 8.0))
+        total_penalty += 8.0
+
+    # 3. Bảng Rebalance: ⛔ NÉ GRID -> Phạt -10.0đ
+    if reb_info:
+        g_stat = str(reb_info.get('status', '') or '')
+        if "NÉ GRID" in g_stat:
+            macro_penalties.append(("⛔ Né Grid", 10.0))
+            total_penalty += 10.0
+
+    # 4. Bảng Rebalance: ⚠️ RSI 1H Quá Mua (>= 75.0) -> Phạt -5.0đ
+    if reb_info:
+        rsi_val = float(reb_info.get('rsi_1h', 0.0) or 0.0)
+        if rsi_val >= 75.0:
+            macro_penalties.append(("⚠️ RSI>75", 5.0))
+            total_penalty += 5.0
+
+    final_rating = round(max(0.0, min(100.0, raw_total - total_penalty)), 2)
+    return final_rating, total_penalty, macro_penalties
+
+
+def calculate_grid_priority_queue(
+    grid_candidates: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """
+    [PHẦN 1.2: CƠ CHẾ XẾP HẠNG & CẤP VỐN GRID (PRIORITY QUEUE)]
+    Dành riêng cho các mã Tier B được phép mở Futures Grid.
+    Sắp xếp độ ưu tiên dựa trên 4 biến số (Thang 100đ):
+    1. Vị thế lưới (Zone Score - 30%): Giá Live càng gần Lower Price -> Điểm càng cao.
+    2. Pingpong (Động cơ 5 - 30%): Tần suất đập nhả và biên độ mượt mà.
+    3. Rebalance Score (25%): Độ êm của nến 15m, râu xả, RSI ngắn hạn.
+    4. Trust Score 14D (15%): Nền tảng cấu trúc dài hạn.
+    """
+    scored_candidates = []
+    for item in grid_candidates:
+        c = dict(item)
+        # 1. Zone Score (30%)
+        live_price = float(c.get('live_price', c.get('price', c.get('entry', 0.0))) or 0.0)
+        lower = float(c.get('lower', c.get('grid_low', 0.0)) or 0.0)
+        upper = float(c.get('upper', c.get('grid_up', 0.0)) or 0.0)
+
+        if upper > lower and lower > 0:
+            if live_price <= lower:
+                zone_score = 100.0  # Mua ở sát hoặc dưới đáy lưới -> Cực tốt
+            elif live_price >= upper:
+                zone_score = 0.0    # Đỉnh lưới -> Không ưu tiên mua
+            else:
+                zone_ratio = (upper - live_price) / (upper - lower)
+                zone_score = round(zone_ratio * 100.0, 1)
+        else:
+            zone_score = 50.0
+
+        # 2. Pingpong Động cơ 5 (30%)
+        dc5_score = float(c.get('dc5_score', c.get('pingpong_score', c.get('dc5_pingpong_score', 50.0))) or 0.0)
+        dc5_score = max(0.0, min(100.0, dc5_score))
+
+        # 3. Rebalance Score (25%)
+        reb_score = float(c.get('rebalance_score', c.get('reb_score', 50.0)) or 0.0)
+        reb_score = max(0.0, min(100.0, reb_score))
+
+        # 4. Trust Score 14D (15%)
+        trust_score = float(c.get('total_score', c.get('uy_tin_score', 50.0)) or 0.0)
+        trust_score = max(0.0, min(100.0, trust_score))
+
+        priority_score = round(
+            (zone_score * 0.30) +
+            (dc5_score * 0.30) +
+            (reb_score * 0.25) +
+            (trust_score * 0.15),
+            2
+        )
+
+        c.update({
+            'zone_score': zone_score,
+            'pingpong_score': dc5_score,
+            'rebalance_score': reb_score,
+            'trust_score': trust_score,
+            'grid_priority_score': priority_score
+        })
+        scored_candidates.append(c)
+
+    scored_candidates.sort(key=lambda x: x.get('grid_priority_score', 0.0), reverse=True)
+
+    for idx, c in enumerate(scored_candidates, 1):
+        c['grid_priority_rank'] = idx
+        c['grid_priority_label'] = f"Ưu tiên #{idx}"
+
+    return scored_candidates
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # LỚP TRUY VẤN VÀ ĐỒNG BỘ DỮ LIỆU SQLITE
 # ═════════════════════════════════════════════════════════════════════════════
@@ -761,42 +890,14 @@ class HistoricalDataQuery:
         d24 = round(raw0 - raw1, 1)
         d72 = round(raw0 - raw3, 1)
 
-        macro_penalties = []
-        total_penalty = 0.0
-
-        # 1. Bảng Cảnh Báo Sớm: Cấp 3 Khẩn Cấp (Gãy ST 1D) -> Phạt -12.0đ
-        if warning_info:
-            w_lvl = int(warning_info.get('level', 0) or 0)
-            w_lbl = str(warning_info.get('label', '') or '')
-            if w_lvl == 3 or "CẤP 3" in w_lbl:
-                macro_penalties.append(("💀 Gãy ST 1D", 12.0))
-                total_penalty += 12.0
-
-        # 2. Bảng Suy Giảm: Cấp 1 (-15.0đ) hoặc Cấp 2 (-8.0đ) (Loại trừ nội bộ)
-        dg_lvl = str((downgrade_info or {}).get('level', '') or '').upper()
-        if d72 <= -20.0 or d24 <= -15.0 or dg_lvl == "CAP_1":
-            macro_penalties.append(("🔴 Xả Dốc C1", 15.0))
-            total_penalty += 15.0
-        elif d24 <= -8.0 or d72 <= -10.0 or dg_lvl == "CAP_2":
-            macro_penalties.append(("🟠 Suy Yếu C2", 8.0))
-            total_penalty += 8.0
-
-        # 3. Bảng Rebalance: ⛔ NÉ GRID -> Phạt -10.0đ
-        if reb_info:
-            g_stat = str(reb_info.get('status', '') or '')
-            if "NÉ GRID" in g_stat:
-                macro_penalties.append(("⛔ Né Grid", 10.0))
-                total_penalty += 10.0
-
-        # 4. Bảng Rebalance: ⚠️ RSI 1H Quá Mua (>= 75.0) -> Phạt -5.0đ
-        if reb_info:
-            rsi_val = float(reb_info.get('rsi_1h', 0.0) or 0.0)
-            if rsi_val >= 75.0:
-                macro_penalties.append(("⚠️ RSI>75", 5.0))
-                total_penalty += 5.0
-
-        # Áp dụng khấu trừ trực tiếp vào Tổng Điểm
-        final_rating = round(max(0.0, min(100.0, raw_total - total_penalty)), 2)
+        final_rating, total_penalty, macro_penalties = calculate_macro_penalties_v2(
+            raw_total=raw_total,
+            warning_info=warning_info,
+            reb_info=reb_info,
+            downgrade_info=downgrade_info,
+            d24=d24,
+            d72=d72
+        )
         tier, action = self._determine_tier(final_rating, diem_mong)
 
         is_live = bool(target_dates[0] in daily_agg and (history_mong[0] > 0 or history_day[0] > 0 or history_tien[0] > 0))

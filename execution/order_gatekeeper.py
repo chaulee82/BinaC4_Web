@@ -44,8 +44,10 @@ def _safe_float(val: Any, default: float = 0.0) -> float:
         return default
 
 
-def _count_decimals(val: float, max_dec: int = 5) -> int:
-    """Đếm số chữ số thập phân thực tế của một giá trị float."""
+def _count_decimals(val: float, max_dec: Optional[int] = None) -> int:
+    """Đếm số chữ số thập phân thực tế của một giá trị float (hỗ trợ coin giá nhỏ đến 8 số)."""
+    if max_dec is None:
+        max_dec = 8 if abs(val) < 0.01 else 5
     s = f"{val:.8f}".rstrip('0')
     if '.' in s:
         d = len(s.split('.')[1])
@@ -59,7 +61,10 @@ def _fmt_price_val(val: float, decimals: Optional[int] = None) -> str:
         return "0"
     if decimals is not None:
         return f"{val:.{decimals}f}"
-    s = f"{val:.5f}".rstrip('0').rstrip('.')
+    if abs(val) < 0.001:
+        s = f"{val:.8f}".rstrip('0').rstrip('.')
+    else:
+        s = f"{val:.5f}".rstrip('0').rstrip('.')
     if '.' in s:
         dec_len = len(s.split('.')[1])
         if dec_len < 2:
@@ -334,22 +339,216 @@ def _resolve_grid_tp2_fallback(order: Dict[str, Any], symbol: str, entry: float,
 
 
 
-def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def check_pump_dump_trap(
+    symbol: str,
+    klines_15m: Optional[Any] = None
+) -> Tuple[bool, str]:
     """
-    Module Tinh Chỉnh Hình Học Lệnh & Phân Luồng Thực Thi.
+    [PHẦN 2.1: MODULE CHỐNG BẪY ĐỘC LẬP (check_pump_dump_trap)]
+    Quét 4 nến 15M gần nhất để bắt quả tang hành vi thao túng trước khi bảng Tín nhiệm kịp update:
+    - Rule 2.1 (Râu xả đỉnh 15M): Nến có râu trên chiếm >= 60% biên độ (high - low) và biên độ dao động > 1% -> VETO.
+    - Rule 2.2 (Cây thông xả đỉnh): Nến đỏ xả nuốt chửng >= 80% nến xanh bạo phát liền trước -> VETO.
+
+    Returns:
+        (is_veto: bool, reason: str)
+    """
+    clean_sym = str(symbol or "").upper().replace("/USDT", "").replace("USDT", "").strip()
+    if not clean_sym or "COIN_" in clean_sym or "TEST" in clean_sym:
+        return False, ""
+    sym_api = f"{clean_sym}USDT"
+
+    df_15m = klines_15m
+    if df_15m is None:
+        try:
+            from core.klines_cache import get_klines_cached
+            df_15m = get_klines_cached(sym_api, "15m", limit=10)
+        except Exception as e:
+            logger.debug(f"Không lấy được nến 15m cho {symbol}: {e}")
+            return False, ""
+
+    if df_15m is None or len(df_15m) < 2:
+        return False, ""
+
+    try:
+        cols = {str(c).lower(): c for c in df_15m.columns}
+        c_open = cols.get('open')
+        c_high = cols.get('high')
+        c_low = cols.get('low')
+        c_close = cols.get('close')
+        if not (c_open and c_high and c_low and c_close):
+            return False, ""
+
+        recent_df = df_15m.tail(4)
+        records = recent_df[[c_open, c_high, c_low, c_close]].to_dict('records')
+
+        # Rule 2.1: Quét râu xả đỉnh 15M trên từng nến trong 4 nến gần nhất
+        for r in reversed(records):
+            o = float(r[c_open])
+            h = float(r[c_high])
+            l = float(r[c_low])
+            c = float(r[c_close])
+            candle_range = h - l
+            if l <= 0 or candle_range <= 0:
+                continue
+
+            pct_amplitude = candle_range / l
+            body_top = max(o, c)
+            upper_wick = h - body_top
+            wick_ratio = upper_wick / candle_range
+
+            if wick_ratio >= 0.60 and pct_amplitude > 0.01:
+                wick_pct = int(round(wick_ratio * 100))
+                return True, f"Khóa bóp cò: Rule 2.1 (Râu xả đỉnh 15M) - Nến xả ngược râu {wick_pct}%."
+
+        # Rule 2.2: Cây thông xả đỉnh (Nến đỏ nuốt chửng >= 80% nến xanh bạo phát liền trước)
+        for i in range(len(records) - 1):
+            prev = records[i]
+            curr = records[i + 1]
+            o_p, c_p = float(prev[c_open]), float(prev[c_close])
+            o_c, c_c = float(curr[c_open]), float(curr[c_close])
+
+            if c_p > o_p and o_p > 0:
+                pump_body = c_p - o_p
+                pump_pct = pump_body / o_p
+                if c_c < o_c:
+                    dump_body = o_c - c_c
+                    if pump_body > 0 and (dump_body >= 0.80 * pump_body) and pump_pct >= 0.005:
+                        dump_pct = int(round((dump_body / pump_body) * 100))
+                        return True, f"Khóa bóp cò: Rule 2.2 (Cây thông xả đỉnh) - Nến đỏ nuốt {dump_pct}% nến xanh bạo phát."
+
+    except Exception as e:
+        logger.debug(f"Lỗi kiểm tra check_pump_dump_trap cho {symbol}: {e}")
+
+    return False, ""
+
+
+def evaluate_order_gatekeeper_firewall(
+    order: Dict[str, Any],
+    klines_15m: Optional[Any] = None
+) -> Tuple[str, str, Optional[str]]:
+    """
+    [PHẦN 2.2: PHÂN LUỒNG 5 TẦNG (FIREWALL LOGIC V2.3)]
+    Kiểm tra 5 tầng tường lửa trước khi cho phép kích hoạt lệnh:
+
+    - TẦNG 0 (Bẫy 15M): check_pump_dump_trap -> REJECT
+    - TẦNG 1 (Cảnh Báo Sớm): Cấp 3 -> REJECT
+    - TẦNG 2 (Suy Giảm): Cấp 1 -> REJECT; Cấp 2 và Grid -> REJECT
+    - TẦNG 3 (Bảng Rebalance): MẤT MA7_3D -> REJECT; NÉ GRID và Grid -> REJECT; Tier S/A Động cơ 3/4 RSI_1H >= 70 -> REJECT
+    - TẦNG 4 (Kỹ Thuật & R:R): SL >= 15% hoặc R:R < 2.0 -> REJECT; Động cơ 3 Gate 1 < 25 -> PENDING
+    - TẦNG 5 (Leverage Advisor):
+        * Tier S/A Futures Grid -> REJECT (Chỉ cấp phép Spot OCO / Spot Grid)
+        * Tier B Futures Grid > 5x -> Warning hạ về 5x (APPROVED)
+        * Tier C Futures Grid > 3x -> Warning hạ về 3x (APPROVED)
+
+    Returns:
+        (verdict: 'APPROVED' | 'REJECT' | 'PENDING', reason: str, leverage_warning: Optional[str])
+    """
+    clean_sym = str(order.get('symbol', '')).replace('/', '').replace('USDT', '').strip()
+    sym_api = f"{clean_sym}USDT"
+    uy_tin = _safe_float(order.get('uy_tin_score'), 0.0)
+    tier_name = str(order.get('tier_label', '') or '')
+    is_tier_sa = ('Tier S' in tier_name or 'Tier A' in tier_name or uy_tin >= 60.0)
+    is_tier_b = ('Tier B' in tier_name or (40.0 <= uy_tin < 60.0))
+    is_tier_c = ('Tier C' in tier_name or (25.0 <= uy_tin < 40.0))
+    is_grid = (order.get('order_type') == 'GRID')
+    penalty_tags = order.get('penalty_tags', []) or []
+
+    # -------------------------------------------------------------
+    # TẦNG 0: Bẫy 15M (check_pump_dump_trap)
+    # -------------------------------------------------------------
+    is_trap, trap_msg = check_pump_dump_trap(order.get('symbol', ''), klines_15m=klines_15m)
+    if is_trap:
+        return 'REJECT', trap_msg, None
+
+    # -------------------------------------------------------------
+    # TẦNG 1: Cảnh Báo Sớm (Cấp 3 Khẩn Cấp - Gãy ST 1D)
+    # -------------------------------------------------------------
+    w_lvl = int(_safe_float(order.get('warning_level', 0), 0))
+    w_lbl = str(order.get('warning_label', '') or '')
+    if w_lvl == 3 or "CẤP 3" in w_lbl or any("Gãy ST 1D" in t or "Cấp 3" in t for t in penalty_tags):
+        return 'REJECT', "Gãy Supertrend 1D (Cảnh Báo Sớm Cấp 3 Khẩn Cấp)", None
+
+    # -------------------------------------------------------------
+    # TẦNG 2: Suy Giảm (Cấp 1 & Cấp 2)
+    # -------------------------------------------------------------
+    dg_lvl = str(order.get('downgrade_level', '') or '').upper()
+    if dg_lvl == "CAP_1" or any("Xả Dốc C1" in t for t in penalty_tags):
+        return 'REJECT', "Khóa bóp cò: Suy giảm Cấp 1 (Xả dốc mạnh / Cây thông)", None
+    if (dg_lvl == "CAP_2" or any("Suy Yếu C2" in t for t in penalty_tags)) and is_grid:
+        return 'REJECT', "Suy yếu Cấp 2: CẤM mở Grid khi mất bệ đỡ đà tăng", None
+
+    # -------------------------------------------------------------
+    # TẦNG 3: Bảng Rebalance & Động Lực Ngắn Hạn
+    # -------------------------------------------------------------
+    if order.get('lost_ma7_3d') or any("MẤT MA7" in str(x).upper() for x in [order.get('strategy_desc', ''), *penalty_tags]):
+        return 'REJECT', "Khóa bóp cò: MẤT MA7_3D (Đáy sóng trung hạn bị gãy)", None
+    if is_grid and (order.get('is_ne_grid') or any("Né Grid" in str(x) for x in penalty_tags)):
+        return 'REJECT', "Cảnh báo NÉ GRID từ Bảng Rebalance (Rủi ro biến động giật / cạn cầu)", None
+
+    engine_str = str(order.get('engine', '') or '')
+    is_dc3_dc4 = any(e in engine_str for e in ['DC3', 'DC4', 'Động cơ 3', 'Động cơ 4', 'Breakout', 'Hot Trend'])
+    rsi_1h_val = float(order.get('rsi_1h', 0.0) or 0.0)
+    if is_tier_sa and is_dc3_dc4 and rsi_1h_val >= 70.0:
+        return 'REJECT', f"Tier S/A đánh {engine_str} nhưng RSI 1H Quá Mua ({rsi_1h_val:.1f} >= 70) - Rủi ro mua đỉnh", None
+
+    # -------------------------------------------------------------
+    # TẦNG 4: Kỹ Thuật & R:R
+    # -------------------------------------------------------------
+    entry = _safe_float(order.get('entry', order.get('trigger', 0.0)), 0.0)
+    sl_val = _safe_float(order.get('sl', 0.0), 0.0)
+    if entry > 0 and sl_val > 0:
+        sl_dist_pct = abs(entry - sl_val) / entry
+        if sl_dist_pct >= 0.15:
+            return 'REJECT', f"SL khoảng cách quá rộng ({sl_dist_pct*100:.1f}% >= 15.0%) - Vi phạm trần cắt lỗ", None
+
+    rr_val = _safe_float(order.get('rr_ratio', 2.0), 2.0)
+    if not is_grid and rr_val < 2.0:
+        return 'REJECT', f"Tỷ lệ R:R = 1:{rr_val:.1f} < 2.0 (Không đạt kỳ vọng sinh lời)", None
+
+    gate1_val = _safe_float(order.get('gate1_score', 30.0), 30.0)
+    if ('DC3' in engine_str or 'Breakout' in engine_str) and gate1_val < 25.0:
+        return 'PENDING', f"Động cơ 3 (Breakout) nhưng Gate 1 = {gate1_val:.1f} < 25đ - Chờ xác nhận móng", None
+
+    # -------------------------------------------------------------
+    # TẦNG 5: Leverage Advisor & Định Tuyến Hợp Trọng
+    # -------------------------------------------------------------
+    lev = int(_safe_float(order.get('leverage', 1), 1))
+    market_type = str(order.get('market_type', 'SPOT')).upper()
+    is_futures_grid = is_grid and (market_type == 'FUTURES' or 'FUTURES' in str(order.get('strategy_desc', '')).upper() or lev > 1)
+
+    lev_warning = None
+    if is_futures_grid:
+        if is_tier_sa:
+            tier_display = "Tier S" if "Tier S" in tier_name else ("Tier A" if "Tier A" in tier_name else "Tier S/A")
+            return 'REJECT', f"{sym_api} ({tier_display}): CẤM Futures Grid. Chỉ cấp phép Spot OCO / Spot Grid.", None
+
+        if is_tier_b and lev > 5:
+            lev_warning = f"{sym_api} (KHUYẾN NGHỊ: Đòn bẩy {lev}x quá cao cho Tier B. Nên hạ xuống Max 5x)"
+        elif is_tier_c and lev > 3:
+            lev_warning = f"{sym_api} (KHUYẾN NGHỊ: Đòn bẩy {lev}x quá cao cho Tier C. Nên hạ xuống Max 3x)"
+
+    return 'APPROVED', "Lệnh vượt qua 5 tầng Gatekeeper thành công.", lev_warning
+
+
+def optimized_execution_geometry_module(
+    clean_summary_orders: List[Dict[str, Any]],
+    klines_cache_map: Optional[Dict[str, Any]] = None
+) -> List[Dict[str, Any]]:
+    """
+    Module Tinh Chỉnh Hình Học Lệnh & Phân Luồng Thực Thi V2.3.
     Input: Danh sách lệnh ĐÃ ĐƯỢC LỌC SẠCH RỦI RO từ Tầng 2.
+    Output: Danh sách lệnh hoàn chỉnh sau kiểm định 5 tầng Firewall,
+            phân vùng thành AUTO_EXECUTE, MANUAL_APPROVAL, VETO_REJECT.
     """
     final_execution_orders = []
-    rejected_tier_f = []
-    rejected_tier_c = []
-    
+    grid_tier_b_candidates = []
+
     for order in clean_summary_orders:
-        # Tạo bản sao shallow dict để không làm hỏng dữ liệu gốc
         order_copy = dict(order)
         symbol = order_copy['symbol']
         uy_tin = float(order_copy.get('uy_tin_score', 0.0))
         order_type = order_copy.get('order_type', 'SPOT_OCO')
-        
+
         # =========================================================
         # TIẾN TRÌNH 1: THỰC TẾ HÓA HÌNH HỌC LỆNH (ORDER GEOMETRY)
         # =========================================================
@@ -357,11 +556,10 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
             entry = float(order_copy['entry'])
             raw_sl = float(order_copy['raw_sl'])
             raw_tp = float(order_copy.get('raw_tp', entry * 1.05))
-            
-            # Lưu giữ thông số gốc để in bảng đối chiếu
+
             order_copy['raw_sl'] = raw_sl
             order_copy['raw_tp'] = raw_tp
-            
+
             # 1. Anti-Wick SL: Kéo giãn SL nếu quá khít (tạo vùng đệm 1.5%)
             sl_distance_pct = (entry - raw_sl) / entry if entry > 0 else 0
             if sl_distance_pct < 0.015:
@@ -373,7 +571,7 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
 
             risk_amount = entry - safe_sl
 
-            # 2. Realistic TP: Thuật toán "Thác Nước Kháng Cự & Mốc Tâm Lý" (Waterfall Resistance & Psychological Levels)
+            # 2. Realistic TP: Thác Nước Kháng Cự & Mốc Tâm Lý
             realistic_tp, tp_source_desc, waterfall_meta = calculate_waterfall_tp(
                 symbol=symbol,
                 entry=entry,
@@ -383,21 +581,18 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
             )
             tp_adjusted = (abs(realistic_tp - raw_tp) > 1e-6)
 
-            # 3. Nắn Bóp Hình Học GRID TP2 Dự Phòng (Grid TP2 Geometry Optimization)
+            # 3. Nắn Bóp Hình Học GRID TP2 Dự Phòng
             grid_tp2_opt = optimize_grid_tp2_geometry(order_copy, entry, safe_sl, realistic_tp)
-            
-            # Tính R:R sau nắn
+
             reward_amount = realistic_tp - entry
             rr_val = round(reward_amount / risk_amount, 2) if risk_amount > 0 else 2.0
 
-            # Ghi chú hình học
             note_parts = []
             if sl_adjusted:
                 note_parts.append("Nới đệm SL (+1.5%)")
             note_parts.append(f"TP: {tp_source_desc}")
             geom_note = ", ".join(note_parts)
 
-            # Cập nhật thông số
             order_copy.update({
                 'entry': entry,
                 'sl': round(safe_sl, 5),
@@ -413,13 +608,12 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
                 'money_flow': float(order_copy.get('money_flow', 0.0) or 0.0)
             })
 
-            
         elif order_type == 'GRID':
             macro_lower = float(order_copy['lower'])
             macro_upper = float(order_copy['upper'])
             raw_grids = int(order_copy.get('raw_grids', order_copy.get('grids', 24)))
             dec = _count_decimals(macro_lower)
-            
+
             trigger = order_copy.get('entry', order_copy.get('trigger'))
             if trigger is None or trigger == 'N/A':
                 trigger = round((macro_lower + macro_upper) / 2.0, dec)
@@ -430,14 +624,9 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
             order_copy['raw_upper'] = macro_upper
             order_copy['raw_grids'] = raw_grids
 
-            # PRD: Chuẩn hóa dải lưới +8% Vốn / -12% Cắt Lỗ
-            # 1. Chốt chặn Cắt Lỗ Cứng: SL = P_trig * 0.88 (-12% từ Trigger)
             grid_sl = round(trigger * 0.88, dec)
-
-            # 2. Cận Trên Tối Thiểu: Upper = max(P_raw_upper, P_trig * 1.20)
             opt_upper = max(macro_upper, round(trigger * 1.20, dec))
 
-            # 3. Cận Dưới Tối Thiểu: Lower = max(P_raw_lower, SL * 1.015)
             min_safe_lower = round(grid_sl * 1.015, dec)
             opt_lower = max(macro_lower, min_safe_lower)
             if opt_lower >= trigger:
@@ -445,13 +634,13 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
             opt_lower = max(opt_lower, min_safe_lower)
 
             grid_tp = opt_upper
-            
+
             raw_sl = order_copy.get('raw_sl')
             if raw_sl is None or raw_sl == 'N/A':
                 raw_sl = round(trigger * 0.995, dec)
             else:
                 raw_sl = float(raw_sl)
-                
+
             raw_tp = order_copy.get('raw_tp')
             if raw_tp is None or raw_tp == 'N/A':
                 raw_tp = round(trigger * 1.033, dec)
@@ -461,7 +650,7 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
             grid_risk = trigger - grid_sl
             grid_reward = grid_tp - trigger
             grid_rr = round(grid_reward / grid_risk, 2) if grid_risk > 0 else 1.67
-            
+
             order_copy.update({
                 'lower': round(opt_lower, dec),
                 'upper': round(opt_upper, dec),
@@ -481,51 +670,91 @@ def optimized_execution_geometry_module(clean_summary_orders: List[Dict[str, Any
             order_copy['engine'] = ENGINE_LABELS[order_copy['engine']]
 
         # =========================================================
-        # TIẾN TRÌNH 2: PHÂN LUỒNG KÍCH HOẠT (ROUTING & RISK GATES)
+        # TIẾN TRÌNH 2: TƯỜNG LỬA 5 TẦNG GATEKEEPER (FIREWALL V2.3)
         # =========================================================
-        # 1. CHỐT CHẶN CỨNG: Loại bỏ hoàn toàn Tier F (< 25đ - Rủi ro cao / Bắt dao rơi)
-        if uy_tin < 25.0:
-            sym_clean = str(order_copy.get('symbol', '')).replace('/USDT', '').replace('USDT', '').strip()
-            if sym_clean and sym_clean not in rejected_tier_f:
-                rejected_tier_f.append(sym_clean)
+        k15 = (klines_cache_map or {}).get(symbol)
+        verdict, reason, lev_warning = evaluate_order_gatekeeper_firewall(order_copy, klines_15m=k15)
+
+        if verdict == 'REJECT':
+            order_copy['status'] = 'VETO_REJECT'
+            order_copy['veto_reason'] = reason
+            final_execution_orders.append(order_copy)
             continue
 
-        # 2. XỬ LÝ TIER C (25 - 39.9đ - Theo dõi):
-        # Mặc định LOẠI BỎ khỏi Hàng Đợi Thực Thi.
-        # Ngoại lệ duy nhất: Có Dòng Tiền Bạo Phát đột biến >= 3.0x (Cửa hậu hẹp), cấp vốn thăm dò tối đa 20%.
+        if verdict == 'PENDING':
+            order_copy['status'] = 'MANUAL_APPROVAL'
+            order_copy['locked_reason'] = reason
+            order_copy['volume_pct'] = 0.3
+            final_execution_orders.append(order_copy)
+            continue
+
+        # Lệnh vượt 5 tầng thành công (APPROVED)
+        order_copy['gatekeeper_approved_msg'] = reason
+        if lev_warning:
+            order_copy['leverage_warning'] = lev_warning
+
+    # -------------------------------------------------------------
+        # 1. Chốt chặn Tier F (< 25đ) & Tier C thường (< 40đ không bạo phát)
+        # Loại bỏ hoàn toàn khỏi hàng đợi thực thi
+        # -------------------------------------------------------------
+        if uy_tin < 25.0:
+            continue
+
         mf_val = _safe_float(order_copy.get('money_flow'), 0.0)
         is_mf_surge = bool(order_copy.get('is_money_flow_surge', False)) or mf_val >= 3.0
-
         if uy_tin < 40.0:
-            if is_mf_surge:
-                order_copy['status'] = 'MANUAL_APPROVAL'
-                order_copy['volume_pct'] = 0.2  # 20% Vol thăm dò cho Tier C có bạo phát
-                order_copy['tier_c_surge'] = True
-                final_execution_orders.append(order_copy)
-            else:
-                sym_clean = str(order_copy.get('symbol', '')).replace('/USDT', '').replace('USDT', '').strip()
-                if sym_clean and sym_clean not in rejected_tier_c:
-                    rejected_tier_c.append(sym_clean)
+            if not is_mf_surge:
+                continue
+            order_copy['status'] = 'MANUAL_APPROVAL'
+            order_copy['volume_pct'] = 0.2
+            order_copy['tier_c_surge'] = True
+            order_copy['locked_reason'] = f"Tier C - Dòng Tiền Bạo Phát {mf_val:.1f}x"
+            final_execution_orders.append(order_copy)
             continue
 
-        # 3. PHÂN LUỒNG TIER S / TIER A (>= 60đ) VÀ TIER B (40 - 59.9đ)
+        # 3. Phân luồng Tier S/A và Tier B
         has_macro_risk = bool(order_copy.get('macro_risk', False))
-        if uy_tin >= 60.0 and not has_macro_risk:
-            order_copy['status'] = 'AUTO_EXECUTE'
-            order_copy['volume_pct'] = 1.0  # 100% Vol
-        else:
-            # Rơi vào trường hợp Tier B (40-59.9đ) HOẶC Rủi ro vĩ mô (BTC Gate khóa)
+        tier_label = str(order_copy.get('tier_label', ''))
+        is_tier_sa = ('Tier S' in tier_label or 'Tier A' in tier_label or uy_tin >= 60.0)
+
+        if has_macro_risk:
+            # BTC Gate khóa nòng -> MANUAL_APPROVAL
             order_copy['status'] = 'MANUAL_APPROVAL'
-            order_copy['volume_pct'] = 0.3  # 30% Vol thăm dò
+            order_copy['locked_reason'] = order_copy.get('macro_risk_reason') or 'BTC Fakeout Risk'
+            order_copy['volume_pct'] = 0.3
+            final_execution_orders.append(order_copy)
+        elif is_tier_sa:
+            order_copy['status'] = 'AUTO_EXECUTE'
+            order_copy['volume_pct'] = 1.0
+            final_execution_orders.append(order_copy)
+        else:
+            # Tier B (40 - 59.9đ)
+            if order_type == 'GRID':
+                # Grid cho Tier B được cấp vốn -> AUTO_EXECUTE
+                order_copy['status'] = 'AUTO_EXECUTE'
+                order_copy['volume_pct'] = 1.0
+                grid_tier_b_candidates.append(order_copy)
+            else:
+                # Spot OCO Tier B -> Chờ duyệt tay
+                order_copy['status'] = 'MANUAL_APPROVAL'
+                order_copy['locked_reason'] = 'Tier B - Cần xác nhận bóp cò tay'
+                order_copy['volume_pct'] = 0.3
+            final_execution_orders.append(order_copy)
 
-        final_execution_orders.append(order_copy)
+    # Tính toán Priority Queue cho Grid Tier B
+    if grid_tier_b_candidates:
+        try:
+            from core.historical_rater import calculate_grid_priority_queue
+            ranked_grids = calculate_grid_priority_queue(grid_tier_b_candidates)
+            rank_map = {c['symbol']: (c.get('grid_priority_rank'), c.get('grid_priority_label')) for c in ranked_grids}
+            for o in final_execution_orders:
+                if o['symbol'] in rank_map:
+                    rnk, lbl = rank_map[o['symbol']]
+                    o['grid_priority_rank'] = rnk
+                    o['grid_priority_label'] = lbl
+        except Exception as e:
+            logger.debug(f"Không tính được grid priority queue: {e}")
 
-    # Ghi nhận tóm tắt danh sách các mã bị loại bỏ (gọn gàng, không in tràn log từng dòng)
-    if rejected_tier_f:
-        logger.info(f"🚫 [GATEKEEPER] Loại bỏ {len(rejected_tier_f)} mã Tier F (< 25đ - Từ Chối): {', '.join(rejected_tier_f)}")
-    if rejected_tier_c:
-        logger.info(f"👀 [GATEKEEPER] Loại bỏ {len(rejected_tier_c)} mã Tier C (< 40đ - Theo Dõi): {', '.join(rejected_tier_c)}")
-        
     return final_execution_orders
 
 
@@ -542,88 +771,128 @@ def _order_sort_key(o: Dict[str, Any]) -> tuple:
     return (uy_tin, mf, rr)
 
 
+def _print_order_geometry_details(o: Dict[str, Any]):
+    """In chi tiết thông số hình học lệnh (Entry, SL, TP, R:R, Grid TP2) cho người vận hành."""
+    order_type = o.get('order_type', 'SPOT_OCO')
+    entry = _safe_float(o.get('entry', o.get('trigger', 0.0)), 0.0)
+    sl_val = _safe_float(o.get('sl', o.get('raw_sl', 0.0)), 0.0)
+    tp_val = _safe_float(o.get('tp', o.get('raw_tp', 0.0)), 0.0)
+
+    if order_type == 'SPOT_OCO':
+        if entry > 0:
+            sl_pct = ((sl_val - entry) / entry) * 100 if sl_val > 0 else 0.0
+            tp_pct = ((tp_val - entry) / entry) * 100 if tp_val > 0 else 0.0
+            rr_val = _safe_float(o.get('rr_ratio'), 2.0)
+            dec = _count_decimals(entry)
+            print(f"    ↳ 🎯 LỆNH OCO: Entry={_fmt_price_val(entry, dec)} | SL={_fmt_price_val(sl_val, dec)} ({sl_pct:+.1f}%) | TP={_fmt_price_val(tp_val, dec)} ({tp_pct:+.1f}%) | R:R 1:{rr_val:.1f}")
+
+        if 'grid_tp2' in o and isinstance(o['grid_tp2'], dict):
+            g = o['grid_tp2']
+            opt_note = " | Kèm Auto-Breakeven (+1%)" if o.get('auto_breakeven') else ""
+            f_low = _fmt_price_val(_safe_float(g.get('lower'), 0.0), dec)
+            f_up = _fmt_price_val(_safe_float(g.get('upper'), 0.0), dec)
+            print(f"    ↳ 🛡️ LƯỚI TP2: Dải L={f_low} - U={f_up} ({g.get('grids', 24)} Lưới){opt_note}")
+        elif o.get('auto_breakeven'):
+            print(f"    ↳ 🛡️ Option: Kích hoạt Auto-Breakeven (+1%).")
+
+    elif order_type == 'GRID':
+        trigger = o.get('entry', o.get('trigger', entry))
+        lower = o.get('lower', o.get('raw_lower', 0.0))
+        upper = o.get('upper', o.get('raw_upper', 0.0))
+        grids = o.get('grids', 24)
+        dec = _count_decimals(_safe_float(trigger, 0.0))
+        print(f"    ↳ 🥅 LỆNH GRID: Dải L={_fmt_price_val(_safe_float(lower, 0.0), dec)} - U={_fmt_price_val(_safe_float(upper, 0.0), dec)} ({grids} Lưới) | Trig: {_fmt_price_val(_safe_float(trigger, 0.0), dec)} | SL: {_fmt_price_val(sl_val, dec)} | TP: {_fmt_price_val(tp_val, dec)}")
+
+
 def render_gatekeeper_board(final_orders):
     print("=" * 100)
-    print("🛡️ [MODULE BẢNG DUYỆT LỆNH TỐI ƯU] HÀNG ĐỢI THỰC THI (GIAI ĐOẠN 1)")
+    print("🛡️ [MODULE BẢNG DUYỆT LỆNH TỐI ƯU] HÀNG ĐỢI THỰC THI (PHIÊN BẢN V2.3)")
     print("=" * 100)
-    print("💡 Bộ lọc hình học: Đệm SL chống quét râu (1.5%), Thác Nước Kháng Cự & Mốc Tâm Lý (Min R:R 1:2.0), Bóp lưới Grid 15% rìa.")
-    print("🎯 Thứ tự ưu tiên: 1. Uy tín 14 ngày (Tier S > A > B) ➔ 2. Dòng tiền bạo phát ➔ 3. R:R tối ưu.\n")
 
     final_orders = final_orders or []
     auto_exec = sorted([o for o in final_orders if o.get('status') == 'AUTO_EXECUTE'], key=_order_sort_key, reverse=True)
     manual_exec = sorted([o for o in final_orders if o.get('status') == 'MANUAL_APPROVAL'], key=_order_sort_key, reverse=True)
+    veto_reject = sorted([o for o in final_orders if o.get('status') == 'VETO_REJECT'], key=_order_sort_key, reverse=True)
 
-    if not auto_exec and not manual_exec:
-        print("   ℹ️ Hiện tại không có lệnh nào trong Hàng Đợi Thực Thi (Thị trường chưa có setup đạt chuẩn hoặc vi phạm chốt chặn vĩ mô).")
+    if not auto_exec and not manual_exec and not veto_reject:
+        print("   ℹ️ Hiện tại không có lệnh nào trong Hàng Đợi Thực Thi.")
         print("=" * 100)
         return
 
-    def print_order_block(orders, title, desc):
-        if not orders: return
-        print(f"🟢 {title} | {desc}" if "AUTO" in title else f"🟡 {title} | {desc}")
-        print("-" * 100)
+    # 🟢 VÙNG 1: LỆNH DUYỆT TỰ ĐỘNG (AUTO-EXECUTE)
+    print("\n🟢 VÙNG 1: LỆNH DUYỆT TỰ ĐỘNG (AUTO-EXECUTE)")
+    if not auto_exec:
+        print("   (Không có lệnh nào trong Vùng 1)")
+    for idx, o in enumerate(auto_exec, 1):
+        sym = o.get('symbol', '')
+        uy_tin = _safe_float(o.get('uy_tin_score'), 0.0)
+        tier_label = o.get('tier_label', '')
+        tier_str = f" | {tier_label} ({uy_tin:.1f}đ)" if tier_label else f" | Uy tín: {uy_tin:.1f}đ"
+        engine_str = o.get('engine_label', o.get('engine', o.get('strategy_desc', '')))
+        order_type = o.get('order_type', 'SPOT_OCO')
+        lev = int(_safe_float(o.get('leverage', 1), 1))
+        is_fut = (o.get('market_type') == 'FUTURES' or 'FUTURES' in str(o.get('strategy_desc', '')).upper() or lev > 1)
 
-        # Đếm số lượng lệnh của mỗi mã để phát hiện mã có cả OCO và GRID (như AVA)
-        sym_list = [o.get('symbol') for o in orders]
-        dual_symbols = {s for s in sym_list if sym_list.count(s) > 1}
+        if order_type == 'SPOT_OCO':
+            tag = "🎯 [SPOT OCO]"
+            print(f"[{idx}] {tag} {sym}{tier_str} | {engine_str}")
+        else:
+            tag = f"🥅 [GRID {lev}x]" if is_fut and lev > 1 else ("🥅 [FUTURES GRID]" if is_fut else "🥅 [GRID]")
+            lower = _fmt_price_val(_safe_float(o.get('lower'), 0.0))
+            upper = _fmt_price_val(_safe_float(o.get('upper'), 0.0))
+            p_rank = o.get('grid_priority_rank')
+            p_str = f" (Ưu tiên #{p_rank})" if p_rank else ""
+            print(f"[{idx}] {tag} {sym}{tier_str} | Zone: {lower} - {upper}{p_str}")
 
-        for idx, o in enumerate(orders, 1):
-            try:
-                engine_name = o.get('engine', 'UNKNOWN_ENGINE')
-                mf = _safe_float(o.get('money_flow'), 0.0)
-                mf_str = f" [💥 BẠO PHÁT {mf:.1f}x]" if mf > 0 else ""
-                tier_label = o.get('tier_label', '')
-                tier_str = f" - {tier_label}" if tier_label else ""
-                sym = o.get('symbol')
-                has_dual = sym in dual_symbols
-                order_type = o.get('order_type', 'SPOT_OCO')
-                uy_tin_display = _safe_float(o.get('uy_tin_score'), 0.0)
-                vol_pct = int(_safe_float(o.get('volume_pct', 1.0), 1.0) * 100)
-                
-                if order_type == 'SPOT_OCO':
-                    entry = _safe_float(o.get('entry'), 0.0)
-                    sl_val = _safe_float(o.get('sl'), 0.0)
-                    tp_val = _safe_float(o.get('tp'), 0.0)
-                    sl_pct = ((sl_val - entry) / entry) * 100 if entry > 0 else 0.0
-                    tp_pct = ((tp_val - entry) / entry) * 100 if entry > 0 else 0.0
-                    rr_val = _safe_float(o.get('rr_ratio'), 2.0)
-                    
-                    type_tag = "🎯 [LỰA CHỌN 1: SPOT OCO]" if has_dual else "🎯 [LỆNH SPOT OCO]"
-                    print(f"[{idx}] {type_tag} Mã: {o['symbol']} | Động cơ: {engine_name}{mf_str} | Cấp vốn: {vol_pct}% (Uy tín: {uy_tin_display}đ{tier_str})")
-                    print(f"    ↳ 🎯 LỆNH OCO: Entry={entry} | SL={sl_val} ({sl_pct:+.1f}%) | TP={tp_val} ({tp_pct:+.1f}%) | R:R 1:{rr_val:.1f}")
-                    
-                    if 'grid_tp2' in o and isinstance(o['grid_tp2'], dict):
-                        g = o['grid_tp2']
-                        opt_note = " | Kèm Auto-Breakeven (+1%)" if o.get('auto_breakeven') else ""
-                        print(f"    ↳ 🛡️ LƯỚI TP2: Dải L={g.get('lower')} - U={g.get('upper')} (24 Lưới){opt_note}")
-                    elif o.get('auto_breakeven'):
-                        print(f"    ↳ 🛡️ Option: Kích hoạt Auto-Breakeven (+1%).")
-                        
-                elif order_type == 'GRID':
-                    trigger = o.get('entry', o.get('trigger', 'N/A'))
-                    sl = o.get('sl', 'N/A')
-                    tp = o.get('tp', o.get('upper', 'N/A'))
-                    strat_name = o.get('strategy_desc', 'GRID TÍCH LŨY')
-                    
-                    type_tag = "🥅 [LỰA CHỌN 2: GRID LƯỚI]" if has_dual else f"🥅 [{strat_name}]"
-                    print(f"[{idx}] {type_tag} Mã: {o['symbol']} | Động cơ: {engine_name}{mf_str} | Cấp vốn: {vol_pct}% (Uy tín: {uy_tin_display}đ{tier_str})")
-                    print(f"    ↳ 🥅 LỆNH GRID: Dải L={o.get('lower')} - U={o.get('upper')} (24 Lưới) | Trig: {trigger} | SL: {sl} | TP: {tp}")
-                    print(f"    ↳ 🛡️ Option: Bóp 15% biên độ, tăng tần suất khớp lệnh vùng tích lũy 72H.")
-                
-                if o.get('status') == 'MANUAL_APPROVAL':
-                    if o.get('tier_c_surge'):
-                        print(f"    ↳ ⚠️ Trạng thái: Chờ duyệt tay (Tier C - Dòng Tiền Bạo Phát {mf:.1f}x). Cấp vốn thăm dò {vol_pct}%. Nhấn [Y] để đẩy lệnh lên sàn.")
-                    elif o.get('macro_risk'):
-                        reason = o.get('macro_risk_reason', 'Rủi ro vĩ mô')
-                        print(f"    ↳ ⚠️ Trạng thái: Chờ duyệt tay ({reason}). Cấp vốn thăm dò {vol_pct}%. Nhấn [Y] để đẩy lệnh lên sàn.")
-                    else:
-                        print(f"    ↳ ⚠️ Trạng thái: Treo chờ lệnh. Cấp vốn thăm dò {vol_pct}%. Nhấn [Y] để đẩy lệnh lên sàn.")
-                print("")
-            except Exception as item_err:
-                logger.error(f"Render Error (Gatekeeper item {o.get('symbol')}): {item_err}", exc_info=True)
+        if o.get('leverage_warning'):
+            print(f"    ↳ Gatekeeper: [WARNING] {o['leverage_warning']}")
+        app_msg = o.get('gatekeeper_approved_msg', 'Lệnh vượt qua 5 tầng Gatekeeper thành công.')
+        print(f"    ↳ Gatekeeper: [APPROVED] {app_msg}")
+        _print_order_geometry_details(o)
 
-    print_order_block(auto_exec, "LỆNH DUYỆT TỰ ĐỘNG (AUTO-EXECUTE)", "Điều kiện: Tier S/A (Uy tín >= 60đ)")
-    print_order_block(manual_exec, "LỆNH CHỜ DUYỆT TAY (MANUAL APPROVAL)", "Điều kiện: Tier B (40-59đ) hoặc Tier S/A gặp Rủi ro Vĩ mô")
+    # 🟡 VÙNG 2: LỆNH CHỜ DUYỆT TAY (MANUAL APPROVAL / KHÓA NÒNG BTC)
+    print("\n🟡 VÙNG 2: LỆNH CHỜ DUYỆT TAY (MANUAL APPROVAL / KHÓA NÒNG BTC)")
+    if not manual_exec:
+        print("   (Không có lệnh nào trong Vùng 2)")
+    for idx, o in enumerate(manual_exec, 1):
+        sym = o.get('symbol', '')
+        uy_tin = _safe_float(o.get('uy_tin_score'), 0.0)
+        tier_label = o.get('tier_label', '')
+        tier_str = f" | {tier_label} ({uy_tin:.1f}đ)" if tier_label else f" | Uy tín: {uy_tin:.1f}đ"
+        engine_str = o.get('engine_label', o.get('engine', o.get('strategy_desc', '')))
+        order_type = o.get('order_type', 'SPOT_OCO')
+        tag = "🎯 [SPOT OCO]" if order_type == 'SPOT_OCO' else "🥅 [GRID]"
+
+        print(f"[{idx}] {tag} {sym}{tier_str} | {engine_str}")
+        lock_msg = o.get('locked_reason', 'Chờ duyệt tay')
+        print(f"    ↳ Gatekeeper: [LOCKED] Chờ duyệt tay ({lock_msg}).")
+        _print_order_geometry_details(o)
+
+    # 🔴 VÙNG 3: LỆNH BỊ PHỦ QUYẾT TỪ CHỐI (VETO REJECT)
+    print("\n🔴 VÙNG 3: LỆNH BỊ PHỦ QUYẾT TỪ CHỐI (VETO REJECT)")
+    if not veto_reject:
+        print("   (Không có lệnh nào bị từ chối)")
+    for idx, o in enumerate(veto_reject, 1):
+        sym = o.get('symbol', '')
+        uy_tin = _safe_float(o.get('uy_tin_score'), 0.0)
+        tier_label = o.get('tier_label', '')
+        tier_str = f" | {tier_label} ({uy_tin:.1f}đ)" if tier_label else ""
+        engine_str = o.get('engine_label', o.get('engine', o.get('strategy_desc', '')))
+        order_type = o.get('order_type', 'SPOT_OCO')
+        lev = int(_safe_float(o.get('leverage', 1), 1))
+        is_fut = (o.get('market_type') == 'FUTURES' or 'FUTURES' in str(o.get('strategy_desc', '')).upper() or lev > 1)
+
+        if order_type == 'SPOT_OCO':
+            tag = "🚫 [SPOT OCO]"
+            print(f"[{idx}] {tag} {sym} | {engine_str}")
+        else:
+            tag = "🚫 [FUTURES GRID]" if is_fut else "🚫 [GRID]"
+            print(f"[{idx}] {tag} {sym}{tier_str}")
+
+        veto_msg = o.get('veto_reason', 'Vi phạm chốt chặn Gatekeeper.')
+        print(f"    ↳ Gatekeeper: [VETO] {veto_msg}")
+        _print_order_geometry_details(o)
+
     print("=" * 100)
 
 
@@ -759,7 +1028,17 @@ def extract_clean_summary_orders(
                 "is_money_flow_surge": (mf_val >= 3.0 or is_top_mf),
                 "grid_tp2_line": getattr(s, "grid_tp2_line", "") or "",
                 "macro_risk": btc_locked,
-                "macro_risk_reason": "BTC Gate khóa (Rủi ro vĩ mô)" if btc_locked else ""
+                "macro_risk_reason": "BTC gãy MA25 1H - Fakeout Risk" if btc_locked else "",
+                "penalty_tags": p_info.get("penalty_tags", []),
+                "warning_level": int(getattr(s, "warning_level", 0) or p_info.get("warning_level", 0) or 0),
+                "warning_label": str(getattr(s, "warning_label", "") or p_info.get("warning_label", "") or ""),
+                "downgrade_level": str(getattr(s, "downgrade_level", "") or p_info.get("downgrade_level", "") or ""),
+                "rsi_1h": float(getattr(s, "rsi_1h", 0.0) or p_info.get("rsi_1h", 0.0) or 0.0),
+                "gate1_score": float(getattr(s, "gate1_score", 0.0) or p_info.get("breakdown", {}).get("t0_components", {}).get("3d_strict", 30.0) or 30.0),
+                "lost_ma7_3d": bool(getattr(s, "lost_ma7_3d", False) or p_info.get("lost_ma7_3d", False)),
+                "is_ne_grid": bool(getattr(s, "is_ne_grid", False) or any("Né Grid" in str(x) for x in p_info.get("penalty_tags", []))),
+                "leverage": int(getattr(s, "leverage", getattr(s, "lev", 1)) or 1),
+                "market_type": getattr(s, "market_type", "SPOT")
             })
             seen_spot_syms.add(clean_sym)
 
@@ -834,6 +1113,12 @@ def extract_clean_summary_orders(
                         except Exception:
                             pass
 
+                # Trích xuất đòn bẩy nếu có cấu hình
+                m_lev = re.search(r"(\d+)\s*x", f"{grid_line} {setup_line} {default_strat}", re.IGNORECASE)
+                grid_lev = int(m_lev.group(1)) if m_lev else int(getattr(s, "leverage", getattr(s, "lev", 1)) or 1)
+                is_fut = (getattr(s, "market_type", "") == "FUTURES") or ("FUTURES" in str(default_strat).upper()) or (grid_lev > 1)
+                mkt_type = "FUTURES" if is_fut else "SPOT"
+
                 clean_orders.append({
                     "symbol": f"{clean_sym}/USDT",
                     "order_type": "GRID",
@@ -855,7 +1140,17 @@ def extract_clean_summary_orders(
                     "engine_label": ENGINE_LABELS.get(engine, engine),
                     "strategy_desc": default_strat,
                     "money_flow": mf_val,
-                    "is_money_flow_surge": (mf_val >= 3.0)
+                    "is_money_flow_surge": (mf_val >= 3.0),
+                    "penalty_tags": p_info.get("penalty_tags", []),
+                    "warning_level": int(getattr(s, "warning_level", 0) or p_info.get("warning_level", 0) or 0),
+                    "warning_label": str(getattr(s, "warning_label", "") or p_info.get("warning_label", "") or ""),
+                    "downgrade_level": str(getattr(s, "downgrade_level", "") or p_info.get("downgrade_level", "") or ""),
+                    "rsi_1h": float(getattr(s, "rsi_1h", 0.0) or p_info.get("rsi_1h", 0.0) or 0.0),
+                    "gate1_score": float(getattr(s, "gate1_score", 0.0) or p_info.get("breakdown", {}).get("t0_components", {}).get("3d_strict", 30.0) or 30.0),
+                    "lost_ma7_3d": bool(getattr(s, "lost_ma7_3d", False) or p_info.get("lost_ma7_3d", False)),
+                    "is_ne_grid": bool(getattr(s, "is_ne_grid", False) or any("Né Grid" in str(x) for x in p_info.get("penalty_tags", []))),
+                    "leverage": grid_lev,
+                    "market_type": mkt_type
                 })
                 seen_grid_syms.add(clean_sym)
 
