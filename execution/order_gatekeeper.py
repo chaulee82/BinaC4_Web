@@ -1131,12 +1131,26 @@ def extract_clean_summary_orders(
                 engine = getattr(s, "engine_source", "") or ("DC1" if default_strat == "WIDE GRID 3D" else "DC1")
                 dec = _count_decimals(lower)
 
-                # 1. Trích xuất Trigger / Entry
+                # 1. Trích xuất Trigger / Entry theo phân luồng Gatekeeper
                 m_trig = _RE_ENTRY.search(grid_line) or _RE_ENTRY.search(setup_line)
-                if m_trig:
-                    trigger_val = float(m_trig.group(1))
+                raw_trig_val = float(m_trig.group(1)) if m_trig else round((lower + upper) / 2.0, dec)
+
+                is_solid_grid = any(t in tier for t in ["Tier S", "Tier A", "Tier B"]) and not any(t in tier for t in ["Tier C", "Tier F"])
+                p_tags = p_info.get("penalty_tags", []) or []
+                is_ne_grid_coin = bool(getattr(s, "is_ne_grid", False) or any("Né Grid" in str(x) or "Ne Grid" in str(x) for x in p_tags))
+
+                macro_entry = None
+                macro_obj = getattr(s, "macro_levels", None) or p_info.get("macro_levels")
+                if macro_obj and getattr(macro_obj, "entry_4h", None):
+                    try:
+                        macro_entry = float(macro_obj.entry_4h)
+                    except (ValueError, TypeError):
+                        macro_entry = None
+
+                if is_solid_grid and not is_ne_grid_coin and macro_entry and macro_entry > 0:
+                    trigger_val = round(macro_entry, dec)
                 else:
-                    trigger_val = round((lower + upper) / 2.0, dec)
+                    trigger_val = raw_trig_val
 
                 # 2. Trích xuất Grid SL & TP
                 m_sl_grid = _RE_SL.search(grid_line)

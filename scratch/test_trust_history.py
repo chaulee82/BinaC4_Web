@@ -92,6 +92,19 @@ def test_trust_history():
     assert any(x['symbol'] == 'ZK' for x in l1), "ZK phải lọt top_losers vì suy giảm từ T3 xuống T0"
 
     print_delta_tables(g1, l1)
+
+    # Test Bảng Grid kèm Macro 4H
+    from models.market_state import MacroLevels
+    m_test = MacroLevels(entry_4h=0.00325, sl_4h=0.00215, tp_1h=0.00426, tp_4h=0.00426)
+    st_test = {'ANIME': {'last_price': 0.00302, 'macro_levels': m_test}}
+    w_test = [{'symbol': 'ANIME', 'macro_levels': m_test}]
+    g_grid = [{
+        'symbol': 'ANIME', 'tier': 'Tier S', 'total_score': 85.0, 'current': 85.0,
+        'delta_24h': 12.0, 'delta_72h': 42.0, 'prev_1': 73.0, 'prev_3': 43.0,
+        'pattern': 'PULLBACK'
+    }]
+    print_delta_tables(g_grid, [], live_data_map=st_test, warning_results=w_test)
+
     print("✅ TEST PASSED: trust_history hoàn toàn tương thích và hoạt động chuẩn xác!")
 
 if __name__ == "__main__":

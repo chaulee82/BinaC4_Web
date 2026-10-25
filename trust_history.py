@@ -98,8 +98,9 @@ def extract_buy_zone_and_action(
     delta_24h: float,
     delta_72h: float,
     df_summary: Optional[Any] = None,
-    global_signals_pool: Optional[List[Any]] = None
-) -> Tuple[str, str, str, float, str, Optional[float], float]:
+    global_signals_pool: Optional[List[Any]] = None,
+    warning_results: Optional[List[Dict[str, Any]]] = None
+) -> Tuple[str, str, str, float, str, Optional[float], float, Optional[Any]]:
     """
     Trích xuất vùng giá đón gom, xác định trạng thái hành động và động cơ cốt lõi nổi bật
     dựa trên PRD PRE-BREAKOUT RADAR.
@@ -112,6 +113,12 @@ def extract_buy_zone_and_action(
         else:
             p_live = float(getattr(state, "last_price", 0.0) or getattr(state, "close", 0.0) or 0.0)
     macro = getattr(state, "macro_levels", None)
+    if macro is None and warning_results:
+        for w in warning_results:
+            w_sym = str(w.get("symbol", "")).upper().replace("/USDT", "").replace("USDT", "").strip()
+            if w_sym == sym:
+                macro = w.get("macro_levels")
+                break
 
     ma7_3d = None
     rebalance_limit = None
@@ -124,8 +131,12 @@ def extract_buy_zone_and_action(
             swing_high = macro.get("swing_high_24h") or macro.get("swing_high")
         else:
             ma7_3d = getattr(macro, "ma7_3d", None)
+            if not ma7_3d and getattr(macro, "d3", None) and isinstance(macro.d3, dict):
+                ma7_3d = macro.d3.get("ma7_3d")
             rebalance_limit = getattr(macro, "tp_limit_rebalance", None)
             swing_high = getattr(macro, "swing_high_24h", None) or getattr(macro, "swing_high", None)
+            if not swing_high and getattr(macro, "d3", None) and isinstance(macro.d3, dict):
+                swing_high = macro.d3.get("swing_high")
 
     # Fallback nếu thiếu ma7_3d hoặc p_live: lấy từ get_3d_profile
     if not ma7_3d or p_live <= 0:
@@ -231,9 +242,36 @@ def extract_buy_zone_and_action(
         else:
             highlight_engine = "Dòng tiền gia tốc"
 
-    # 1. Xác định Vùng Giá Đón Gom (Buy Zone)
+    # 1. Phân luồng chiến thuật Gatekeeper xác định Trigger (ref_buy) & Vùng Gom (Buy Zone)
+    tier_raw = str(item.get("tier", ""))
+    is_solid_tier = any(t in tier_raw for t in ["Tier S", "Tier A", "Tier B"]) and not any(t in tier_raw for t in ["Tier C", "Tier F"])
+
+    # Kiểm tra cờ "Né Grid"
+    penalty_tags = (
+        item.get("penalty_tags", []) 
+        or item.get("profile", {}).get("penalty_tags", []) 
+        or []
+    )
+    is_ne_grid = bool(
+        item.get("is_ne_grid", False) 
+        or any("Né Grid" in str(x) or "Ne Grid" in str(x) for x in penalty_tags)
+    )
+
+    use_macro_entry_priority = is_solid_tier and not is_ne_grid
+    entry_4h_val = float(getattr(macro, "entry_4h", 0.0) or 0.0) if macro else 0.0
+
     ref_buy = 0.0
-    if rebalance_limit and float(rebalance_limit) > 0:
+    if use_macro_entry_priority and entry_4h_val > 0:
+        # [PHÂN LUỒNG GATEKEEPER NHÓM 1 - NỀN MÓNG VỮNG (TIER S / A / B)]
+        # Đổi ưu tiên số 1: Sử dụng Entry 4H làm Trigger đón gom ngay tại đáy hộp 4H
+        ref_buy = entry_4h_val
+        low_b = ref_buy * 0.995
+        high_b = ref_buy * 1.005
+        buy_zone = f"{_format_price(low_b)} - {_format_price(high_b)}"
+    elif rebalance_limit and float(rebalance_limit) > 0:
+        # [PHÂN LUỒNG GATEKEEPER NHÓM 2 - TIER C / NÉ GRID (RỦI RO THAO TÚNG CAO)]
+        # Hoặc Fallback Nhóm 1 khi thiếu dữ liệu Entry 4H:
+        # Tiếp tục dùng Trigger chiết khấu sâu (-15% đến -25%) rải lưới dưới đáy vực
         rl = float(rebalance_limit)
         low_b = rl * 0.995
         high_b = rl * 1.005
@@ -290,14 +328,15 @@ def extract_buy_zone_and_action(
         action_status = "🟡 THEO DÕI NỀN"
         action_group = "WATCH"
 
-    return buy_zone, action_status, action_group, ref_buy, highlight_engine, swing_high, p_live
+    return buy_zone, action_status, action_group, ref_buy, highlight_engine, swing_high, p_live, macro
 
 
 def render_pre_breakout_radar_table(
     scored_pool: List[Dict[str, Any]],
     live_data_map: Optional[Dict[str, Any]] = None,
     df_summary: Optional[Any] = None,
-    global_signals_pool: Optional[List[Any]] = None
+    global_signals_pool: Optional[List[Any]] = None,
+    warning_results: Optional[List[Dict[str, Any]]] = None
 ) -> List[Dict[str, Any]]:
     """
     Render BẢNG BIẾN THIÊN TÍN NHIỆM & BÁO GOM BỨT PHÁ (PRE-BREAKOUT RADAR)
@@ -332,13 +371,14 @@ def render_pre_breakout_radar_table(
                 or live_data_map.get(f"{sym}USDT")
             )
 
-        buy_zone, action_status, action_group, ref_buy, highlight_engine, swing_high, p_live = extract_buy_zone_and_action(
+        buy_zone, action_status, action_group, ref_buy, highlight_engine, swing_high, p_live, macro = extract_buy_zone_and_action(
             state=state,
             item=item,
             delta_24h=d24,
             delta_72h=d72,
             df_summary=df_summary,
-            global_signals_pool=global_signals_pool
+            global_signals_pool=global_signals_pool,
+            warning_results=warning_results
         )
 
         radar_candidates.append({
@@ -354,7 +394,8 @@ def render_pre_breakout_radar_table(
             "ref_buy": ref_buy,
             "highlight_engine": highlight_engine,
             "swing_high": swing_high,
-            "live_price": p_live
+            "live_price": p_live,
+            "macro_levels": macro
         })
 
     sep_width = 145
@@ -738,7 +779,8 @@ def print_delta_tables(
         scored_pool=top_gainers,
         live_data_map=live_data_map,
         df_summary=df_summary,
-        global_signals_pool=global_signals_pool
+        global_signals_pool=global_signals_pool,
+        warning_results=warning_results
     )
 
     sep_width = 145
@@ -801,9 +843,69 @@ def print_delta_tables(
                 b_sl = b_trig * 0.88
                 grid_str = f"Dải L={_format_price(b_low)} - U={_format_price(b_up)} (24 Lưới)"
                 print(f"{b_sym + '/USDT':<12} | {live_str:<22} | {grid_str:<38} | {_format_price(b_trig):<18} | {_format_price(b_sl):<18} | {_format_price(b_up):<18} | ~1.04%")
+                macro_line = _format_macro_4h_line(
+                    sym=b_sym,
+                    macro=b_item.get("macro_levels"),
+                    b_item=b_item,
+                    live_data_map=live_data_map,
+                    warning_results=warning_results
+                )
+                print(macro_line)
         print("-" * sep_width)
         print("=" * sep_width)
     print("\n")
+
+
+def _format_macro_4h_line(
+    sym: str,
+    macro: Optional[Any] = None,
+    b_item: Optional[Dict[str, Any]] = None,
+    live_data_map: Optional[Dict[str, Any]] = None,
+    warning_results: Optional[List[Dict[str, Any]]] = None
+) -> str:
+    """Định dạng chuỗi thông tin [Macro 4H] kèm Profile 3D chuẩn xác cho bảng Grid."""
+    if macro is None and b_item is not None:
+        macro = b_item.get("macro_levels") or b_item.get("macro")
+
+    if macro is None and warning_results:
+        for w in warning_results:
+            w_sym = str(w.get("symbol", "")).upper().replace("/USDT", "").replace("USDT", "").strip()
+            if w_sym == sym:
+                macro = w.get("macro_levels")
+                break
+
+    if macro is None and live_data_map:
+        st = live_data_map.get(sym) or live_data_map.get(f"{sym}/USDT") or live_data_map.get(f"{sym}USDT")
+        if st:
+            macro = getattr(st, "macro_levels", None) if not isinstance(st, dict) else st.get("macro_levels")
+
+    d3 = getattr(macro, "d3", None) if macro else None
+    if not d3:
+        try:
+            from core.macro_levels import get_3d_profile
+            d3 = get_3d_profile(sym)
+        except Exception:
+            d3 = None
+
+    d3_str = ""
+    if d3:
+        try:
+            from core.macro_levels import format_3d_summary
+            d3_str = format_3d_summary(d3, _format_price)
+        except Exception:
+            d3_str = ""
+
+    if macro:
+        e4 = getattr(macro, "entry_4h", None)
+        sl4 = getattr(macro, "sl_4h", None)
+        tp1 = getattr(macro, "tp_1h", None)
+        tp4 = getattr(macro, "tp_4h", None)
+        if e4 is not None and sl4 is not None and tp1 is not None and tp4 is not None:
+            return f"   ↳ [Macro 4H] Entry: {_format_price(float(e4)):<10} | SL Cứng: {_format_price(float(sl4)):<10} | TP 1H: {_format_price(float(tp1)):<10} | TP 4H: {_format_price(float(tp4)):<10}{d3_str}"
+
+    if d3_str:
+        return f"   ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô 4H{d3_str}"
+    return f"   ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô 4H"
 
 
 # Alias tương thích ngược
