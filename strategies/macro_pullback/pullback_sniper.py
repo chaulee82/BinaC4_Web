@@ -15,6 +15,7 @@ import ccxt
 import pandas as pd
 import numpy as np
 from core.dynamic_pricing_oracle import DynamicPricingOracle
+from core.price_formatter import round_price
 
 
 class PullbackSniper:
@@ -451,9 +452,9 @@ class PullbackSniper:
                     "Gate_4_RR": c4
                 },
                 "trade_setup": {
-                    "entry": round(entry, 6),
-                    "stop_loss": round(stop_loss, 6),
-                    "take_profit": round(take_profit, 6)
+                    "entry": round_price(entry),
+                    "stop_loss": round_price(stop_loss),
+                    "take_profit": round_price(take_profit)
                 },
                 "macro_trend_pct": macro_gate.get("trend_pct", 0)
             }

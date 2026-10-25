@@ -7,6 +7,7 @@ Mục tiêu: Đảm bảo Tỷ lệ khớp lệnh > 60% và R/R mặc định >=
 
 import pandas as pd
 import pandas_ta as ta
+from core.price_formatter import round_price
 
 class DynamicPricingOracle:
     def __init__(self):
@@ -74,16 +75,21 @@ class DynamicPricingOracle:
             if (target_take_profit - optimal_entry) > max_tp_distance:
                 target_take_profit = optimal_entry + max_tp_distance
 
+            # Khóa bảo vệ tối thiểu: SL luôn phải thấp hơn Entry ít nhất 0.5%
+            if final_stop_loss >= optimal_entry:
+                final_stop_loss = optimal_entry * 0.985
+            risk_amount = max(optimal_entry - final_stop_loss, 0.0)
+
             # Đóng gói tọa độ
             setup = {
                 "status": "SUCCESS",
-                "entry": round(optimal_entry, 5),
-                "stop_loss": round(final_stop_loss, 5),
-                "take_profit": round(target_take_profit, 5),
+                "entry": round_price(optimal_entry),
+                "stop_loss": round_price(final_stop_loss),
+                "take_profit": round_price(target_take_profit),
                 "metrics": {
-                    "risk_per_trade_pct": round((risk_amount / optimal_entry) * 100, 2),
+                    "risk_per_trade_pct": round((risk_amount / optimal_entry) * 100, 2) if optimal_entry > 0 else 0.0,
                     "expected_rr": self.min_rr_ratio,
-                    "atr_value": round(current_atr, 5)
+                    "atr_value": round_price(current_atr)
                 }
             }
             return setup

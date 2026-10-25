@@ -49,6 +49,11 @@ def _make_formatter(tick_size: Optional[float]):
             return f"{val:.2f}"
         if val >= 1:
             return f"{val:.4f}"
+        if val < 0.001 and val > 0:
+            import math
+            first_sig = -math.floor(math.log10(abs(val)))
+            dec = min(max(first_sig + 3, 6), 10)
+            return f"{val:.{dec}f}"
         return f"{val:.6f}"
     return fmt
 

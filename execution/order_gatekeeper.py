@@ -45,10 +45,10 @@ def _safe_float(val: Any, default: float = 0.0) -> float:
 
 
 def _count_decimals(val: float, max_dec: Optional[int] = None) -> int:
-    """Đếm số chữ số thập phân thực tế của một giá trị float (hỗ trợ coin giá nhỏ đến 8 số)."""
+    """Đếm số chữ số thập phân thực tế của một giá trị float (hỗ trợ coin giá nhỏ đến 10 số)."""
     if max_dec is None:
-        max_dec = 8 if abs(val) < 0.01 else 5
-    s = f"{val:.8f}".rstrip('0')
+        max_dec = 10 if abs(val) < 0.01 else 5
+    s = f"{val:.10f}".rstrip('0')
     if '.' in s:
         d = len(s.split('.')[1])
         return min(max(d, 2), max_dec)
@@ -62,7 +62,7 @@ def _fmt_price_val(val: float, decimals: Optional[int] = None) -> str:
     if decimals is not None:
         return f"{val:.{decimals}f}"
     if abs(val) < 0.001:
-        s = f"{val:.8f}".rstrip('0').rstrip('.')
+        s = f"{val:.10f}".rstrip('0').rstrip('.')
     else:
         s = f"{val:.5f}".rstrip('0').rstrip('.')
     if '.' in s:

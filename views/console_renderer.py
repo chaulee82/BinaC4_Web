@@ -300,7 +300,7 @@ class ConsoleRenderer:
                 
                 if state.macro_levels:
                     macro = state.macro_levels
-                    print(f"    ↳ [{sym}] [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}{self._d3_suffix(state)}")
+                    print(f"   ↳ [{sym}] [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}{self._d3_suffix(state)}")
 
                 # GRID TP2 (DC2): Trig=OCO-2 Buy | SL ngắn=OCO-2 SL | Trần=OCO-2 TP (hoặc TP 4H) | Fallback 0.96
                 # OCO-2 bị ẩn → fallback OCO-1 nhưng trần TP2 ưu tiên lấy TP 4H để bảo đảm biên độ cho 24 lưới

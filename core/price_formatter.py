@@ -1,9 +1,31 @@
+import math
 import decimal
 import logging
 import ccxt
 from typing import Optional
 
 logger = logging.getLogger("PriceFormatter")
+
+
+def round_price(price: Optional[float]) -> float:
+    """Làm tròn giá thông minh theo số chữ số có nghĩa (hỗ trợ cả meme coin siêu nhỏ):
+      >= 1000 USDT : 2 chữ số thập phân (BTC, ETH...)
+      >= 1    USDT : 4 chữ số thập phân (SOL, BNB...)
+      < 1     USDT : first_significant_digit + 4 (tối đa 10 chữ số, ví dụ PEPE, SHIB...)
+    """
+    if price is None or price <= 0:
+        return price or 0.0
+    try:
+        if price >= 1000:
+            return round(price, 2)
+        if price >= 1:
+            return round(price, 4)
+        first_sig = -math.floor(math.log10(abs(price)))
+        decimals = min(max(first_sig + 4, 8), 10)
+        return round(price, decimals)
+    except Exception:
+        return round(price, 8)
+
 
 class PriceFormatter:
     _instance = None

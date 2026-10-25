@@ -463,8 +463,8 @@ class MacroGridDarvas:
                 box_info = {}
                 if "floor" in box:
                     box_info = {
-                        "Box_Floor":         round(box['floor'],   6),
-                        "Box_Ceiling":       round(box['ceiling'], 6),
+                        "Box_Floor":         self._round_price(box['floor']),
+                        "Box_Ceiling":       self._round_price(box['ceiling']),
                         "Box_Amplitude_pct": round(box['amplitude'] * 100, 2),
                     }
                 return {
@@ -563,8 +563,8 @@ class MacroGridDarvas:
                     "C5_Box_Tightness":   c5['status'],
                     "Box_Gate":           box['reason'],
                     "Box_Bars":           box['box_bars'],
-                    "Box_Floor":          round(box['floor'],   6),
-                    "Box_Ceiling":        round(box['ceiling'], 6),
+                    "Box_Floor":          self._round_price(box['floor']),
+                    "Box_Ceiling":        self._round_price(box['ceiling']),
                     "Box_Amplitude_pct":  round(box['amplitude'] * 100, 2),
                     "C1_score":           c1['score'],
                     "C2_score":           c2['score'],

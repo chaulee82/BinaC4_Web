@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from core.coin_filter import get_klines_live, EXCLUDE
 from core.grid_calculator import GridCalculator
+from core.price_formatter import round_price
 
 # ─── Tham Số Cấu Hình ──────────────────────────────────────────────────────────
 PP_MIN_VOL_USDT = 2_000_000   # Vol 24h tối thiểu hạ xuống 2M USDT
@@ -307,13 +308,13 @@ class GridPingpongScorer:
                     'n_test': n_test
                 },
                 'grid_setup': {
-                    'center_line': round(ma25_val, 5),
+                    'center_line': round_price(ma25_val),
                     'upper_bound': grid_params['upper_bound'],
                     'lower_bound': grid_params['lower_bound'],
                     'grids': grid_params['num_grids'],
                     'trailing_up': True,
-                    'trigger_price': round(trigger_price, 5),
-                    'stop_loss_sell_all': round(stop_loss, 5)
+                    'trigger_price': round_price(trigger_price),
+                    'stop_loss_sell_all': round_price(stop_loss)
                 }
             }
         except Exception as e:
