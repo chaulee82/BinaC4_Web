@@ -45,30 +45,57 @@ def _safe_float(val: Any, default: float = 0.0) -> float:
 
 
 def _count_decimals(val: float, max_dec: Optional[int] = None) -> int:
-    """Đếm số chữ số thập phân thực tế của một giá trị float (hỗ trợ coin giá nhỏ đến 10 số)."""
-    if max_dec is None:
-        max_dec = 10 if abs(val) < 0.01 else 5
+    """Đếm số chữ số thập phân thực tế và cần thiết của một giá trị float."""
+    if val is None or val == 0:
+        return 2
+    try:
+        val = abs(float(val))
+    except Exception:
+        return 2
+    if val >= 1000:
+        return 2
+    if val >= 1:
+        s = f"{val:.6f}".rstrip('0')
+        d = len(s.split('.')[1]) if '.' in s else 2
+        return min(max(d, 2), 4)
+    # Coin nhỏ (< 1 USDT): cần đủ chữ số thập phân để thể hiện % biến động
+    import math
+    first_sig = -math.floor(math.log10(val))
+    needed_dec = min(max(first_sig + 3, 6), 10 if max_dec is None else max_dec)
     s = f"{val:.10f}".rstrip('0')
-    if '.' in s:
-        d = len(s.split('.')[1])
-        return min(max(d, 2), max_dec)
-    return 2
+    actual_d = len(s.split('.')[1]) if '.' in s else 2
+    return max(actual_d, needed_dec)
 
 
 def _fmt_price_val(val: float, decimals: Optional[int] = None) -> str:
-    """Format giá gọn đẹp, khớp số chữ số thập phân chuẩn."""
+    """Format giá gọn đẹp, khớp số chữ số thập phân chuẩn, bỏ số 0 dư thừa nhưng giữ tối thiểu 2 số thập phân."""
     if val is None:
-        return "0"
-    if decimals is not None:
-        return f"{val:.{decimals}f}"
+        return "0.00"
+    try:
+        val = float(val)
+    except Exception:
+        return str(val)
+    if val == 0:
+        return "0.00"
+    if decimals is not None and decimals > 0:
+        s = f"{val:.{decimals}f}".rstrip('0')
+        if '.' in s:
+            parts = s.split('.')
+            if len(parts[1]) < 2:
+                s = parts[0] + '.' + parts[1].ljust(2, '0')
+        else:
+            s += ".00"
+        return s
     if abs(val) < 0.001:
-        s = f"{val:.10f}".rstrip('0').rstrip('.')
+        s = f"{val:.10f}".rstrip('0')
     else:
-        s = f"{val:.5f}".rstrip('0').rstrip('.')
+        s = f"{val:.4f}".rstrip('0')
     if '.' in s:
-        dec_len = len(s.split('.')[1])
-        if dec_len < 2:
-            s = f"{val:.2f}"
+        parts = s.split('.')
+        if len(parts[1]) < 2:
+            s = parts[0] + '.' + parts[1].ljust(2, '0')
+    else:
+        s += ".00"
     return s
 
 
@@ -593,10 +620,11 @@ def optimized_execution_geometry_module(
             note_parts.append(f"TP: {tp_source_desc}")
             geom_note = ", ".join(note_parts)
 
+            from core.price_formatter import round_price
             order_copy.update({
                 'entry': entry,
-                'sl': round(safe_sl, 5),
-                'tp': round(realistic_tp, 5),
+                'sl': round_price(safe_sl),
+                'tp': round_price(realistic_tp),
                 'tp_source': tp_source_desc,
                 'sl_adjusted': sl_adjusted,
                 'tp_adjusted': tp_adjusted,
@@ -794,7 +822,7 @@ def _print_order_geometry_details(o: Dict[str, Any]):
                 if tick_size and tick_size > 0:
                     s_tick = f"{tick_size:.10f}".rstrip('0')
                     if '.' in s_tick:
-                        dec = len(s_tick.split('.')[1])
+                        dec = max(dec, len(s_tick.split('.')[1]))
             except Exception:
                 pass
 
