@@ -773,35 +773,59 @@ def _order_sort_key(o: Dict[str, Any]) -> tuple:
 
 def _print_order_geometry_details(o: Dict[str, Any]):
     """In chi tiết thông số hình học lệnh (Entry, SL, TP, R:R, Grid TP2) cho người vận hành."""
-    order_type = o.get('order_type', 'SPOT_OCO')
-    entry = _safe_float(o.get('entry', o.get('trigger', 0.0)), 0.0)
-    sl_val = _safe_float(o.get('sl', o.get('raw_sl', 0.0)), 0.0)
-    tp_val = _safe_float(o.get('tp', o.get('raw_tp', 0.0)), 0.0)
+    try:
+        order_type = o.get('order_type', 'SPOT_OCO')
+        entry = _safe_float(o.get('entry', o.get('trigger', 0.0)), 0.0)
+        sl_val = _safe_float(o.get('sl', o.get('raw_sl', 0.0)), 0.0)
+        tp_val = _safe_float(o.get('tp', o.get('raw_tp', 0.0)), 0.0)
 
-    if order_type == 'SPOT_OCO':
-        if entry > 0:
-            sl_pct = ((sl_val - entry) / entry) * 100 if sl_val > 0 else 0.0
-            tp_pct = ((tp_val - entry) / entry) * 100 if tp_val > 0 else 0.0
-            rr_val = _safe_float(o.get('rr_ratio'), 2.0)
-            dec = _count_decimals(entry)
-            print(f"    ↳ 🎯 LỆNH OCO: Entry={_fmt_price_val(entry, dec)} | SL={_fmt_price_val(sl_val, dec)} ({sl_pct:+.1f}%) | TP={_fmt_price_val(tp_val, dec)} ({tp_pct:+.1f}%) | R:R 1:{rr_val:.1f}")
+        # 1. Khởi tạo an toàn biến dec (số chữ số thập phân) từ trước
+        dec = 2
+        all_vals = [entry, sl_val, tp_val, _safe_float(o.get('lower', 0.0)), _safe_float(o.get('upper', 0.0))]
+        valid_vals = [v for v in all_vals if v > 0]
+        if valid_vals:
+            dec = max(_count_decimals(v) for v in valid_vals)
 
-        if 'grid_tp2' in o and isinstance(o['grid_tp2'], dict):
-            g = o['grid_tp2']
-            opt_note = " | Kèm Auto-Breakeven (+1%)" if o.get('auto_breakeven') else ""
-            f_low = _fmt_price_val(_safe_float(g.get('lower'), 0.0), dec)
-            f_up = _fmt_price_val(_safe_float(g.get('upper'), 0.0), dec)
-            print(f"    ↳ 🛡️ LƯỚI TP2: Dải L={f_low} - U={f_up} ({g.get('grids', 24)} Lưới){opt_note}")
-        elif o.get('auto_breakeven'):
-            print(f"    ↳ 🛡️ Option: Kích hoạt Auto-Breakeven (+1%).")
+        clean_sym = str(o.get('symbol', '')).upper().replace('/USDT', '').replace('USDT', '').strip()
+        if clean_sym:
+            try:
+                from core.exchange_info_cache import ExchangeInfoCache
+                tick_size = ExchangeInfoCache.get_tick_size(f"{clean_sym}USDT")
+                if tick_size and tick_size > 0:
+                    s_tick = f"{tick_size:.10f}".rstrip('0')
+                    if '.' in s_tick:
+                        dec = len(s_tick.split('.')[1])
+            except Exception:
+                pass
 
-    elif order_type == 'GRID':
-        trigger = o.get('entry', o.get('trigger', entry))
-        lower = o.get('lower', o.get('raw_lower', 0.0))
-        upper = o.get('upper', o.get('raw_upper', 0.0))
-        grids = o.get('grids', 24)
-        dec = _count_decimals(_safe_float(trigger, 0.0))
-        print(f"    ↳ 🥅 LỆNH GRID: Dải L={_fmt_price_val(_safe_float(lower, 0.0), dec)} - U={_fmt_price_val(_safe_float(upper, 0.0), dec)} ({grids} Lưới) | Trig: {_fmt_price_val(_safe_float(trigger, 0.0), dec)} | SL: {_fmt_price_val(sl_val, dec)} | TP: {_fmt_price_val(tp_val, dec)}")
+        if order_type == 'SPOT_OCO':
+            if entry > 0:
+                sl_pct = ((sl_val - entry) / entry) * 100 if sl_val > 0 else 0.0
+                tp_pct = ((tp_val - entry) / entry) * 100 if tp_val > 0 else 0.0
+                rr_val = _safe_float(o.get('rr_ratio'), 2.0)
+                print(f"    ↳ 🎯 LỆNH OCO: Entry={_fmt_price_val(entry, dec)} | SL={_fmt_price_val(sl_val, dec)} ({sl_pct:+.1f}%) | TP={_fmt_price_val(tp_val, dec)} ({tp_pct:+.1f}%) | R:R 1:{rr_val:.1f}")
+
+            if 'grid_tp2' in o and isinstance(o['grid_tp2'], dict):
+                g = o['grid_tp2']
+                opt_note = " | Kèm Auto-Breakeven (+1%)" if o.get('auto_breakeven') else ""
+                g_low = _safe_float(g.get('lower', 0.0))
+                g_up = _safe_float(g.get('upper', 0.0))
+                f_low = _fmt_price_val(g_low, dec)
+                f_up = _fmt_price_val(g_up, dec)
+                grids_cnt = g.get('grids', 24)
+                print(f"    ↳ 🛡️ LƯỚI TP2: Dải L={f_low} - U={f_up} ({grids_cnt} Lưới){opt_note}")
+            elif o.get('auto_breakeven'):
+                print(f"    ↳ 🛡️ Option: Kích hoạt Auto-Breakeven (+1%).")
+
+        elif order_type == 'GRID':
+            trigger = _safe_float(o.get('entry', o.get('trigger', entry)), 0.0)
+            lower = _safe_float(o.get('lower', o.get('raw_lower', 0.0)), 0.0)
+            upper = _safe_float(o.get('upper', o.get('raw_upper', 0.0)), 0.0)
+            grids = o.get('grids', 24)
+            print(f"    ↳ 🥅 LỆNH GRID: Dải L={_fmt_price_val(lower, dec)} - U={_fmt_price_val(upper, dec)} ({grids} Lưới) | Trig: {_fmt_price_val(trigger, dec)} | SL: {_fmt_price_val(sl_val, dec)} | TP: {_fmt_price_val(tp_val, dec)}")
+
+    except Exception as geom_err:
+        logger.debug(f"Lỗi hiển thị geometry details cho {o.get('symbol')}: {geom_err}")
 
 
 def render_gatekeeper_board(final_orders):
