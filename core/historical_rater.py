@@ -1269,13 +1269,18 @@ def render_profiles_table(
 
     import textwrap
 
-    # Phân nhóm danh sách
-    active_profiles = [p for p in profiles if p.get('total_score', 0.0) >= 40.0]
-    tier_c_symbols = [p['symbol'] for p in profiles if 25.0 <= p.get('total_score', 0.0) < 40.0]
-    tier_f_symbols = [p['symbol'] for p in profiles if p.get('total_score', 0.0) < 25.0]
+    # Phân nhóm danh sách & Đảm bảo luôn sắp xếp theo thứ tự điểm cao đến thấp
+    sorted_profiles = sorted(
+        profiles,
+        key=lambda x: (x.get('total_score', 0.0), x.get('breakdown', {}).get('foundation_40', 0.0)),
+        reverse=True
+    )
+    active_profiles = [p for p in sorted_profiles if p.get('total_score', 0.0) >= 40.0]
+    tier_c_symbols = [p['symbol'] for p in sorted_profiles if 25.0 <= p.get('total_score', 0.0) < 40.0]
+    tier_f_symbols = [p['symbol'] for p in sorted_profiles if p.get('total_score', 0.0) < 25.0]
 
     # Nếu thị trường không có mã nào >= 40đ, hiển thị tối thiểu Top 5 để người dùng theo dõi
-    display_profiles = active_profiles if active_profiles else profiles[:5]
+    display_profiles = active_profiles if active_profiles else sorted_profiles[:5]
 
     # Chuẩn hóa tiêu đề hiển thị: bổ sung thông tin ngày từ...đến...
     if not title:
@@ -1335,14 +1340,14 @@ def render_profiles_table(
     if tier_c_symbols:
         c_str = ", ".join(tier_c_symbols)
         wrapped_c = textwrap.fill(c_str, width=150, initial_indent="   ", subsequent_indent="   ")
-        print(f"👀 TIER C (25–39đ - Theo Dõi / Chờ Xác Nhận) [{len(tier_c_symbols)} mã]:")
+        print(f"👀 TIER C (25–39đ - Theo Dõi / Chờ Xác Nhận) [{len(tier_c_symbols)} mã - Sắp xếp điểm cao ➔ thấp]:")
         print(wrapped_c)
         print(line)
 
     if tier_f_symbols:
         f_str = ", ".join(tier_f_symbols)
         wrapped_f = textwrap.fill(f_str, width=150, initial_indent="   ", subsequent_indent="   ")
-        print(f"⛔ TIER F (< 25đ - Rủi Ro / Mất Đà Tăng / Cạn Thanh Khoản) [{len(tier_f_symbols)} mã]:")
+        print(f"⛔ TIER F (< 25đ - Rủi Ro / Mất Đà Tăng / Cạn Thanh Khoản) [{len(tier_f_symbols)} mã - Sắp xếp điểm cao ➔ thấp]:")
         print(wrapped_f)
         print(line)
 
