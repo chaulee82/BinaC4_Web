@@ -100,7 +100,7 @@ def extract_buy_zone_and_action(
     df_summary: Optional[Any] = None,
     global_signals_pool: Optional[List[Any]] = None,
     warning_results: Optional[List[Dict[str, Any]]] = None
-) -> Tuple[str, str, str, float, str, Optional[float], float, Optional[Any]]:
+) -> Tuple[str, str, str, float, str, Optional[float], float, Optional[Any], bool, float]:
     """
     Trích xuất vùng giá đón gom, xác định trạng thái hành động và động cơ cốt lõi nổi bật
     dựa trên PRD PRE-BREAKOUT RADAR.
@@ -328,7 +328,8 @@ def extract_buy_zone_and_action(
         action_status = "🟡 THEO DÕI NỀN"
         action_group = "WATCH"
 
-    return buy_zone, action_status, action_group, ref_buy, highlight_engine, swing_high, p_live, macro
+    is_entry_4h_chosen = bool(use_macro_entry_priority and entry_4h_val > 0)
+    return buy_zone, action_status, action_group, ref_buy, highlight_engine, swing_high, p_live, macro, is_entry_4h_chosen, entry_4h_val
 
 
 def render_pre_breakout_radar_table(
@@ -371,7 +372,7 @@ def render_pre_breakout_radar_table(
                 or live_data_map.get(f"{sym}USDT")
             )
 
-        buy_zone, action_status, action_group, ref_buy, highlight_engine, swing_high, p_live, macro = extract_buy_zone_and_action(
+        buy_zone, action_status, action_group, ref_buy, highlight_engine, swing_high, p_live, macro, is_entry_4h, e4_val = extract_buy_zone_and_action(
             state=state,
             item=item,
             delta_24h=d24,
@@ -395,7 +396,9 @@ def render_pre_breakout_radar_table(
             "highlight_engine": highlight_engine,
             "swing_high": swing_high,
             "live_price": p_live,
-            "macro_levels": macro
+            "macro_levels": macro,
+            "is_entry_4h_chosen": is_entry_4h,
+            "entry_4h": e4_val
         })
 
     sep_width = 145
@@ -829,7 +832,27 @@ def print_delta_tables(
                     except Exception:
                         pass
 
-                if p_live > 0:
+                is_entry_4h = b_item.get("is_entry_4h_chosen", False)
+                e4 = float(b_item.get("entry_4h", 0.0) or 0.0)
+                if not is_entry_4h and b_item.get("macro_levels"):
+                    m_obj = b_item.get("macro_levels")
+                    e4 = float(getattr(m_obj, "entry_4h", 0.0) or 0.0)
+                    tier_clean = str(b_item.get("tier", ""))
+                    is_solid = any(t in tier_clean for t in ["Tier S", "Tier A", "Tier B"]) and not any(t in tier_clean for t in ["Tier C", "Tier F"])
+                    p_tags = b_item.get("penalty_tags", []) or []
+                    is_ne = bool(b_item.get("is_ne_grid", False) or any("Né Grid" in str(x) or "Ne Grid" in str(x) for x in p_tags))
+                    if is_solid and not is_ne and e4 > 0 and abs(b_trig - e4) < 1e-6:
+                        is_entry_4h = True
+
+                # Nếu chọn giá Entry 4H thì thay thế giá trị ở cột Giá Live bằng Entry 4H để đồng nhất thông tin
+                if is_entry_4h and e4 > 0:
+                    p_disp = e4
+                    if p_live > 0 and e4 < p_live:
+                        pct_drop = ((e4 - p_live) / p_live) * 100
+                        live_str = f"{_format_price(p_disp)} ({pct_drop:.1f}%)"
+                    else:
+                        live_str = f"{_format_price(p_disp)} (0.0%)"
+                elif p_live > 0:
                     pct_drop = ((b_trig - p_live) / p_live) * 100
                     if pct_drop < 0:
                         live_str = f"{_format_price(p_live)} ({pct_drop:.1f}%)"
