@@ -213,7 +213,85 @@ def test_gatekeeper_v23_full_pipeline():
     print("\n🎉 TẤT CẢ CÁC ĐẶC TẢ V2.3 ĐÃ HOÀN TOÀN ĐẠT CHUẨN!")
 
 
+def test_grid_gom_hang_integration():
+    print("\n--- 4. KIỂM THỬ TÍCH HỢP BẢNG GRID GOM HÀNG VÀO GATEKEEPER ---")
+    from execution.order_gatekeeper import extract_clean_summary_orders
+
+    mock_summary_res = {
+        "spot_btc_locked": False,
+        "spot": [],
+        "grid_tp2": [],
+        "wide_grid": []
+    }
+
+    class MockMacro:
+        def __init__(self, e4, sl4, tp1, tp4):
+            self.entry_4h = e4
+            self.sl_4h = sl4
+            self.tp_1h = tp1
+            self.tp_4h = tp4
+
+    # 3 ứng viên Grid Gom Hàng thực tế
+    grid_items = [
+        # 1. ASTER: Tier S (78.5đ), Entry 4H chuẩn vĩ mô (0.7001), không cờ phạt -> VÙNG 1 (AUTO_EXECUTE)
+        {
+            "symbol": "ASTER",
+            "ref_buy": 0.7001,
+            "decay_score": 78.5,
+            "tier_clean": "Tier S",
+            "is_entry_4h_chosen": True,
+            "is_ne_grid": False,
+            "penalty_tags": [],
+            "macro_levels": MockMacro(0.7001, 0.6500, 0.7800, 0.8400)
+        },
+        # 2. ANIME: Tier B (52.0đ), Trigger chiết khấu kịch sàn (0.00229), có cờ Né Grid bắt dao rơi -> VÙNG 2 (MANUAL_APPROVAL)
+        {
+            "symbol": "ANIME",
+            "ref_buy": 0.00229,
+            "decay_score": 52.0,
+            "tier_clean": "Tier B",
+            "is_entry_4h_chosen": False,
+            "is_ne_grid": True,
+            "penalty_tags": ["Né Grid"],
+            "macro_levels": MockMacro(0.00260, 0.00200, 0.00310, 0.00350)
+        },
+        # 3. NIL: Bị suy giảm Cấp 1 (Xả dốc mạnh) -> Tường lửa Tầng 2 ném xuống VÙNG 3 (VETO_REJECT)
+        {
+            "symbol": "NIL",
+            "ref_buy": 0.35,
+            "decay_score": 48.0,
+            "tier_clean": "Tier B",
+            "is_entry_4h_chosen": False,
+            "downgrade_level": "CAP_1",
+            "penalty_tags": ["Xả Dốc C1"]
+        }
+    ]
+
+    clean_orders = extract_clean_summary_orders(
+        summary_board_res=mock_summary_res,
+        v2_profiles=None,
+        grid_gom_hang_items=grid_items
+    )
+    final_orders = optimized_execution_geometry_module(clean_orders)
+
+    # In kết quả giao diện Gatekeeper
+    render_gatekeeper_board(final_orders)
+
+    order_map = {o['symbol']: o for o in final_orders}
+
+    # Kiểm tra phân luồng chuẩn xác:
+    # ASTER -> VÙNG 1
+    assert order_map['ASTER/USDT']['status'] == 'AUTO_EXECUTE', "ASTER phải được duyệt vào Vùng 1 (AUTO_EXECUTE)"
+    # ANIME -> VÙNG 2
+    assert order_map['ANIME/USDT']['status'] == 'MANUAL_APPROVAL', "ANIME phải bị ném vào Vùng 2 (MANUAL_APPROVAL - Chờ duyệt tay)"
+    # NIL -> VÙNG 3
+    assert order_map['NIL/USDT']['status'] == 'VETO_REJECT', "NIL phải bị ném vào Vùng 3 (VETO_REJECT)"
+
+    print("✅ Kiểm thử Tích hợp Grid Gom Hàng vào Gatekeeper đạt chuẩn 100%!")
+
+
 if __name__ == "__main__":
     test_pump_dump_traps()
     test_priority_queue()
     test_gatekeeper_v23_full_pipeline()
+    test_grid_gom_hang_integration()

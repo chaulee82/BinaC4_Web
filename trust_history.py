@@ -877,6 +877,7 @@ def print_delta_tables(
         print("-" * sep_width)
         print("=" * sep_width)
     print("\n")
+    return buy_ready_items or []
 
 
 def _format_macro_4h_line(

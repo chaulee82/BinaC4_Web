@@ -105,6 +105,7 @@ ENGINE_LABELS = {
     "DC3": "DC3 (Bứt Phá - Breakout)",
     "DC4": "DC4 (Đu Trend - Hot Trend)",
     "DC5": "DC5 (Nén Vol Chờ Nổ)",
+    "GRID_GOM_HANG": "Grid Gom Hàng",
 }
 
 
@@ -510,6 +511,8 @@ def evaluate_order_gatekeeper_firewall(
     if order.get('lost_ma7_3d') or any("MẤT MA7" in str(x).upper() for x in [order.get('strategy_desc', ''), *penalty_tags]):
         return 'REJECT', "Khóa bóp cò: MẤT MA7_3D (Đáy sóng trung hạn bị gãy)", None
     if is_grid and (order.get('is_ne_grid') or any("Né Grid" in str(x) for x in penalty_tags)):
+        if order.get('is_grid_gom_hang'):
+            return 'PENDING', "Grid Gom Hàng dính cờ NÉ GRID / Chiết khấu sâu - Chờ duyệt tay bắt dao rơi", None
         return 'REJECT', "Cảnh báo NÉ GRID từ Bảng Rebalance (Rủi ro biến động giật / cạn cầu)", None
 
     engine_str = str(order.get('engine', '') or '')
@@ -731,6 +734,12 @@ def optimized_execution_geometry_module(
         mf_val = _safe_float(order_copy.get('money_flow'), 0.0)
         is_mf_surge = bool(order_copy.get('is_money_flow_surge', False)) or mf_val >= 3.0
         if uy_tin < 40.0:
+            if order_copy.get('is_grid_gom_hang'):
+                order_copy['status'] = 'MANUAL_APPROVAL'
+                order_copy['volume_pct'] = 0.2
+                order_copy['locked_reason'] = f"Tier C - Grid Gom Hàng chiết khấu sâu (Bắt dao rơi {mf_val:.1f}x)" if mf_val > 0 else "Tier C - Grid Gom Hàng chiết khấu sâu (Bắt dao rơi)"
+                final_execution_orders.append(order_copy)
+                continue
             if not is_mf_surge:
                 continue
             order_copy['status'] = 'MANUAL_APPROVAL'
@@ -752,16 +761,26 @@ def optimized_execution_geometry_module(
             order_copy['volume_pct'] = 0.3
             final_execution_orders.append(order_copy)
         elif is_tier_sa:
-            order_copy['status'] = 'AUTO_EXECUTE'
-            order_copy['volume_pct'] = 1.0
+            if order_copy.get('is_grid_gom_hang') and not order_copy.get('is_entry_4h_chosen', True):
+                order_copy['status'] = 'MANUAL_APPROVAL'
+                order_copy['locked_reason'] = 'Grid Gom Hàng - Trigger chiết khấu sâu (Bắt dao rơi)'
+                order_copy['volume_pct'] = 0.3
+            else:
+                order_copy['status'] = 'AUTO_EXECUTE'
+                order_copy['volume_pct'] = 1.0
             final_execution_orders.append(order_copy)
         else:
             # Tier B (40 - 59.9đ)
             if order_type == 'GRID':
-                # Grid cho Tier B được cấp vốn -> AUTO_EXECUTE
-                order_copy['status'] = 'AUTO_EXECUTE'
-                order_copy['volume_pct'] = 1.0
-                grid_tier_b_candidates.append(order_copy)
+                if order_copy.get('is_grid_gom_hang') and not order_copy.get('is_entry_4h_chosen', True):
+                    order_copy['status'] = 'MANUAL_APPROVAL'
+                    order_copy['locked_reason'] = 'Tier B - Grid Gom Hàng chiết khấu sâu (Bắt dao rơi)'
+                    order_copy['volume_pct'] = 0.3
+                else:
+                    # Grid cho Tier B được cấp vốn -> AUTO_EXECUTE
+                    order_copy['status'] = 'AUTO_EXECUTE'
+                    order_copy['volume_pct'] = 1.0
+                    grid_tier_b_candidates.append(order_copy)
             else:
                 # Spot OCO Tier B -> Chờ duyệt tay
                 order_copy['status'] = 'MANUAL_APPROVAL'
@@ -797,6 +816,19 @@ def _order_sort_key(o: Dict[str, Any]) -> tuple:
     mf = _safe_float(o.get('money_flow'), 0.0)
     rr = _safe_float(o.get('rr_ratio'), 0.0)
     return (uy_tin, mf, rr)
+
+
+def _format_macro_4h_line_gk(sym: str, macro: Any, dec: int = 4) -> str:
+    """Format dòng thông tin Macro 4H cho lệnh trong Gatekeeper."""
+    if not macro:
+        return ""
+    e4 = getattr(macro, "entry_4h", None)
+    sl4 = getattr(macro, "sl_4h", None)
+    tp1 = getattr(macro, "tp_1h", None)
+    tp4 = getattr(macro, "tp_4h", None)
+    if e4 is not None and sl4 is not None and tp1 is not None and tp4 is not None:
+        return f"    ↳ [Macro 4H] Entry: {_fmt_price_val(float(e4), dec):<10} | SL Cứng: {_fmt_price_val(float(sl4), dec):<10} | TP 1H: {_fmt_price_val(float(tp1), dec):<10} | TP 4H: {_fmt_price_val(float(tp4), dec)}"
+    return ""
 
 
 def _print_order_geometry_details(o: Dict[str, Any]):
@@ -850,7 +882,12 @@ def _print_order_geometry_details(o: Dict[str, Any]):
             lower = _safe_float(o.get('lower', o.get('raw_lower', 0.0)), 0.0)
             upper = _safe_float(o.get('upper', o.get('raw_upper', 0.0)), 0.0)
             grids = o.get('grids', 24)
-            print(f"    ↳ 🥅 LỆNH GRID: Dải L={_fmt_price_val(lower, dec)} - U={_fmt_price_val(upper, dec)} ({grids} Lưới) | Trig: {_fmt_price_val(trigger, dec)} | SL: {_fmt_price_val(sl_val, dec)} | TP: {_fmt_price_val(tp_val, dec)}")
+            lbl = "LỆNH GRID GOM HÀNG" if (o.get('is_grid_gom_hang') or o.get('engine') == 'GRID_GOM_HANG') else "LỆNH GRID"
+            print(f"    ↳ 🥅 {lbl}: Dải L={_fmt_price_val(lower, dec)} - U={_fmt_price_val(upper, dec)} ({grids} Lưới) | Trig: {_fmt_price_val(trigger, dec)} | SL: {_fmt_price_val(sl_val, dec)} | TP: {_fmt_price_val(tp_val, dec)}")
+            if (o.get('is_grid_gom_hang') or o.get('engine') == 'GRID_GOM_HANG') and o.get('macro_levels'):
+                macro_line = _format_macro_4h_line_gk(clean_sym, o.get('macro_levels'), dec)
+                if macro_line:
+                    print(macro_line)
 
     except Exception as geom_err:
         logger.debug(f"Lỗi hiển thị geometry details cho {o.get('symbol')}: {geom_err}")
@@ -888,6 +925,11 @@ def render_gatekeeper_board(final_orders):
         if order_type == 'SPOT_OCO':
             tag = "🎯 [SPOT OCO]"
             print(f"[{idx}] {tag} {sym}{tier_str} | {engine_str}")
+        elif o.get('is_grid_gom_hang') or o.get('engine') == 'GRID_GOM_HANG':
+            tag = "🥅 [GRID GOM HÀNG]"
+            lower = _fmt_price_val(_safe_float(o.get('lower'), 0.0))
+            upper = _fmt_price_val(_safe_float(o.get('upper'), 0.0))
+            print(f"[{idx}] {tag} {sym}{tier_str} | Zone: {lower} - {upper}")
         else:
             tag = f"🥅 [GRID {lev}x]" if is_fut and lev > 1 else ("🥅 [FUTURES GRID]" if is_fut else "🥅 [GRID]")
             lower = _fmt_price_val(_safe_float(o.get('lower'), 0.0))
@@ -913,9 +955,19 @@ def render_gatekeeper_board(final_orders):
         tier_str = f" | {tier_label} ({uy_tin:.1f}đ)" if tier_label else f" | Uy tín: {uy_tin:.1f}đ"
         engine_str = o.get('engine_label', o.get('engine', o.get('strategy_desc', '')))
         order_type = o.get('order_type', 'SPOT_OCO')
-        tag = "🎯 [SPOT OCO]" if order_type == 'SPOT_OCO' else "🥅 [GRID]"
 
-        print(f"[{idx}] {tag} {sym}{tier_str} | {engine_str}")
+        if order_type == 'SPOT_OCO':
+            tag = "🎯 [SPOT OCO]"
+            print(f"[{idx}] {tag} {sym}{tier_str} | {engine_str}")
+        elif o.get('is_grid_gom_hang') or o.get('engine') == 'GRID_GOM_HANG':
+            tag = "🥅 [GRID GOM HÀNG]"
+            lower = _fmt_price_val(_safe_float(o.get('lower'), 0.0))
+            upper = _fmt_price_val(_safe_float(o.get('upper'), 0.0))
+            print(f"[{idx}] {tag} {sym}{tier_str} | Zone: {lower} - {upper}")
+        else:
+            tag = "🥅 [GRID]"
+            print(f"[{idx}] {tag} {sym}{tier_str} | {engine_str}")
+
         lock_msg = o.get('locked_reason', 'Chờ duyệt tay')
         print(f"    ↳ Gatekeeper: [LOCKED] Chờ duyệt tay ({lock_msg}).")
         _print_order_geometry_details(o)
@@ -937,6 +989,9 @@ def render_gatekeeper_board(final_orders):
         if order_type == 'SPOT_OCO':
             tag = "🚫 [SPOT OCO]"
             print(f"[{idx}] {tag} {sym} | {engine_str}")
+        elif o.get('is_grid_gom_hang') or o.get('engine') == 'GRID_GOM_HANG':
+            tag = "🚫 [GRID GOM HÀNG]"
+            print(f"[{idx}] {tag} {sym}{tier_str}")
         else:
             tag = "🚫 [FUTURES GRID]" if is_fut else "🚫 [GRID]"
             print(f"[{idx}] {tag} {sym}{tier_str}")
@@ -960,7 +1015,8 @@ _RE_MONEY_FLOW = re.compile(r"(?:TIỀN BẠO PHÁT|BẠO PHÁT)\s*\((\d+(?:\.\d
 
 def extract_clean_summary_orders(
     summary_board_res: Dict[str, Any],
-    v2_profiles: Optional[List[Dict[str, Any]]] = None
+    v2_profiles: Optional[List[Dict[str, Any]]] = None,
+    grid_gom_hang_items: Optional[List[Dict[str, Any]]] = None
 ) -> List[Dict[str, Any]]:
     """
     Trích xuất danh sách lệnh sạch từ Tầng 2 (Bảng Tổng Kết & Hồ Sơ Tín Nhiệm).
@@ -1219,5 +1275,72 @@ def extract_clean_summary_orders(
                     "market_type": mkt_type
                 })
                 seen_grid_syms.add(clean_sym)
+
+    # 4. Xử lý Lệnh GRID GOM HÀNG (Pre-Breakout Radar / Grid Gom Hàng Chuẩn Hình Học)
+    if grid_gom_hang_items:
+        for b_item in grid_gom_hang_items:
+            b_sym = str(b_item.get("symbol", "")).upper().replace("/USDT", "").replace("USDT", "").strip()
+            if not b_sym or b_sym in seen_grid_syms:
+                continue
+
+            b_trig = float(b_item.get("ref_buy", 0.0) or 0.0)
+            if b_trig <= 0:
+                continue
+
+            dec = _count_decimals(b_trig)
+            b_low = round(b_trig * 0.90, dec)
+            b_up = round(b_trig * 1.20, dec)
+            b_sl = round(b_trig * 0.88, dec)
+
+            p_info = trust_map.get(b_sym, {})
+            score = float(b_item.get("decay_score", b_item.get("total_score", p_info.get("total_score", 50.0))))
+            tier = str(b_item.get("tier_clean", b_item.get("tier", p_info.get("tier", ""))))
+
+            is_entry_4h = bool(b_item.get("is_entry_4h_chosen", False))
+            p_tags = b_item.get("penalty_tags", []) or p_info.get("penalty_tags", []) or []
+            is_ne = bool(
+                b_item.get("is_ne_grid", False)
+                or p_info.get("is_ne_grid", False)
+                or any("Né Grid" in str(x) or "Ne Grid" in str(x) for x in p_tags)
+            )
+
+            clean_orders.append({
+                "symbol": f"{b_sym}/USDT",
+                "order_type": "GRID",
+                "is_grid_gom_hang": True,
+                "entry": b_trig,
+                "trigger": b_trig,
+                "lower": b_low,
+                "upper": b_up,
+                "raw_lower": b_low,
+                "raw_upper": b_up,
+                "grids": 24,
+                "raw_grids": 24,
+                "sl": b_sl,
+                "raw_sl": b_sl,
+                "tp": b_up,
+                "raw_tp": b_up,
+                "uy_tin_score": score,
+                "tier_label": tier,
+                "engine": "GRID_GOM_HANG",
+                "engine_label": "Grid Gom Hàng",
+                "strategy_desc": "Grid Gom Hàng Chuẩn Hình Học (+8%/-12%)",
+                "money_flow": float(b_item.get("money_flow", 0.0) or 0.0),
+                "macro_risk": btc_locked,
+                "macro_risk_reason": "BTC gãy MA25 1H - Fakeout Risk" if btc_locked else "",
+                "penalty_tags": p_tags,
+                "warning_level": int(b_item.get("warning_level", 0) or p_info.get("warning_level", 0) or 0),
+                "warning_label": str(b_item.get("warning_label", "") or p_info.get("warning_label", "") or ""),
+                "downgrade_level": str(b_item.get("downgrade_level", "") or p_info.get("downgrade_level", "") or ""),
+                "rsi_1h": float(b_item.get("rsi_1h", 0.0) or p_info.get("rsi_1h", 0.0) or 0.0),
+                "gate1_score": float(b_item.get("gate1_score", 30.0) or 30.0),
+                "lost_ma7_3d": bool(b_item.get("lost_ma7_3d", False) or p_info.get("lost_ma7_3d", False)),
+                "is_ne_grid": is_ne,
+                "is_entry_4h_chosen": is_entry_4h,
+                "macro_levels": b_item.get("macro_levels"),
+                "leverage": 1,
+                "market_type": "SPOT"
+            })
+            seen_grid_syms.add(b_sym)
 
     return clean_orders

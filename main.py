@@ -612,18 +612,19 @@ def main():
                     # -------------------------------------------------------------------------
                     # BƯỚC TÍCH HỢP: LƯU VẾT & PHÂN TÍCH DELTA AUDIT (MOD-TRUST-HIST-01)
                     # -------------------------------------------------------------------------
+                    _grid_gom_items = []
                     if _v2_profiles:
                         try:
                             from trust_history import record_and_analyze, print_delta_tables
                             top_gainers, top_losers = record_and_analyze(_v2_profiles, keep_snapshots=24)
-                            print_delta_tables(
+                            _grid_gom_items = print_delta_tables(
                                 top_gainers,
                                 top_losers,
                                 live_data_map=locals().get('live_data_map'),
                                 df_summary=locals().get('df_summary'),
                                 global_signals_pool=_renderer.signals_pool if _renderer else None,
                                 warning_results=_warning_results if '_warning_results' in locals() else None
-                            )
+                            ) or []
                         except Exception as err:
                             import logging
                             logging.getLogger("CN4-Controller").error(f"Lỗi phân tích Trust History (Multi-Day Delta Audit): {err}", exc_info=True)
@@ -642,7 +643,8 @@ def main():
                     if '_summary_board_res' in locals() and _summary_board_res:
                         clean_orders = extract_clean_summary_orders(
                             summary_board_res=_summary_board_res,
-                            v2_profiles=_v2_profiles if '_v2_profiles' in locals() else None
+                            v2_profiles=_v2_profiles if '_v2_profiles' in locals() else None,
+                            grid_gom_hang_items=_grid_gom_items if '_grid_gom_items' in locals() else None
                         )
                         final_orders = optimized_execution_geometry_module(clean_orders) if clean_orders else []
                         gatekeeper_board_str = render_gatekeeper_board(final_orders)
