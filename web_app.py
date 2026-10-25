@@ -340,12 +340,11 @@ with gr.Blocks(title="BinaC4 Web Interface") as demo:
                 label="Chọn hoặc gõ tìm mã (Symbol)",
                 filterable=True,
                 allow_custom_value=True,
-                scale=3,
                 interactive=True
             )
-            with gr.Column(scale=1):
-                inspect_btn = gr.Button("🔎 Xem Chi Tiết Mã", variant="primary", elem_classes=["mobile-btn"])
-                copy_history_btn = gr.Button("📋 Copy Lịch Sử", variant="secondary", elem_classes=["mobile-btn"])
+        with gr.Row():
+            inspect_btn = gr.Button("🔎 Xem Chi Tiết Mã", variant="primary", elem_classes=["mobile-btn"])
+            copy_history_btn = gr.Button("📋 Copy Lịch Sử", variant="secondary", elem_classes=["mobile-btn"])
 
         history_copy_payload = gr.Textbox(
             value=_init_copy_payload,
