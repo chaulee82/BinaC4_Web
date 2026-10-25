@@ -265,13 +265,21 @@ def calculate_grid_priority_queue(
 # ═════════════════════════════════════════════════════════════════════════════
 
 class HistoricalDataQuery:
+    _INITIALIZED_DBS = set()
+
     def __init__(self, db_path: str = "data/binac4_history.db"):
         self.db_path = db_path
         os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
-        self.create_tables()
+        abs_p = os.path.abspath(self.db_path)
+        if abs_p not in self._INITIALIZED_DBS:
+            self.create_tables()
+            self._INITIALIZED_DBS.add(abs_p)
 
     def _get_connection(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        return conn
 
     def create_tables(self):
         """Khởi tạo bảng daily_metrics theo đặc tả kỹ thuật V2.0."""
@@ -373,37 +381,58 @@ class HistoricalDataQuery:
 
     def query_latest_3b_score(self, symbol: str) -> float:
         """Truy vấn điểm sóng 3B gần nhất của mã từ engine_3b_history."""
+        res = self.query_latest_3b_scores_bulk([symbol])
         clean_sym = symbol.replace('/USDT', '').replace('USDT', '').strip().upper()
+        return res.get(clean_sym, 0.0)
+
+    def query_latest_3b_scores_bulk(self, symbols: List[str]) -> Dict[str, float]:
+        """Truy vấn điểm sóng 3B gần nhất của danh sách mã trong 1 câu SQL."""
+        if not symbols:
+            return {}
+        clean_syms = list({s.replace('/USDT', '').replace('USDT', '').strip().upper() for s in symbols if s})
+        result = {s: 0.0 for s in clean_syms}
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                row = cursor.execute('''
-                    SELECT score FROM engine_3b_history
-                    WHERE symbol = ?
-                    ORDER BY scan_time DESC
-                    LIMIT 1
-                ''', (clean_sym,)).fetchone()
-                if row and row[0] is not None:
-                    return float(row[0])
+                placeholders = ', '.join(['?'] * len(clean_syms))
+                cursor.execute(f'''
+                    SELECT symbol, score FROM engine_3b_history
+                    WHERE symbol IN ({placeholders})
+                    ORDER BY scan_time ASC
+                ''', clean_syms)
+                for row in cursor.fetchall():
+                    if row and row[0] is not None:
+                        result[row[0]] = float(row[1] or 0.0)
         except Exception as e:
-            logger.debug(f"[3B-Query] {clean_sym}: {e}")
-        return 0.0
+            logger.debug(f"[3B-BulkQuery] {e}")
+        return result
 
     def record_session_score(self, timestamp: str, symbol: str, mong: float, day: float, tien: float):
         """
         Ghi nhận điểm thành phần thô của một phiên quét 30 phút vào session_scores (V2.0 Spec).
         """
-        clean_sym = symbol.replace('/USDT', '').replace('USDT', '').strip()
+        self.record_session_scores_bulk([(timestamp, symbol, mong, day, tien)])
+
+    def record_session_scores_bulk(self, records: List[Tuple[str, str, float, float, float]]):
+        """
+        Ghi nhận hàng loạt điểm phiên quét vào session_scores trong 1 transaction duy nhất.
+        """
+        if not records:
+            return
+        clean_records = []
+        for ts, sym, m, d, t in records:
+            clean_sym = sym.replace('/USDT', '').replace('USDT', '').strip()
+            clean_records.append((ts, clean_sym, round(float(m), 2), round(float(d), 2), round(float(t), 2)))
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.executemany('''
                 INSERT INTO session_scores (timestamp, symbol, mong_score, day_score, tien_score)
                 VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(timestamp, symbol) DO UPDATE SET
                     mong_score = excluded.mong_score,
                     day_score = excluded.day_score,
                     tien_score = excluded.tien_score
-            ''', (timestamp, clean_sym, round(float(mong), 2), round(float(day), 2), round(float(tien), 2)))
+            ''', clean_records)
             conn.commit()
 
     def record_daily_metric(self, date_str: str, symbol: str, metrics: Dict[str, Any]):
@@ -411,10 +440,44 @@ class HistoricalDataQuery:
         Ghi nhận hoặc cập nhật chỉ số của một mã trong ngày cụ thể vào daily_metrics.
         Snapshot overwrite: Ghi đè bằng dữ liệu quét mới nhất thay vì cộng dồn (V2.0).
         """
-        clean_sym = symbol.replace('/USDT', '').replace('USDT', '').strip()
+        self.record_daily_metrics_bulk([(date_str, symbol, metrics)])
+
+    def record_daily_metrics_bulk(self, records: List[Tuple[str, str, Dict[str, Any]]]):
+        """
+        Ghi nhận hàng loạt chỉ số ngày vào daily_metrics trong 1 transaction duy nhất.
+        """
+        if not records:
+            return
+        rows = []
+        for date_str, symbol, metrics in records:
+            clean_sym = symbol.replace('/USDT', '').replace('USDT', '').strip()
+            rows.append((
+                date_str, clean_sym,
+                metrics.get('b3a_score', 0.0),
+                metrics.get('b3b_score', 0.0),
+                metrics.get('rebalance_score', 0.0),
+                metrics.get('strict_3d_score', 0.0),
+                metrics.get('dc2_sniper_count', 0),
+                metrics.get('dc3_breakout_count', 0),
+                metrics.get('dc4_hottrend_count', 0),
+                metrics.get('dc5_pingpong_score', 0),
+                metrics.get('penalty_level_3', 0),
+                metrics.get('penalty_xaray', 0),
+                metrics.get('penalty_fakeout', 0),
+                metrics.get('raw_base_score', 0.0),
+                metrics.get('grid_rank', 999),
+                metrics.get('grid_status', ''),
+                metrics.get('in_top_3a', 0),
+                metrics.get('in_top_3b', 0),
+                metrics.get('optimal_tier', ''),
+                metrics.get('price_above_ma7_3d', 0),
+                metrics.get('ma7_gt_ma99_3d', 0),
+                metrics.get('st_4h_green', 0),
+                metrics.get('dc5_rank', 999)
+            ))
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.executemany('''
                 INSERT INTO daily_metrics (
                     date, symbol,
                     b3a_score, b3b_score, rebalance_score, strict_3d_score,
@@ -447,35 +510,14 @@ class HistoricalDataQuery:
                     ma7_gt_ma99_3d = CASE WHEN excluded.ma7_gt_ma99_3d IS NOT NULL THEN excluded.ma7_gt_ma99_3d ELSE daily_metrics.ma7_gt_ma99_3d END,
                     st_4h_green = CASE WHEN excluded.st_4h_green IS NOT NULL THEN excluded.st_4h_green ELSE daily_metrics.st_4h_green END,
                     dc5_rank = CASE WHEN excluded.dc5_rank < 999 THEN excluded.dc5_rank ELSE daily_metrics.dc5_rank END
-            ''', (
-                date_str, clean_sym,
-                metrics.get('b3a_score', 0.0),
-                metrics.get('b3b_score', 0.0),
-                metrics.get('rebalance_score', 0.0),
-                metrics.get('strict_3d_score', 0.0),
-                metrics.get('dc2_sniper_count', 0),
-                metrics.get('dc3_breakout_count', 0),
-                metrics.get('dc4_hottrend_count', 0),
-                metrics.get('dc5_pingpong_score', 0),
-                metrics.get('penalty_level_3', 0),
-                metrics.get('penalty_xaray', 0),
-                metrics.get('penalty_fakeout', 0),
-                metrics.get('raw_base_score', 0.0),
-                metrics.get('grid_rank', 999),
-                metrics.get('grid_status', ''),
-                metrics.get('in_top_3a', 0),
-                metrics.get('in_top_3b', 0),
-                metrics.get('optimal_tier', ''),
-                metrics.get('price_above_ma7_3d', 0),
-                metrics.get('ma7_gt_ma99_3d', 0),
-                metrics.get('st_4h_green', 0),
-                metrics.get('dc5_rank', 999)
-            ))
+            ''', rows)
             conn.commit()
 
-    def sync_from_signal_logs(self) -> int:
+    def sync_from_signal_logs(self, since_days: Optional[int] = 2, full: bool = False) -> int:
         """
         Đồng bộ và tổng hợp dữ liệu lịch sử đã quét từ bảng signal_logs sang daily_metrics.
+        Mặc định quét 2 ngày gần nhất (T-0, T-1) để tối ưu hiệu năng.
+        Đặt full=True để quét toàn bộ lịch sử khi cần rebuild DB.
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -485,7 +527,14 @@ class HistoricalDataQuery:
             if not table_check:
                 return 0
 
-            query = '''
+            date_filter = ""
+            params = []
+            if since_days is not None and not full:
+                cutoff = (datetime.now() - timedelta(days=since_days)).strftime('%Y-%m-%d 00:00:00')
+                date_filter = "AND timestamp >= ?"
+                params.append(cutoff)
+
+            query = f'''
                 SELECT 
                     substr(timestamp, 1, 10) as log_date,
                     symbol,
@@ -507,10 +556,10 @@ class HistoricalDataQuery:
                     MAX(CASE WHEN engine = 'DC4' AND score >= 60.0 THEN score ELSE 0 END) as dc4_max_sc,
                     MAX(CASE WHEN engine = 'DC5' AND score >= 25.0 THEN score ELSE 0 END) as dc5_max_sc
                 FROM signal_logs
-                WHERE symbol IS NOT NULL AND timestamp IS NOT NULL
+                WHERE symbol IS NOT NULL AND timestamp IS NOT NULL {date_filter}
                 GROUP BY log_date, symbol
             '''
-            cursor.execute(query)
+            cursor.execute(query, params)
             rows = cursor.fetchall()
             if not rows:
                 return 0
@@ -584,35 +633,49 @@ class HistoricalDataQuery:
                 
             cursor.executemany(upsert_query, records)
             conn.commit()
-            conn.commit()
             return len(records)
 
     def get_latest_convergence_tier(self, symbol: str) -> str:
         """Lấy kết luận tối ưu (Hội tụ) gần nhất của mã từ signal_logs hoặc daily_metrics."""
         clean_sym = symbol.upper().replace('/USDT', '').replace('USDT', '').strip()
+        res = self.get_latest_convergence_tiers_bulk([clean_sym])
+        return res.get(clean_sym, "")
+
+    def get_latest_convergence_tiers_bulk(self, symbols: List[str]) -> Dict[str, str]:
+        """Lấy kết luận tối ưu (Hội tụ) gần nhất của danh sách mã trong 1-2 câu SQL."""
+        if not symbols:
+            return {}
+        clean_syms = list({s.upper().replace('/USDT', '').replace('USDT', '').strip() for s in symbols if s})
+        result = {s: "" for s in clean_syms}
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT action FROM signal_logs
-                    WHERE symbol = ? AND engine = 'OPTIMAL_CONVERGENCE'
-                    ORDER BY timestamp DESC LIMIT 1
-                """, (clean_sym,))
-                row = cursor.fetchone()
-                if row and row[0]:
-                    return row[0]
+                placeholders = ', '.join(['?'] * len(clean_syms))
+                # 1. Từ signal_logs
+                cursor.execute(f"""
+                    SELECT symbol, action FROM signal_logs
+                    WHERE symbol IN ({placeholders}) AND engine = 'OPTIMAL_CONVERGENCE'
+                    ORDER BY timestamp ASC
+                """, clean_syms)
+                for r in cursor.fetchall():
+                    if r and r[1]:
+                        result[r[0]] = r[1]
 
-                cursor.execute("""
-                    SELECT optimal_tier FROM daily_metrics
-                    WHERE symbol = ? AND optimal_tier != ''
-                    ORDER BY date DESC LIMIT 1
-                """, (clean_sym,))
-                row = cursor.fetchone()
-                if row and row[0]:
-                    return row[0]
+                # 2. Với các mã còn thiếu, tra từ daily_metrics
+                missing = [s for s in clean_syms if not result[s]]
+                if missing:
+                    ph2 = ', '.join(['?'] * len(missing))
+                    cursor.execute(f"""
+                        SELECT symbol, optimal_tier FROM daily_metrics
+                        WHERE symbol IN ({ph2}) AND optimal_tier != ''
+                        ORDER BY date ASC
+                    """, missing)
+                    for r in cursor.fetchall():
+                        if r and r[1]:
+                            result[r[0]] = r[1]
         except Exception as e:
-            logger.debug(f"Lỗi lấy convergence tier cho {symbol}: {e}")
-        return ""
+            logger.debug(f"Lỗi bulk convergence tier: {e}")
+        return result
 
     def sync_from_log_files(self, workspace_dir: str = ".") -> int:
         """
@@ -762,96 +825,62 @@ class HistoricalDataQuery:
         day_cash = max(0.0, min(20.0, cash_sum + pen))
         return day_base, day_push, day_cash
 
-    def query_14_day_profile(
-        self, 
-        symbol: str, 
-        as_of_date: Optional[datetime] = None,
+    @staticmethod
+    def _calc_t0_components(row_t0, latest_3b_val: float = 0.0) -> Dict[str, float]:
+        if row_t0:
+            b3b_val, sc_st, g_rnk, g_stat, in_3a, in_3b, opt_t, p_ma7, ma_gt, st_4h = row_t0
+            if b3b_val and float(b3b_val) > 0:
+                sc_3d = min(25.0, (float(b3b_val) / 100.0) * 25.0)
+            elif sc_st and sc_st >= 70:
+                sc_3d = 25.0
+            elif sc_st and sc_st >= 50:
+                sc_3d = 15.0
+            elif p_ma7 and st_4h:
+                sc_3d = 25.0 if ma_gt else 15.0
+            else:
+                sc_3d = 0.0
+
+            sc_grid = 0.0
+            if "NÉ GRID" not in (g_stat or ''):
+                if (g_rnk or 999) <= 5:
+                    sc_grid = 10.0
+                elif (g_rnk or 999) <= 15:
+                    sc_grid = 5.0
+
+            sc_3ab = 5.0 if (in_3a or in_3b) else 0.0
+            sc_opt = 10.0 if "HẠNG S" in (opt_t or '') else (5.0 if any(t in (opt_t or '') for t in ["HẠNG A", "HẠNG B"]) else 0.0)
+            return {
+                '3d_strict': sc_3d,
+                'grid_reb': sc_grid,
+                'radar_3ab': sc_3ab,
+                'optimal_confluence': sc_opt
+            }
+        else:
+            if latest_3b_val > 0:
+                return {
+                    '3d_strict': min(25.0, (latest_3b_val / 100.0) * 25.0),
+                    'grid_reb': 0.0,
+                    'radar_3ab': 0.0,
+                    'optimal_confluence': 0.0
+                }
+            return {}
+
+    def _compute_single_profile(
+        self,
+        clean_sym: str,
+        target_dates: List[str],
+        daily_agg: Dict[str, Dict[str, float]],
+        t0_components: Dict[str, float],
         warning_info: Optional[Dict[str, Any]] = None,
         reb_info: Optional[Dict[str, Any]] = None,
         downgrade_info: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """
-        Truy vấn dữ liệu 4 ngày gần nhất của 1 mã theo chuẩn V2.0 (Hỗ trợ quét 30 phút/phiên).
-        Chuẩn hóa 4 lớp:
-        - Lớp I: SQL Aggregation Layer (AVG mong_score, MAX day_score, MAX tien_score).
-        - Lớp II: Date Alignment Layer (Ép chính xác 4 ngày dương lịch T0..T3, rớt top gán 0.0).
-        - Lớp III: Toán tử Tính Điểm (Aggressive Decay & Cashflow Multiplier).
-        - Lớp IV: Ma Trận Phạt Điểm Vĩ Mô V2.0 (Dynamic Macro Penalty Matrix: Downgrade 1 Tier).
-        """
-        clean_sym = symbol.replace('/USDT', '').replace('USDT', '').strip()
-        ref_dt = as_of_date or datetime.now()
-        ref_d = ref_dt.date() if isinstance(ref_dt, datetime) else ref_dt
-
-        # ═════════════════════════════════════════════════════════════════════
-        # LỚP II: ĐỒNG BỘ CHUỖI THỜI GIAN (Date Alignment Layer)
-        # ═════════════════════════════════════════════════════════════════════
-        target_dates = [(ref_d - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(4)]
-        daily_agg = {}
-
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-
-            # ═════════════════════════════════════════════════════════════════
-            # LỚP I: TRUY VẤN DỮ LIỆU TỔNG HỢP SQL (SQL Aggregation Layer)
-            # ═════════════════════════════════════════════════════════════════
-            has_session_table = cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='session_scores'"
-            ).fetchone()
-
-            if has_session_table:
-                cursor.execute('''
-                    SELECT 
-                        SUBSTR(timestamp, 1, 10) AS scan_date,
-                        ROUND(AVG(mong_score), 2) AS mong_score,
-                        MAX(day_score) AS day_score,
-                        ROUND(AVG(tien_score), 2) AS tien_score
-                    FROM session_scores
-                    WHERE symbol = ?
-                    GROUP BY scan_date
-                    ORDER BY scan_date DESC
-                    LIMIT 14
-                ''', (clean_sym,))
-                for r in cursor.fetchall():
-                    daily_agg[r[0]] = {
-                        'mong': float(r[1] or 0.0),
-                        'day': float(r[2] or 0.0),
-                        'tien': float(r[3] or 0.0)
-                    }
-
-            # Dự phòng: Chỉ bổ sung những ngày HOÀN TOÀN chưa có trong session_scores từ daily_metrics (dữ liệu lịch sử cũ)
-            cursor.execute("SELECT DISTINCT SUBSTR(timestamp, 1, 10) FROM session_scores")
-            known_sess_dates = set(r[0] for r in cursor.fetchall())
-            truly_missing_dates = [d for d in target_dates if d not in known_sess_dates]
-
-            if truly_missing_dates:
-                placeholders = ', '.join(['?'] * len(truly_missing_dates))
-                cursor.execute(f'''
-                    SELECT 
-                        date, raw_base_score, b3a_score, b3b_score, rebalance_score, strict_3d_score,
-                        dc2_sniper_count, dc3_breakout_count, dc4_hottrend_count, dc5_pingpong_score,
-                        penalty_level_3, penalty_xaray, penalty_fakeout,
-                        grid_rank, grid_status, in_top_3a, in_top_3b, optimal_tier,
-                        price_above_ma7_3d, ma7_gt_ma99_3d, st_4h_green,
-                        money_flow_score, dc2_score, dc3_score, dc4_score, dc5_score,
-                        dc5_rank
-                    FROM daily_metrics
-                    WHERE symbol = ? AND date IN ({placeholders})
-                ''', [clean_sym] + truly_missing_dates)
-                for r in cursor.fetchall():
-                    d = r[0]
-                    m_val, d_val, t_val = self._calc_scores_from_daily_metric_row(r)
-                    daily_agg[d] = {'mong': m_val, 'day': d_val, 'tien': t_val}
-
-        # ═════════════════════════════════════════════════════════════════════
         # LỚP II: ÉP MẢNG 4 NGÀY DƯƠNG LỊCH (Rớt top -> Gán 0.0)
-        # ═════════════════════════════════════════════════════════════════════
         history_mong = [daily_agg.get(d, {}).get('mong', 0.0) for d in target_dates]
         history_day  = [daily_agg.get(d, {}).get('day', 0.0) for d in target_dates]
         history_tien = [daily_agg.get(d, {}).get('tien', 0.0) for d in target_dates]
 
-        # ═════════════════════════════════════════════════════════════════════
         # LỚP III: TOÁN TỬ TÍNH ĐIỂM (Aggressive Decay & Cashflow Multiplier)
-        # ═════════════════════════════════════════════════════════════════════
         weights = [0.50, 0.25, 0.15, 0.10]
         diem_mong = round(sum(m * w for m, w in zip(history_mong, weights)), 1)
         diem_day  = round(sum(d * w for d, w in zip(history_day, weights)), 1)
@@ -865,13 +894,9 @@ class HistoricalDataQuery:
         else:
             multiplier = 1.0
 
-        # Total Cap: 100.0
         raw_total = (diem_mong + diem_day + diem_tien) * multiplier
 
-        # ═════════════════════════════════════════════════════════════════════
-        # LỚP IV: MA TRẬN PHẠT ĐIỂM VĨ MÔ V2.0 (DYNAMIC MACRO PENALTY MATRIX)
-        # ═════════════════════════════════════════════════════════════════════
-        # Tính delta 24h và delta 72h dựa trên mảng 4 ngày
+        # LỚP IV: MA TRẬN PHẠT ĐIỂM VĨ MÔ V2.0
         m0 = history_mong[0] if len(history_mong) > 0 else 0.0
         m1 = history_mong[1] if len(history_mong) > 1 else 0.0
         m3 = history_mong[3] if len(history_mong) > 3 else 0.0
@@ -899,58 +924,7 @@ class HistoricalDataQuery:
             d72=d72
         )
         tier, action = self._determine_tier(final_rating, diem_mong)
-
         is_live = bool(target_dates[0] in daily_agg and (history_mong[0] > 0 or history_day[0] > 0 or history_tien[0] > 0))
-
-        # ═════════════════════════════════════════════════════════════════════
-        # LỚP V: TRÍCH XUẤT THÀNH PHẦN MÓNG T-0 CHO BẢNG HIỂN THỊ
-        # ═════════════════════════════════════════════════════════════════════
-        t0_components = {}
-        with self._get_connection() as conn:
-            cur = conn.cursor()
-            row_t0 = cur.execute('''
-                SELECT b3b_score, strict_3d_score, grid_rank, grid_status, in_top_3a, in_top_3b, optimal_tier,
-                       price_above_ma7_3d, ma7_gt_ma99_3d, st_4h_green
-                FROM daily_metrics
-                WHERE symbol = ? AND date = ?
-            ''', (clean_sym, target_dates[0])).fetchone()
-            if row_t0:
-                b3b_val, sc_st, g_rnk, g_stat, in_3a, in_3b, opt_t, p_ma7, ma_gt, st_4h = row_t0
-                if b3b_val and float(b3b_val) > 0:
-                    sc_3d = min(25.0, (float(b3b_val) / 100.0) * 25.0)
-                elif sc_st and sc_st >= 70:
-                    sc_3d = 25.0
-                elif sc_st and sc_st >= 50:
-                    sc_3d = 15.0
-                elif p_ma7 and st_4h:
-                    sc_3d = 25.0 if ma_gt else 15.0
-                else:
-                    sc_3d = 0.0
-
-                sc_grid = 0.0
-                if "NÉ GRID" not in (g_stat or ''):
-                    if (g_rnk or 999) <= 5:
-                        sc_grid = 10.0
-                    elif (g_rnk or 999) <= 15:
-                        sc_grid = 5.0
-
-                sc_3ab = 5.0 if (in_3a or in_3b) else 0.0
-                sc_opt = 10.0 if "HẠNG S" in (opt_t or '') else (5.0 if any(t in (opt_t or '') for t in ["HẠNG A", "HẠNG B"]) else 0.0)
-                t0_components = {
-                    '3d_strict': sc_3d,
-                    'grid_reb': sc_grid,
-                    'radar_3ab': sc_3ab,
-                    'optimal_confluence': sc_opt
-                }
-            else:
-                b3b_val = self.query_latest_3b_score(clean_sym)
-                if b3b_val > 0:
-                    t0_components = {
-                        '3d_strict': min(25.0, (b3b_val / 100.0) * 25.0),
-                        'grid_reb': 0.0,
-                        'radar_3ab': 0.0,
-                        'optimal_confluence': 0.0
-                    }
 
         penalty_tags = [
             f"{tag} (-{pts:.0f}đ)" if (pts % 1 == 0) else f"{tag} (-{pts:.1f}đ)"
@@ -980,6 +954,208 @@ class HistoricalDataQuery:
                 "t0_components": t0_components
             }
         }
+
+    def query_profiles_bulk(
+        self,
+        symbols: Optional[List[str]] = None,
+        as_of_date: Optional[datetime] = None,
+        warning_map: Optional[Dict[str, Any]] = None,
+        reb_map: Optional[Dict[str, Any]] = None,
+        downgrade_map: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Truy vấn hồ sơ tín nhiệm theo cơ chế Bulk Loading (1 kết nối, ~4-5 câu SQL cho toàn bộ symbols).
+        Tránh hoàn toàn N+1 queries.
+        """
+        ref_dt = as_of_date or datetime.now()
+        ref_d = ref_dt.date() if isinstance(ref_dt, datetime) else ref_dt
+        target_dates = [(ref_d - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(4)]
+        fourteen_days_ago = (ref_d - timedelta(days=14)).strftime('%Y-%m-%d')
+        ref_date_str = ref_d.strftime('%Y-%m-%d')
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 1. Xác định danh sách symbols
+            if symbols is None:
+                cursor.execute('''
+                    SELECT DISTINCT symbol FROM daily_metrics
+                    WHERE date >= ? AND date <= ?
+                ''', (fourteen_days_ago, ref_date_str))
+                all_symbols = [r[0] for r in cursor.fetchall() if r[0]]
+
+                has_session_table = cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='session_scores'"
+                ).fetchone()
+                if has_session_table:
+                    cursor.execute('''
+                        SELECT DISTINCT symbol FROM session_scores
+                        WHERE substr(timestamp, 1, 10) >= ? AND substr(timestamp, 1, 10) <= ?
+                    ''', (fourteen_days_ago, ref_date_str))
+                    for r in cursor.fetchall():
+                        if r[0] and r[0] not in all_symbols:
+                            all_symbols.append(r[0])
+            else:
+                all_symbols = [s.replace('/USDT', '').replace('USDT', '').strip() for s in symbols if s]
+                has_session_table = cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='session_scores'"
+                ).fetchone()
+
+            if not all_symbols:
+                return []
+
+            # 2. Truy vấn gộp session_scores trong 14 ngày
+            session_agg: Dict[str, Dict[str, Dict[str, float]]] = {}
+            if has_session_table:
+                if symbols is not None and len(all_symbols) <= 50:
+                    ph = ', '.join(['?'] * len(all_symbols))
+                    cursor.execute(f'''
+                        SELECT 
+                            symbol,
+                            SUBSTR(timestamp, 1, 10) AS scan_date,
+                            ROUND(AVG(mong_score), 2) AS mong_score,
+                            MAX(day_score) AS day_score,
+                            ROUND(AVG(tien_score), 2) AS tien_score
+                        FROM session_scores
+                        WHERE symbol IN ({ph})
+                        GROUP BY symbol, scan_date
+                    ''', all_symbols)
+                else:
+                    cursor.execute('''
+                        SELECT 
+                            symbol,
+                            SUBSTR(timestamp, 1, 10) AS scan_date,
+                            ROUND(AVG(mong_score), 2) AS mong_score,
+                            MAX(day_score) AS day_score,
+                            ROUND(AVG(tien_score), 2) AS tien_score
+                        FROM session_scores
+                        WHERE SUBSTR(timestamp, 1, 10) >= ? AND SUBSTR(timestamp, 1, 10) <= ?
+                        GROUP BY symbol, scan_date
+                    ''', (fourteen_days_ago, ref_date_str))
+
+                for r in cursor.fetchall():
+                    s_sym, s_date = r[0], r[1]
+                    session_agg.setdefault(s_sym, {})[s_date] = {
+                        'mong': float(r[2] or 0.0),
+                        'day': float(r[3] or 0.0),
+                        'tien': float(r[4] or 0.0)
+                    }
+
+            # 3. Kiểm tra ngày khuyết trong session_scores để fallback sang daily_metrics
+            cursor.execute("SELECT DISTINCT SUBSTR(timestamp, 1, 10) FROM session_scores")
+            known_sess_dates = set(r[0] for r in cursor.fetchall())
+            truly_missing_dates = [d for d in target_dates if d not in known_sess_dates]
+
+            daily_metrics_agg: Dict[str, Dict[str, Dict[str, float]]] = {}
+            if truly_missing_dates:
+                ph_dates = ', '.join(['?'] * len(truly_missing_dates))
+                if symbols is not None and len(all_symbols) <= 50:
+                    ph_syms = ', '.join(['?'] * len(all_symbols))
+                    cursor.execute(f'''
+                        SELECT 
+                            symbol, date, raw_base_score, b3a_score, b3b_score, rebalance_score, strict_3d_score,
+                            dc2_sniper_count, dc3_breakout_count, dc4_hottrend_count, dc5_pingpong_score,
+                            penalty_level_3, penalty_xaray, penalty_fakeout,
+                            grid_rank, grid_status, in_top_3a, in_top_3b, optimal_tier,
+                            price_above_ma7_3d, ma7_gt_ma99_3d, st_4h_green,
+                            money_flow_score, dc2_score, dc3_score, dc4_score, dc5_score,
+                            dc5_rank
+                        FROM daily_metrics
+                        WHERE symbol IN ({ph_syms}) AND date IN ({ph_dates})
+                    ''', all_symbols + truly_missing_dates)
+                else:
+                    cursor.execute(f'''
+                        SELECT 
+                            symbol, date, raw_base_score, b3a_score, b3b_score, rebalance_score, strict_3d_score,
+                            dc2_sniper_count, dc3_breakout_count, dc4_hottrend_count, dc5_pingpong_score,
+                            penalty_level_3, penalty_xaray, penalty_fakeout,
+                            grid_rank, grid_status, in_top_3a, in_top_3b, optimal_tier,
+                            price_above_ma7_3d, ma7_gt_ma99_3d, st_4h_green,
+                            money_flow_score, dc2_score, dc3_score, dc4_score, dc5_score,
+                            dc5_rank
+                        FROM daily_metrics
+                        WHERE date IN ({ph_dates})
+                    ''', truly_missing_dates)
+
+                for r in cursor.fetchall():
+                    s_sym, s_date = r[0], r[1]
+                    m_val, d_val, t_val = self._calc_scores_from_daily_metric_row(r[1:])
+                    daily_metrics_agg.setdefault(s_sym, {})[s_date] = {'mong': m_val, 'day': d_val, 'tien': t_val}
+
+            # 4. Trích xuất thành phần Móng T-0 trong 1 câu SQL
+            if symbols is not None and len(all_symbols) <= 50:
+                ph_t0 = ', '.join(['?'] * len(all_symbols))
+                cursor.execute(f'''
+                    SELECT symbol, b3b_score, strict_3d_score, grid_rank, grid_status, in_top_3a, in_top_3b, optimal_tier,
+                           price_above_ma7_3d, ma7_gt_ma99_3d, st_4h_green
+                    FROM daily_metrics
+                    WHERE symbol IN ({ph_t0}) AND date = ?
+                ''', all_symbols + [target_dates[0]])
+            else:
+                cursor.execute('''
+                    SELECT symbol, b3b_score, strict_3d_score, grid_rank, grid_status, in_top_3a, in_top_3b, optimal_tier,
+                           price_above_ma7_3d, ma7_gt_ma99_3d, st_4h_green
+                    FROM daily_metrics
+                    WHERE date = ?
+                ''', (target_dates[0],))
+
+            t0_rows = {r[0]: r[1:] for r in cursor.fetchall()}
+
+            # Với những mã không có record ở T-0, query điểm 3B fallback
+            missing_t0 = [s for s in all_symbols if s not in t0_rows]
+            fallback_3b_map = self.query_latest_3b_scores_bulk(missing_t0) if missing_t0 else {}
+
+        # 5. Xây dựng kết quả hoàn toàn trong RAM
+        profiles = []
+        for sym in all_symbols:
+            d_agg = {}
+            if sym in session_agg:
+                d_agg.update(session_agg[sym])
+            if sym in daily_metrics_agg:
+                for d_k, vals in daily_metrics_agg[sym].items():
+                    if d_k not in d_agg:
+                        d_agg[d_k] = vals
+
+            t0_comps = self._calc_t0_components(t0_rows.get(sym), fallback_3b_map.get(sym, 0.0))
+
+            prof = self._compute_single_profile(
+                clean_sym=sym,
+                target_dates=target_dates,
+                daily_agg=d_agg,
+                t0_components=t0_comps,
+                warning_info=(warning_map or {}).get(sym),
+                reb_info=(reb_map or {}).get(sym),
+                downgrade_info=(downgrade_map or {}).get(sym)
+            )
+            profiles.append(prof)
+
+        profiles.sort(key=lambda x: (x["total_score"], x["breakdown"]["foundation_40"]), reverse=True)
+        return profiles
+
+    def query_14_day_profile(
+        self, 
+        symbol: str, 
+        as_of_date: Optional[datetime] = None,
+        warning_info: Optional[Dict[str, Any]] = None,
+        reb_info: Optional[Dict[str, Any]] = None,
+        downgrade_info: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Truy vấn dữ liệu 4 ngày gần nhất của 1 mã theo chuẩn V2.0.
+        Sử dụng chung pipeline bulk để đảm bảo tính nhất quán và tốc độ tối đa.
+        """
+        clean_sym = symbol.replace('/USDT', '').replace('USDT', '').strip()
+        w_map = {clean_sym: warning_info} if warning_info else None
+        r_map = {clean_sym: reb_info} if reb_info else None
+        d_map = {clean_sym: downgrade_info} if downgrade_info else None
+        profs = self.query_profiles_bulk(
+            symbols=[clean_sym],
+            as_of_date=as_of_date,
+            warning_map=w_map,
+            reb_map=r_map,
+            downgrade_map=d_map
+        )
+        return profs[0] if profs else self._format_empty_profile(clean_sym)
 
     def _determine_tier(self, score: float, foundation_score: float):
         if score >= 80.0:
@@ -1030,42 +1206,13 @@ class HistoricalDataQuery:
         Truy vấn toàn bộ các mã có dữ liệu, sắp xếp theo điểm tín nhiệm giảm dần.
         Hỗ trợ nạp ma trận cảnh báo vĩ mô thời gian thực (warning_map, reb_map, downgrade_map).
         """
-        ref_date = as_of_date or datetime.now()
-        fourteen_days_ago = (ref_date - timedelta(days=14)).strftime('%Y-%m-%d')
-        ref_date_str = ref_date.strftime('%Y-%m-%d')
-        
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT DISTINCT symbol FROM daily_metrics
-                WHERE date >= ? AND date <= ?
-            ''', (fourteen_days_ago, ref_date_str))
-            symbols = [r[0] for r in cursor.fetchall()]
-
-            has_session_table = cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='session_scores'"
-            ).fetchone()
-            if has_session_table:
-                cursor.execute('''
-                    SELECT DISTINCT symbol FROM session_scores
-                    WHERE substr(timestamp, 1, 10) >= ? AND substr(timestamp, 1, 10) <= ?
-                ''', (fourteen_days_ago, ref_date_str))
-                for r in cursor.fetchall():
-                    if r[0] not in symbols:
-                        symbols.append(r[0])
-
-        profiles = [
-            self.query_14_day_profile(
-                sym, 
-                as_of_date=ref_date,
-                warning_info=(warning_map or {}).get(sym),
-                reb_info=(reb_map or {}).get(sym),
-                downgrade_info=(downgrade_map or {}).get(sym)
-            ) 
-            for sym in symbols
-        ]
-        profiles.sort(key=lambda x: (x["total_score"], x["breakdown"]["foundation_40"]), reverse=True)
-        return profiles
+        return self.query_profiles_bulk(
+            symbols=None,
+            as_of_date=as_of_date,
+            warning_map=warning_map,
+            reb_map=reb_map,
+            downgrade_map=downgrade_map
+        )
 
     def get_data_date_range(self, as_of_date: Optional[datetime] = None) -> Tuple[Optional[str], Optional[str]]:
         """
@@ -1487,9 +1634,19 @@ def print_14_day_summary_board(
             all_symbols |= {s.upper().replace('/USDT', '').replace('USDT', '').strip() for s in convergence_ranks.keys()}
         all_symbols -= {''}
 
-        # 5. Ghi nhận Snapshot T-0 vào daily_metrics và session_scores
+        # Nạp trước (Bulk Preload) các giá trị fallback ngoài loop để tránh N+1 queries
+        missing_opt_syms = [s for s in all_symbols if not (convergence_ranks or {}).get(s)]
+        fallback_opt_tiers = rater.get_latest_convergence_tiers_bulk(missing_opt_syms) if missing_opt_syms else {}
+
+        missing_3b_syms = [s for s in all_symbols if all_3b_scores.get(s, 0.0) == 0.0]
+        fallback_3b_scores = rater.query_latest_3b_scores_bulk(missing_3b_syms) if missing_3b_syms else {}
+
+        # 5. Ghi nhận Snapshot T-0 vào daily_metrics và session_scores (Batch Ingestion)
         from core.macro_levels import get_3d_profile
         sess_time = str(scan_time) if scan_time else (latest_ts or datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+
+        batch_daily_metrics = []
+        batch_session_scores = []
 
         for sym in sorted(all_symbols):
             d3 = get_3d_profile(sym)
@@ -1524,11 +1681,11 @@ def print_14_day_summary_board(
             in_3b = 1 if sym in top5_3b else 0
             opt_tier = (convergence_ranks or {}).get(sym, '')
             if not opt_tier:
-                opt_tier = rater.get_latest_convergence_tier(sym)
+                opt_tier = fallback_opt_tiers.get(sym, '')
 
             b3b_sc = all_3b_scores.get(sym, 0.0)
             if b3b_sc == 0.0:
-                b3b_sc = rater.query_latest_3b_score(sym)
+                b3b_sc = fallback_3b_scores.get(sym, 0.0)
 
             coin_data = {
                 "Price": price,
@@ -1546,7 +1703,7 @@ def print_14_day_summary_board(
 
             dc5_rnk = dc5_live_rank_map.get(sym, 999)
 
-            rater.record_daily_metric(today_str, sym, {
+            batch_daily_metrics.append((today_str, sym, {
                 "b3b_score": b3b_sc,
                 "rebalance_score": reb_score,
                 "raw_base_score": raw_base,
@@ -1559,7 +1716,7 @@ def print_14_day_summary_board(
                 "ma7_gt_ma99_3d": 1 if (ma7_3d > ma99_3d and ma99_3d > 0) else 0,
                 "st_4h_green": 1 if st_4h_green else 0,
                 "dc5_rank": dc5_rnk
-            })
+            }))
 
             # Ghi nhận điểm phiên quét 30 phút vào session_scores (V2.0 Spec)
             sig_data = latest_signals_map.get(sym, {})
@@ -1599,10 +1756,14 @@ def print_14_day_summary_board(
                 cash_sum = 6.0
             day_cash = max(-30.0, min(20.0, cash_sum + pen))
 
-            rater.record_session_score(sess_time, sym, raw_base, day_push, day_cash)
+            batch_session_scores.append((sess_time, sym, raw_base, day_push, day_cash))
 
-        # 6. Đồng bộ tín hiệu Động cơ từ signal_logs
-        rater.sync_from_signal_logs()
+        # Thực thi ghi gộp trong 1 transaction duy nhất cho mỗi bảng
+        rater.record_daily_metrics_bulk(batch_daily_metrics)
+        rater.record_session_scores_bulk(batch_session_scores)
+
+        # 6. Đồng bộ tín hiệu Động cơ từ signal_logs (mặc định 2 ngày gần nhất)
+        rater.sync_from_signal_logs(since_days=2)
 
         # 7. Truy vấn toàn bộ hồ sơ (kèm Ma Trận Phạt Vĩ Mô Live)
         profiles = rater.query_all_14_day_profiles(

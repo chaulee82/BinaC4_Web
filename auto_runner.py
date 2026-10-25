@@ -273,9 +273,19 @@ def auto_scan():
         try:
             if WORKSPACE_DIR not in sys.path:
                 sys.path.insert(0, WORKSPACE_DIR)
-            from core.symbol_inspector import save_web_snapshot
-            if save_web_snapshot():
-                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🗂️ [AUTO-RUNNER] Đã cập nhật snapshot Web UI.")
+            from core.symbol_inspector import save_web_snapshot, SNAPSHOT_FILE
+            
+            # Nếu main.py đã chạy thành công và file snapshot vừa được cập nhật, tái sử dụng trực tiếp
+            already_updated = False
+            if retcode == 0 and os.path.exists(SNAPSHOT_FILE):
+                age = time.time() - os.path.getmtime(SNAPSHOT_FILE)
+                if age < 180:  # Tạo trong vòng 3 phút qua bởi phiên main.py hiện tại
+                    already_updated = True
+                    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🗂️ [AUTO-RUNNER] Snapshot Web UI đã được cập nhật bởi main.py ({age:.1f}s trước).")
+
+            if not already_updated:
+                if save_web_snapshot():
+                    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🗂️ [AUTO-RUNNER] Đã cập nhật snapshot Web UI (fallback).")
         except Exception as e_snap:
             print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ⚠️ [AUTO-RUNNER] Không thể cập nhật snapshot Web UI: {e_snap}")
 

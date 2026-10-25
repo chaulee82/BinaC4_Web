@@ -3,7 +3,7 @@ import sqlite3
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 logger = logging.getLogger("HistoryLogger")
 
@@ -16,6 +16,8 @@ class HistoryLogger:
     def _init_db(self):
         try:
             with sqlite3.connect(self.db_path) as conn:
+                conn.execute("PRAGMA journal_mode=WAL;")
+                conn.execute("PRAGMA synchronous=NORMAL;")
                 cursor = conn.cursor()
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS signal_logs (
@@ -29,6 +31,7 @@ class HistoryLogger:
                     )
                 """)
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbol_timestamp ON signal_logs(symbol, timestamp)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sig_ts ON signal_logs(timestamp)")
                 conn.commit()
         except Exception as e:
             logger.error(f"Lỗi tạo database: {e}")
@@ -113,21 +116,39 @@ class HistoryLogger:
         Chỉ đếm các tín hiệu đạt chuẩn: score >= min_score và không bị từ chối/cảnh báo tử thần.
         Trả về danh sách (engine, timestamp) xếp từ mới đến cũ.
         """
+        res = self.get_symbols_history_bulk([symbol], days=days, min_score=min_score)
+        return res.get(symbol, [])
+
+    def get_symbols_history_bulk(self, symbols: List[str], days=14, min_score=60.0) -> Dict[str, List[Tuple[str, str]]]:
+        """
+        Lấy tiền sử hàng loạt mã trong 1 câu SQL duy nhất (tránh N+1 queries).
+        Trả về dict: {symbol: [(engine, timestamp), ...]}
+        """
+        if not symbols:
+            return {}
         past_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        clean_symbols = [s for s in set(symbols) if s]
+        result: Dict[str, List[Tuple[str, str]]] = {s: [] for s in clean_symbols}
+        if not clean_symbols:
+            return result
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT engine, timestamp FROM signal_logs 
-                    WHERE symbol = ? AND timestamp >= ? AND score >= ?
+                placeholders = ', '.join(['?'] * len(clean_symbols))
+                query = f"""
+                    SELECT symbol, engine, timestamp FROM signal_logs 
+                    WHERE symbol IN ({placeholders}) AND timestamp >= ? AND score >= ?
                       AND (action NOT LIKE '%REJECT%' AND action NOT LIKE '%TỪ CHỐI%' AND action NOT LIKE '%CẤP 3%')
                     ORDER BY timestamp DESC
-                """, (symbol, past_date, min_score))
-                rows = cursor.fetchall()
-                return rows
+                """
+                params = list(clean_symbols) + [past_date, min_score]
+                cursor.execute(query, params)
+                for sym, eng, ts in cursor.fetchall():
+                    if sym in result:
+                        result[sym].append((eng, ts))
         except Exception as e:
-            logger.error(f"Lỗi đọc lịch sử cho {symbol}: {e}")
-            return []
+            logger.error(f"Lỗi đọc lịch sử bulk: {e}")
+        return result
 
     def clean_old_records(self, days=30):
         """

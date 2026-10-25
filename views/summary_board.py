@@ -751,17 +751,30 @@ def _evaluate_convergence_candidates(current_signals: List[SignalRecord],
                 current_symbols_engines[sym] = {}
             current_symbols_engines[sym]["3B"] = r
 
-    candidates = []
+    # Thu thập trước danh sách mã đủ điều kiện để truy vấn lịch sử 1 lần (Bulk query)
+    valid_symbols = []
+    symbol_qualified_engines = {}
     for symbol, engines_map in current_symbols_engines.items():
-        # Chỉ giữ lại các động cơ thực sự đạt điểm tối thiểu và không bị từ chối
-        qualified_engines = {
+        q_eng = {
             eng: sig for eng, sig in engines_map.items()
             if is_convergence_engine_qualified(eng, sig)
         }
-        if not qualified_engines:
-            continue
+        if q_eng:
+            valid_symbols.append(symbol)
+            symbol_qualified_engines[symbol] = q_eng
 
-        history = history_logger.get_symbol_history(symbol, days=14)
+    if not valid_symbols:
+        return []
+
+    if hasattr(history_logger, 'get_symbols_history_bulk'):
+        history_map = history_logger.get_symbols_history_bulk(valid_symbols, days=14)
+    else:
+        history_map = {s: history_logger.get_symbol_history(s, days=14) for s in valid_symbols}
+
+    candidates = []
+    for symbol in valid_symbols:
+        qualified_engines = symbol_qualified_engines[symbol]
+        history = history_map.get(symbol, [])
         history_counts = {}
         for eng, ts in history:
             history_counts[eng] = history_counts.get(eng, 0) + 1
@@ -861,7 +874,7 @@ def _evaluate_convergence_candidates(current_signals: List[SignalRecord],
     return candidates
 
 
-def get_convergence_ranks(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger=None) -> Dict[str, str]:
+def get_convergence_ranks(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger=None, candidates: Optional[List[Dict[str, Any]]] = None) -> Dict[str, str]:
     """Trả về dict {symbol: rank_str} cho các mã đạt Điểm Chạm Vàng (Hội tụ) và lưu vào database.
     Sắp xếp đa tầng: Hạng (S -> A1 -> A2 -> B) -> Dòng tiền bạo phát -> Strict 3D -> Điểm động cơ."""
     if history_logger is None:
@@ -874,7 +887,8 @@ def get_convergence_ranks(current_signals: List[SignalRecord], super_wave_result
     if not history_logger:
         return {}
 
-    candidates = _evaluate_convergence_candidates(current_signals, super_wave_results, history_logger)
+    if candidates is None:
+        candidates = _evaluate_convergence_candidates(current_signals, super_wave_results, history_logger)
     ranks = {}
     for item in candidates:
         clean_s = item["symbol"].upper().replace('/USDT', '').replace('USDT', '').strip()
@@ -890,7 +904,7 @@ def get_convergence_ranks(current_signals: List[SignalRecord], super_wave_result
     return ranks
 
 
-def build_convergence_summary(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger=None) -> str:
+def build_convergence_summary(current_signals: List[SignalRecord], super_wave_results: Optional[List[Dict[str, Any]]], history_logger=None, candidates: Optional[List[Dict[str, Any]]] = None) -> str:
     """Module Phân tích Hội tụ (Điểm Chạm Vàng) dạng text hiển thị lên màn hình console/web."""
     if history_logger is None:
         try:
@@ -902,7 +916,8 @@ def build_convergence_summary(current_signals: List[SignalRecord], super_wave_re
     if not history_logger:
         return ""
 
-    candidates = _evaluate_convergence_candidates(current_signals, super_wave_results, history_logger)
+    if candidates is None:
+        candidates = _evaluate_convergence_candidates(current_signals, super_wave_results, history_logger)
     summary_lines = [c["block"] for c in candidates]
 
     res = "\n" + "=" * 100 + "\n"
@@ -938,10 +953,12 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
         pool = list(global_signals_pool or [])
         _enrich(pool, live_data_map, df_summary, warning_results)
 
-        # Điểm Chạm Vàng (Tính toán và gán rank trước khi phân loại & sắp xếp các bảng)
+        # Điểm Chạm Vàng (Tính toán 1 lần duy nhất và gán rank trước khi phân loại & sắp xếp các bảng)
         conv_ranks = {}
+        conv_candidates = []
         if history_logger:
-            conv_ranks = get_convergence_ranks(pool, super_wave_results, history_logger)
+            conv_candidates = _evaluate_convergence_candidates(pool, super_wave_results, history_logger)
+            conv_ranks = get_convergence_ranks(pool, super_wave_results, history_logger, candidates=conv_candidates)
             result["convergence_ranks"] = conv_ranks
             for s in pool:
                 clean_s = s.symbol.upper().replace('/USDT', '').replace('USDT', '').strip()
@@ -955,9 +972,9 @@ def generate_summary_board(global_signals_pool: List[SignalRecord], btc_status: 
         print("================ 🏁 BẢNG TỔNG KẾT TỐI ƯU ================")
         print("=" * 100)
 
-        # In Khối Điểm Chạm Vàng
+        # In Khối Điểm Chạm Vàng (dùng lại kết quả đã tính)
         if history_logger:
-            convergence_text = build_convergence_summary(pool, super_wave_results, history_logger)
+            convergence_text = build_convergence_summary(pool, super_wave_results, history_logger, candidates=conv_candidates)
             print(convergence_text)
 
         # Grid TP2 chọn trước → danh sách chống trùng cho Spot

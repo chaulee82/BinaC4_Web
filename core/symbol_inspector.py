@@ -79,7 +79,11 @@ def _compute_available_symbols(db_path: str) -> List[str]:
         return ["PYTH", "AMP", "TIA"]
 
 
-def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_PATH) -> Tuple[str, pd.DataFrame, pd.DataFrame]:
+def get_symbol_dossier(
+    symbol: Optional[str] = None,
+    db_path: str = DEFAULT_DB_PATH,
+    profile: Optional[Dict[str, Any]] = None
+) -> Tuple[str, pd.DataFrame, pd.DataFrame]:
     """
     Tạo hồ sơ phân tích 2 bảng cho một mã cụ thể.
     Trả về: (summary_markdown, df_table1, df_table2)
@@ -91,19 +95,20 @@ def get_symbol_dossier(symbol: Optional[str] = None, db_path: str = DEFAULT_DB_P
 
     clean_sym = str(symbol).replace("/USDT", "").replace("USDT", "").strip().upper()
 
-    try:
-        from core.historical_rater import HistoricalDataQuery
-        hr = HistoricalDataQuery(db_path=db_path)
-        profile = hr.query_14_day_profile(clean_sym)
-    except Exception as e:
-        profile = {
-            "symbol": clean_sym,
-            "total_score": 0.0,
-            "tier": "Lỗi đọc dữ liệu",
-            "action_recommendation": f"Lỗi: {e}",
-            "multiplier": 1.0,
-            "breakdown": {"foundation_40": 0.0, "momentum_40": 0.0, "cashflow_20": 0.0, "history_mong": [], "history_day": [], "history_tien": []}
-        }
+    if profile is None:
+        try:
+            from core.historical_rater import HistoricalDataQuery
+            hr = HistoricalDataQuery(db_path=db_path)
+            profile = hr.query_14_day_profile(clean_sym)
+        except Exception as e:
+            profile = {
+                "symbol": clean_sym,
+                "total_score": 0.0,
+                "tier": "Lỗi đọc dữ liệu",
+                "action_recommendation": f"Lỗi: {e}",
+                "multiplier": 1.0,
+                "breakdown": {"foundation_40": 0.0, "momentum_40": 0.0, "cashflow_20": 0.0, "history_mong": [], "history_day": [], "history_tien": []}
+            }
 
     # Sử dụng chuỗi 4 ngày chuẩn hóa từ query_14_day_profile (Single Source of Truth)
     recent_dates = profile.get("target_dates", [])
@@ -387,16 +392,26 @@ def format_dossier_for_clipboard(summary_md: str, df1: pd.DataFrame, df2: pd.Dat
 # 🗂️ SNAPSHOT TĨNH CHO WEB UI (Không truy vấn DB khi load trang)
 # =============================================================================
 
-def save_web_snapshot(db_path: str = DEFAULT_DB_PATH, path: str = SNAPSHOT_FILE) -> Optional[Dict[str, Any]]:
+def save_web_snapshot(
+    db_path: str = DEFAULT_DB_PATH,
+    path: str = SNAPSHOT_FILE,
+    profiles: Optional[List[Dict[str, Any]]] = None
+) -> Optional[Dict[str, Any]]:
     """
     Tính danh sách mã + hồ sơ mã đứng đầu rồi ghi ra file JSON tĩnh.
     Gọi sau mỗi phiên quét (web_app / auto_runner). Ghi atomic để Web không đọc phải file dở dang.
     """
     import json
     try:
-        symbols = _compute_available_symbols(db_path) if os.path.exists(db_path) else []
-        default_sym = symbols[0] if symbols else ""
-        summary_md, df1, df2 = get_symbol_dossier(default_sym, db_path=db_path)
+        if profiles:
+            symbols = [p['symbol'] for p in profiles if p.get('symbol')]
+            default_sym = symbols[0] if symbols else ""
+            default_prof = profiles[0] if profiles else None
+            summary_md, df1, df2 = get_symbol_dossier(default_sym, db_path=db_path, profile=default_prof)
+        else:
+            symbols = _compute_available_symbols(db_path) if os.path.exists(db_path) else []
+            default_sym = symbols[0] if symbols else ""
+            summary_md, df1, df2 = get_symbol_dossier(default_sym, db_path=db_path)
         snap = {
             "generated_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             "symbols": symbols,

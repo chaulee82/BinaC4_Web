@@ -628,6 +628,13 @@ def main():
                         except Exception as err:
                             import logging
                             logging.getLogger("CN4-Controller").error(f"Lỗi phân tích Trust History (Multi-Day Delta Audit): {err}", exc_info=True)
+
+                        # 🗂️ SNAPSHOT TĨNH CHO WEB UI (Tái sử dụng _v2_profiles trong RAM, 0 query thừa)
+                        try:
+                            from core.symbol_inspector import save_web_snapshot
+                            save_web_snapshot(db_path="data/binac4_history.db", profiles=_v2_profiles)
+                        except Exception as e_snap:
+                            logger.debug(f"Không thể lưu web snapshot từ main.py: {e_snap}")
                 except Exception as e:
                     logger.error(f"Render Error (Bảng 14 Ngày / Delta Audit): {e}")
 
