@@ -63,7 +63,7 @@ class DC4HotTrendEngine(BaseEngine):
         tracking_list = []
         
         if hot_trend_results:
-            for res in hot_trend_results[:5]:
+            for idx, res in enumerate(hot_trend_results):
                 sym = res.get('symbol', '')
                 score = res.get('Điểm', 0)
                 score_c5 = res.get('Điểm C1-C5', score)
@@ -121,9 +121,9 @@ class DC4HotTrendEngine(BaseEngine):
                     sym_ccxt = f"{sym}/USDT"   # DC4 trả về dạng 'PARTI' (thiếu quote)
                 macro = (macro_levels_map or {}).get(sym_ccxt)
                 
-                if not macro:
+                if not macro and (idx < 5 or score >= 70):
                     # DC4 quét độc lập với watchlist → mã Hot Trend thường KHÔNG có trong macro_levels_map.
-                    # Tự tính Macro 4H (chỉ Top 5, dùng klines_cache để hạn chế gọi API).
+                    # Tự tính Macro 4H cho Top 5 hoặc mã điểm cao, dùng klines_cache để hạn chế gọi API.
                     macro = self._calc_macro_levels(sym_ccxt)
                     if macro is not None and macro_levels_map is not None:
                         macro_levels_map[sym_ccxt] = macro
@@ -137,12 +137,8 @@ class DC4HotTrendEngine(BaseEngine):
                     scores={"DC4": score_ctx}
                 )
                 dc4_states.append(state)
-                
-            if len(hot_trend_results) > 5:
-                for res in hot_trend_results[5:]:
-                    sym = res.get('symbol', '')
-                    score = res.get('Điểm', 0)
-                    act = res.get('Hành Động', '')
+
+                if idx >= 5:
                     if "VÀO LỆNH" in act: act_short = "🚀"
                     elif "CHỜ XÁC NHẬN" in act: act_short = "⏳"
                     elif "TỪ CHỐI" in act: act_short = "🔥"

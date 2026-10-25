@@ -107,7 +107,7 @@ class ConsoleRenderer:
             return "⛔ [3D STRICT]"
 
     @staticmethod
-    def _print_wide_grid(state: SymbolState, engine: str = "") -> str:
+    def _print_wide_grid(state: SymbolState, engine: str = "", quiet: bool = False) -> str:
         """In `🦅 [WIDE GRID 3D - {symbol}]` (28L, vốn 1.000 USDT) cho mã close > MA7 3D & vol 24h ≥ 12M,
         gắn tag Strict 3D (✅ / ⛔) cuối dòng. Trả về chuỗi đã in (rỗng nếu không in) để đưa vào signals_pool."""
         try:
@@ -122,15 +122,17 @@ class ConsoleRenderer:
             line = (f"   ↳ 🦅 [WIDE GRID 3D - {sym}] {f(wg['wide_low'])} - {f(wg['wide_up'])} | {wg['wide_grids']}L | "
                     f"Trig: {f(wg['wide_trig'])} | SL: {f(wg['wide_sl'])} | TP: {f(wg['wide_up'])} "
                     f"(Vốn {wg['capital']:.0f}$ ≈ {wg['per_grid_usdt']}$/lưới) | {tag}")
-            print(line)
+            if not quiet:
+                print(line)
             return line
         except Exception as e:
-            print(f"   ↳ 🦅 [WIDE GRID 3D] Render Error: {e}")
+            if not quiet:
+                print(f"   ↳ 🦅 [WIDE GRID 3D] Render Error: {e}")
             return ""
 
     @staticmethod
     def _print_grid_tp2(state: SymbolState, entry: float, sl_short: float, tp2_target: float, fallback_ratio: float,
-                        engine: str = "") -> str:
+                        engine: str = "", quiet: bool = False) -> str:
         """In dòng cài đặt nhanh Spot Grid `🎯 [GRID TP2 - {symbol}]`. Fail-safe: lỗi không làm vỡ bảng.
         Gắn tag Strict 3D (✅ / ⛔) cuối dòng; mã ⛔ bị Bảng Tổng Kết loại khỏi danh sách dựng lưới.
         Trả về chuỗi đã in (rỗng nếu không dựng được lưới) để đưa vào signals_pool."""
@@ -171,12 +173,15 @@ class ConsoleRenderer:
             )
             if payload:
                 line = payload["display_line"] + cap_note + f" | {strict_tag}"
-                print(line)
+                if not quiet:
+                    print(line)
                 return line
             elif cap_note:
-                print(f"   ↳ 🎯 [GRID TP2] ⚠️ Trần TP2 bị Cản 3D khóa ({ConsoleRenderer.fmt_price(tp2_target)}) ≤ Trig — KHÔNG dựng lưới")
+                if not quiet:
+                    print(f"   ↳ 🎯 [GRID TP2] ⚠️ Trần TP2 bị Cản 3D khóa ({ConsoleRenderer.fmt_price(tp2_target)}) ≤ Trig — KHÔNG dựng lưới")
         except Exception as e:
-            print(f"   ↳ 🎯 [GRID TP2] Render Error: {e}")
+            if not quiet:
+                print(f"   ↳ 🎯 [GRID TP2] Render Error: {e}")
         return ""
 
     def render_early_warning_matrix(self, warning_results: List[Dict[str, Any]], total_scanned: int):
@@ -216,35 +221,41 @@ class ConsoleRenderer:
             print(f"{'Mã':<10} | {'Điểm':<6} | {'Trạng Thái':<42} | {'Hành Động'}")
             print("| --- | --- | --- | --- |")
             
-            for state in symbol_states:
+            displayed_count = 0
+            for idx, state in enumerate(symbol_states):
                 score_ctx = state.scores.get("DC1")
                 if not score_ctx:
                     continue
                 
-                sym = state.symbol.replace('/USDT', '')
-                score = score_ctx.total_score
-                act = score_ctx.action_label
-                safe_tag = state.safety_tag[:42] if state.safety_tag else ""
-                
-                print(f"{sym:<10} | {score:<6} | {safe_tag:<42} | {act}")
-                if score >= 60 and score_ctx.grid_setup:
-                    g_setup = score_ctx.grid_setup
-                    sl = g_setup.stop_loss
-                    tp = g_setup.take_profit
-                    strict_tag = self._strict_tag(state, "DC1", "DARVAS")
-                    if g_setup.is_dual_grid:
-                        print(f"  ↳ ⚙️ DUAL: SL={sl}|TP={tp} | G1:{g_setup.g1_lower}-{g_setup.g1_upper}({g_setup.g1_grids}L) | G2:{g_setup.g2_lower}-{g_setup.g2_upper}({g_setup.g2_grids}L) | {strict_tag}")
-                    else:
-                        print(f"  ↳ ⚙️ SETUP: L={g_setup.lower_price}|U={g_setup.upper_price}|G={g_setup.grid_quantity}|SL={sl}|TP={tp} | {strict_tag}")
-                        
-                if state.macro_levels:
-                    macro = state.macro_levels
-                    print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}{self._d3_suffix(state)}")
+                is_disp = (idx < 5)
+                if is_disp:
+                    displayed_count += 1
+                    sym = state.symbol.replace('/USDT', '')
+                    score = score_ctx.total_score
+                    act = score_ctx.action_label
+                    safe_tag = state.safety_tag[:42] if state.safety_tag else ""
+                    
+                    print(f"{sym:<10} | {score:<6} | {safe_tag:<42} | {act}")
+                    if score >= 60 and score_ctx.grid_setup:
+                        g_setup = score_ctx.grid_setup
+                        sl = g_setup.stop_loss
+                        tp = g_setup.take_profit
+                        strict_tag = self._strict_tag(state, "DC1", "DARVAS")
+                        if g_setup.is_dual_grid:
+                            print(f"  ↳ ⚙️ DUAL: SL={sl}|TP={tp} | G1:{g_setup.g1_lower}-{g_setup.g1_upper}({g_setup.g1_grids}L) | G2:{g_setup.g2_lower}-{g_setup.g2_upper}({g_setup.g2_grids}L) | {strict_tag}")
+                        else:
+                            print(f"  ↳ ⚙️ SETUP: L={g_setup.lower_price}|U={g_setup.upper_price}|G={g_setup.grid_quantity}|SL={sl}|TP={tp} | {strict_tag}")
+                            
+                    if state.macro_levels:
+                        macro = state.macro_levels
+                        print(f"    ↳ [Macro 4H] Entry: {macro.entry_4h:<10} | SL Cứng: {macro.sl_4h:<10} | TP 1H: {macro.tp_1h:<10} | TP 4H: {macro.tp_4h:<10}{self._d3_suffix(state)}")
 
-                # 🦅 WIDE GRID 3D (DC1)
-                wide_line = self._print_wide_grid(state, "DC1")
-                self._collect(state, "DC1", score_ctx, wide_grid_line=wide_line)
+                # 🦅 WIDE GRID 3D (DC1) & Thu thập toàn bộ vào signals_pool
+                wide_line = self._print_wide_grid(state, "DC1", quiet=(not is_disp))
+                self._collect(state, "DC1", score_ctx, wide_grid_line=wide_line, is_displayed=is_disp)
 
+            if len(symbol_states) > displayed_count:
+                print(f"  ↳ ℹ️ [DATA POOL] Đã nạp {len(symbol_states)} mã Darvas Grid vào Database & Bảng Tín Nhiệm (Top 1-5 hiển thị chi tiết).")
             print("=" * 80)
         except Exception as e:
             print(f"Render Error (Darvas Grid): {e}")
@@ -257,11 +268,13 @@ class ConsoleRenderer:
             print("=" * 100)
             print(f"{'Mã':<8} | {'Điểm':<5} | {'Trạng Thái':<40} | {'C0':<4} | {'C1':<4} | {'C2':<4} | {'C3':<4} | {'C4':<4} | {'Hành Động'}")
             
-            for state in symbol_states:
+            displayed_count = 0
+            for idx, state in enumerate(symbol_states):
                 score_ctx = state.scores.get("DC2")
                 if not score_ctx:
                     continue
                     
+                is_disp = (idx < 5)
                 sym = state.symbol.replace('/USDT', '')
                 score = score_ctx.total_score
                 act = score_ctx.action_label
@@ -274,58 +287,62 @@ class ConsoleRenderer:
                 c0 = score_ctx.bonus_score
                 c0_str = f"+{c0}" if isinstance(c0, (int, float)) and c0 > 0 else str(c0 if c0 != '-' else 0)
                 
-                print(f"{sym:<8} | {score:<5} | {safe_tag:<40} | {c0_str:<4} | {c1:<4} | {c2:<4} | {c3:<4} | {c4:<4} | {act}")
-                
-                # In Early Warning
-                if score_ctx.early_warning:
-                    ew = score_ctx.early_warning
-                    force_tag = " [⚠️ F-CON]" if ew.force_conservative else ""
-                    print(f"   ↳ [{sym}] 🛡️ EW: {ew.ew_label}{force_tag} | PB={ew.pullback_score} | W={ew.c1_wick_score} D={ew.c2_micro_dryup_score} M={ew.c3_macro_momentum_score} TB={ew.c4_taker_buy_score}")
-                    if ew.ew_level == 1:
-                        triggers = " | ".join(ew.triggers)
-                        print(f"   ↳ [{sym}] ⛔ [EW1 REJ] {triggers}")
+                if is_disp:
+                    displayed_count += 1
+                    print(f"{sym:<8} | {score:<5} | {safe_tag:<40} | {c0_str:<4} | {c1:<4} | {c2:<4} | {c3:<4} | {c4:<4} | {act}")
+                    
+                    # In Early Warning
+                    if score_ctx.early_warning:
+                        ew = score_ctx.early_warning
+                        force_tag = " [⚠️ F-CON]" if ew.force_conservative else ""
+                        print(f"   ↳ [{sym}] 🛡️ EW: {ew.ew_label}{force_tag} | PB={ew.pullback_score} | W={ew.c1_wick_score} D={ew.c2_micro_dryup_score} M={ew.c3_macro_momentum_score} TB={ew.c4_taker_buy_score}")
+                        if ew.ew_level == 1:
+                            triggers = " | ".join(ew.triggers)
+                            print(f"   ↳ [{sym}] ⛔ [EW1 REJ] {triggers}")
 
-                # In Entry Setup (OCO)
-                if score_ctx.entry_setup1:
-                    s1 = score_ctx.entry_setup1
-                    sl1_pct = (s1.entry_price - s1.sl_price) / s1.entry_price * 100 if s1.entry_price else 0
-                    tp1_pct = (s1.tp1_price - s1.entry_price) / s1.entry_price * 100 if s1.entry_price else 0
-                    print(f"   ↳ [{sym}] OCO-1: Buy={self.fmt_price(s1.entry_price)} | SL={self.fmt_price(s1.sl_price)}(-{sl1_pct:.1f}%) | TP={self.fmt_price(s1.tp1_price)}(+{tp1_pct:.1f}%) | R/R=1:{s1.rr_ratio:.1f}")
-                
-                if score_ctx.entry_setup2:
-                    s2 = score_ctx.entry_setup2
-                    sl2_pct = (s2.entry_price - s2.sl_price) / s2.entry_price * 100 if s2.entry_price else 0
-                    tp2_pct = (s2.tp1_price - s2.entry_price) / s2.entry_price * 100 if s2.entry_price else 0
-                    print(f"   ↳ [{sym}] OCO-2: Buy={self.fmt_price(s2.entry_price)} | SL={self.fmt_price(s2.sl_price)}(-{sl2_pct:.1f}%) | TP={self.fmt_price(s2.tp1_price)}(+{tp2_pct:.1f}%) | R/R=1:{s2.rr_ratio:.1f} | Trail={s2.trailing_trigger}")
-                
-                if state.macro_levels:
-                    macro = state.macro_levels
-                    print(f"   ↳ [{sym}] [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}{self._d3_suffix(state)}")
+                    # In Entry Setup (OCO)
+                    if score_ctx.entry_setup1:
+                        s1 = score_ctx.entry_setup1
+                        sl1_pct = (s1.entry_price - s1.sl_price) / s1.entry_price * 100 if s1.entry_price else 0
+                        tp1_pct = (s1.tp1_price - s1.entry_price) / s1.entry_price * 100 if s1.entry_price else 0
+                        print(f"   ↳ [{sym}] OCO-1: Buy={self.fmt_price(s1.entry_price)} | SL={self.fmt_price(s1.sl_price)}(-{sl1_pct:.1f}%) | TP={self.fmt_price(s1.tp1_price)}(+{tp1_pct:.1f}%) | R/R=1:{s1.rr_ratio:.1f}")
+                    
+                    if score_ctx.entry_setup2:
+                        s2 = score_ctx.entry_setup2
+                        sl2_pct = (s2.entry_price - s2.sl_price) / s2.entry_price * 100 if s2.entry_price else 0
+                        tp2_pct = (s2.tp1_price - s2.entry_price) / s2.entry_price * 100 if s2.entry_price else 0
+                        print(f"   ↳ [{sym}] OCO-2: Buy={self.fmt_price(s2.entry_price)} | SL={self.fmt_price(s2.sl_price)}(-{sl2_pct:.1f}%) | TP={self.fmt_price(s2.tp1_price)}(+{tp2_pct:.1f}%) | R/R=1:{s2.rr_ratio:.1f} | Trail={s2.trailing_trigger}")
+                    
+                    if state.macro_levels:
+                        macro = state.macro_levels
+                        print(f"   ↳ [{sym}] [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}{self._d3_suffix(state)}")
 
                 # GRID TP2 (DC2): Trig=OCO-2 Buy | SL ngắn=OCO-2 SL | Trần=OCO-2 TP (hoặc TP 4H) | Fallback 0.96
-                # OCO-2 bị ẩn → fallback OCO-1 nhưng trần TP2 ưu tiên lấy TP 4H để bảo đảm biên độ cho 24 lưới
                 s_grid = score_ctx.entry_setup2 or score_ctx.entry_setup1
                 grid_line = ""
                 if s_grid:
                     macro_tp = state.macro_levels.tp_4h if state.macro_levels else None
-                    # PRD: Cận trên tối thiểu +20% độc lập hoàn toàn với TP lệnh OCO lướt sóng
                     tp2_target = max(s_grid.entry_price * 1.20, (macro_tp or 0.0))
-                    grid_line = self._print_grid_tp2(state, s_grid.entry_price, s_grid.sl_price, tp2_target, fallback_ratio=0.96, engine="DC2")
+                    grid_line = self._print_grid_tp2(state, s_grid.entry_price, s_grid.sl_price, tp2_target, fallback_ratio=0.96, engine="DC2", quiet=(not is_disp))
 
                 # 🦅 WIDE GRID 3D (DC2)
-                wide_line = self._print_wide_grid(state, "DC2")
+                wide_line = self._print_wide_grid(state, "DC2", quiet=(not is_disp))
 
                 # Summary Board: DC2 Spot dùng OCO-1 → chuẩn hóa về định dạng `⚙️ SETUP:`
                 setup_line = ""
                 if score_ctx.entry_setup1:
                     s1 = score_ctx.entry_setup1
+                    sl1_pct = (s1.entry_price - s1.sl_price) / s1.entry_price * 100 if s1.entry_price else 0
+                    tp1_pct = (s1.tp1_price - s1.entry_price) / s1.entry_price * 100 if s1.entry_price else 0
                     setup_line = f"⚙️ SETUP: In={self.fmt_price(s1.entry_price)} | SL={self.fmt_price(s1.sl_price)}(-{sl1_pct:.1f}%) | TP={self.fmt_price(s1.tp1_price)}(+{tp1_pct:.1f}%) | R/R=1:{s1.rr_ratio:.1f}"
                 self._collect(state, "DC2", score_ctx, setup=score_ctx.entry_setup1, setup_line=setup_line,
-                              grid_tp2_line=grid_line, wide_grid_line=wide_line)
+                              grid_tp2_line=grid_line, wide_grid_line=wide_line, is_displayed=is_disp)
 
-                if score >= 70:
+                if is_disp and score >= 70:
                     print("-" * 100)
             
+            if len(symbol_states) > displayed_count:
+                print(f"  ↳ ℹ️ [DATA POOL] Đã nạp {len(symbol_states)} mã Pullback Sniper vào Database & Bảng Tín Nhiệm (Top 1-5 hiển thị chi tiết).")
             print("=" * 100)
         except Exception as e:
             print(f"Render Error (Pullback Sniper): {e}")
@@ -338,11 +355,13 @@ class ConsoleRenderer:
             print("=" * 100)
             print(f"{'Mã':<8} | {'Điểm':<5} | {'C1(PA)':<10} | {'C2(Vol)':<10} | {'C3(OB)':<10} | {'C4(R/R)':<10} | {'Bonus':<6} | {'Hành Động'}")
             
-            for state in symbol_states:
+            displayed_count = 0
+            for idx, state in enumerate(symbol_states):
                 score_ctx = state.scores.get("DC3")
                 if not score_ctx:
                     continue
                 
+                is_disp = (idx < 5)
                 sym = state.symbol.replace('/USDT', '')
                 score = score_ctx.total_score
                 act = score_ctx.action_label
@@ -351,50 +370,55 @@ class ConsoleRenderer:
                 c3 = score_ctx.c3_score
                 c4 = score_ctx.c4_score
                 bonus = score_ctx.bonus_score
-                
                 flow = f" {state.money_flow_tag}" if state.money_flow_tag else ""
-                print(f"{sym:<8}{flow} | {score:<5} | {c1:<10} | {c2:<10} | {c3:<10} | {c4:<10} | {bonus:<6} | {act}")
+
+                if is_disp:
+                    displayed_count += 1
+                    print(f"{sym:<8}{flow} | {score:<5} | {c1:<10} | {c2:<10} | {c3:<10} | {c4:<10} | {bonus:<6} | {act}")
                 
-                # In Entry Setup
+                # Setup line
                 setup_line = ""
                 if score_ctx.entry_setup1:
                     setup = score_ctx.entry_setup1
+                    sl_pct = (setup.entry_price - setup.sl_price) / setup.entry_price * 100 if setup.entry_price else 0
+                    tp1_pct = (setup.tp1_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
                     if setup.setup_type == "MOCK_SCALE_OUT":
-                        sl_pct = (setup.entry_price - setup.sl_price) / setup.entry_price * 100 if setup.entry_price else 0
-                        tp1_pct = (setup.tp1_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
                         tp2_pct = (setup.tp2_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
                         setup_line = f"   ↳ ⚙️ SETUP: In={self.fmt_price(setup.entry_price)} | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}"
-                        print(setup_line)
                         mock_line = f"       📄 [MOCK] TP1={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | TP2={self.fmt_price(setup.tp2_price)}(+{tp2_pct:.1f}%)"
-                        print(mock_line)
+                        if is_disp:
+                            print(setup_line)
+                            print(mock_line)
                         setup_line += f"\n{mock_line}"
                     else:
-                        sl_pct = (setup.entry_price - setup.sl_price) / setup.entry_price * 100 if setup.entry_price else 0
-                        tp1_pct = (setup.tp1_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
                         setup_line = f"   ↳ ⚙️ SETUP: In={self.fmt_price(setup.entry_price)} | TP1={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}"
-                        print(setup_line)
+                        if is_disp:
+                            print(setup_line)
                 
-                if state.macro_levels:
-                    macro = state.macro_levels
-                    print(f"    ↳ [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}{self._d3_suffix(state)}")
-                else:
-                    _sfx = self._d3_suffix(state)
-                    if _sfx:
-                        print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô 4H{_sfx}")
+                if is_disp:
+                    if state.macro_levels:
+                        macro = state.macro_levels
+                        print(f"    ↳ [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}{self._d3_suffix(state)}")
+                    else:
+                        _sfx = self._d3_suffix(state)
+                        if _sfx:
+                            print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô 4H{_sfx}")
 
                 # GRID TP2 (DC3): Trig=In | SL ngắn=SL | Trần=TP2 (hoặc TP 4H) | Fallback 0.95
                 grid_line = ""
                 if score_ctx.entry_setup1:
                     setup = score_ctx.entry_setup1
                     macro_tp = state.macro_levels.tp_4h if state.macro_levels else None
-                    # PRD: Cận trên tối thiểu +20% độc lập hoàn toàn với TP lệnh OCO lướt sóng
                     tp2_target = max(setup.entry_price * 1.20, (macro_tp or 0.0))
-                    grid_line = self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95, engine="DC3")
+                    grid_line = self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95, engine="DC3", quiet=(not is_disp))
 
-                self._collect(state, "DC3", score_ctx, setup=score_ctx.entry_setup1, setup_line=setup_line, grid_tp2_line=grid_line)
+                self._collect(state, "DC3", score_ctx, setup=score_ctx.entry_setup1, setup_line=setup_line, grid_tp2_line=grid_line, is_displayed=is_disp)
 
-                if score > 0:
+                if is_disp and score > 0:
                     print("-" * 100)
+
+            if len(symbol_states) > displayed_count:
+                print(f"  ↳ ℹ️ [DATA POOL] Đã nạp {len(symbol_states)} mã Momentum Breakout vào Database & Bảng Tín Nhiệm (Top 1-5 hiển thị chi tiết).")
             print("=" * 100)
         except Exception as e:
             print(f"Render Error (Momentum Breakout): {e}")
@@ -409,11 +433,13 @@ class ConsoleRenderer:
             if not symbol_states:
                 print("⚠️ KHÔNG TÌM THẤY MÃ NÀO ĐỦ ĐIỀU KIỆN HOT TREND PULLBACK HIỆN TẠI.")
             
-            for state in symbol_states:
+            displayed_count = 0
+            for idx, state in enumerate(symbol_states):
                 score_ctx = state.scores.get("DC4")
                 if not score_ctx:
                     continue
                 
+                is_disp = (idx < 5)
                 sym = state.symbol.replace('/USDT', '')
                 score = score_ctx.total_score
                 act = score_ctx.action_label
@@ -422,14 +448,15 @@ class ConsoleRenderer:
                 c3 = score_ctx.c3_score
                 c4 = score_ctx.c4_score
                 c5 = score_ctx.bonus_score
-                
                 flow = f" {state.money_flow_tag}" if state.money_flow_tag else ""
-                print(f"[{sym:<6}]{flow} Điểm: {score:<6} | RSI1H: {score_ctx.rsi_1h:<4.1f} | Pull%: {score_ctx.pullback_pct:<5.1f} | 🎯 {act}")
-                print(f"   ↳ C1: {c1} | C2: {c2} | C3: {c3} | C4: {c4} | C5: {c5}")
-                
-                macro = state.macro_state
-                if macro:
-                    print(f"   ↳ 🌀 Macro: {macro.trend_label} | {macro.drop_180d_pct}% | {macro.ma_status}")
+
+                if is_disp:
+                    displayed_count += 1
+                    print(f"[{sym:<6}]{flow} Điểm: {score:<6} | RSI1H: {score_ctx.rsi_1h:<4.1f} | Pull%: {score_ctx.pullback_pct:<5.1f} | 🎯 {act}")
+                    print(f"   ↳ C1: {c1} | C2: {c2} | C3: {c3} | C4: {c4} | C5: {c5}")
+                    macro = state.macro_state
+                    if macro:
+                        print(f"   ↳ 🌀 Macro: {macro.trend_label} | {macro.drop_180d_pct}% | {macro.ma_status}")
                 
                 setup_line = ""
                 if score_ctx.entry_setup1:
@@ -438,33 +465,37 @@ class ConsoleRenderer:
                     tp1_pct = (setup.tp1_price - setup.entry_price) / setup.entry_price * 100 if setup.entry_price else 0
                     entry_lbl = "Trig" if setup.setup_type == "TRIGGER_DIP" else "In"
                     setup_line = f"   ↳ ⚙️ SETUP: {entry_lbl}={self.fmt_price(setup.entry_price)} | SL={self.fmt_price(setup.sl_price)}(-{sl_pct:.1f}%) | TP={self.fmt_price(setup.tp1_price)}(+{tp1_pct:.1f}%) | R/R=1:{setup.rr_ratio:.1f}"
-                    print(setup_line)
+                    if is_disp:
+                        print(setup_line)
                 
-                if state.macro_levels:
-                    macro = state.macro_levels
-                    print(f"    ↳ [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}{self._d3_suffix(state)}")
-                else:
-                    print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới){self._d3_suffix(state)}")
+                if is_disp:
+                    if state.macro_levels:
+                        macro = state.macro_levels
+                        print(f"    ↳ [Macro 4H] Entry: {self.fmt_price(macro.entry_4h):<10} | SL Cứng: {self.fmt_price(macro.sl_4h):<10} | TP 1H: {self.fmt_price(macro.tp_1h):<10} | TP 4H: {self.fmt_price(macro.tp_4h):<10}{self._d3_suffix(state)}")
+                    else:
+                        print(f"    ↳ [Macro 4H] ⚠️ Không có dữ liệu Vĩ mô (Do API Rate Limit hoặc mã mới){self._d3_suffix(state)}")
 
                 # GRID TP2 (DC4): Trig=In | SL ngắn=SL | Trần=max(TP, TP 4H) (khuyết 4H → TP×1.04) | Fallback 0.95
                 grid_line = ""
                 if score_ctx.entry_setup1:
                     setup = score_ctx.entry_setup1
                     macro_tp = state.macro_levels.tp_4h if state.macro_levels else None
-                    # PRD: Cận trên tối thiểu +20% độc lập hoàn toàn với TP lệnh OCO lướt sóng
                     tp2_target = max(setup.entry_price * 1.20, (macro_tp or 0.0))
-                    grid_line = self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95, engine="DC4")
+                    grid_line = self._print_grid_tp2(state, setup.entry_price, setup.sl_price, tp2_target, fallback_ratio=0.95, engine="DC4", quiet=(not is_disp))
 
                 # 🦅 WIDE GRID 3D (DC4)
-                wide_line = self._print_wide_grid(state, "DC4")
+                wide_line = self._print_wide_grid(state, "DC4", quiet=(not is_disp))
                 self._collect(state, "DC4", score_ctx, setup=score_ctx.entry_setup1, setup_line=setup_line,
-                              grid_tp2_line=grid_line, wide_grid_line=wide_line)
+                              grid_tp2_line=grid_line, wide_grid_line=wide_line, is_displayed=is_disp)
 
-                print("-" * 100)
+                if is_disp:
+                    print("-" * 100)
                 
             if tracking_list:
                 print("👀 THEO DÕI THÊM: " + ", ".join(tracking_list))
                 
+            if len(symbol_states) > displayed_count:
+                print(f"  ↳ ℹ️ [DATA POOL] Đã nạp {len(symbol_states)} mã Hot Trend vào Database & Bảng Tín Nhiệm (Top 1-5 hiển thị chi tiết).")
             print("=" * 100)
         except Exception as e:
             print(f"Render Error (Hot Trend Pullback): {e}")

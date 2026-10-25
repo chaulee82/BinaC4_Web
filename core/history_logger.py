@@ -33,17 +33,30 @@ class HistoryLogger:
         except Exception as e:
             logger.error(f"Lỗi tạo database: {e}")
 
-    def save_signals(self, signals_list):
+    # Ngưỡng sàn thu thập Data Pool (Tầng 1 - Ingestion Filter):
+    # Loại bỏ rác, chỉ lưu các mã có tiềm năng vào signal_logs
+    INGESTION_MIN_SCORES = {
+        "DC1": 40.0,
+        "DC2": 45.0,
+        "DC3": 50.0,
+        "DC4": 45.0,
+        "DC5": 20.0,
+        "3A": 40.0,
+        "3B": 40.0,
+    }
+
+    def save_signals(self, signals_list, filter_min_score: bool = True):
         """
         Ghi hàng loạt tín hiệu vào DB.
-        signals_list: list of dicts.
+        signals_list: list of dicts hoặc SignalRecord.
+        filter_min_score: Nếu True, áp dụng bộ lọc sàn Tầng 1 (Ingestion Filter) để loại bỏ
+                          tín hiệu rác / 0 điểm, chỉ lưu các mã có tiềm năng vào Data Pool.
         """
         if not signals_list:
             return
         
         records = []
         for s in signals_list:
-            # signals_list có thể chứa dict hoặc object. Cố gắng lấy data.
             if isinstance(s, dict):
                 timestamp = s.get('timestamp', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
                 symbol = s.get('symbol')
@@ -51,6 +64,7 @@ class HistoryLogger:
                 score = s.get('score', 0.0)
                 action = s.get('action', '')
                 details = s.get('details', {})
+                is_displayed = s.get('is_displayed', False)
             else:
                 timestamp = getattr(s, 'timestamp', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
                 symbol = getattr(s, 'symbol', None)
@@ -58,13 +72,23 @@ class HistoryLogger:
                 score = getattr(s, 'target_score', getattr(s, 'score', 0.0))
                 action = getattr(s, 'action_label', getattr(s, 'action', ''))
                 details = getattr(s, 'details', {})
+                is_displayed = getattr(s, 'is_displayed', False)
 
             if symbol and engine:
+                score_val = float(score or 0.0)
+                # Tầng 1: Lọc nạp Data Pool (Ingestion Filter)
+                if filter_min_score and engine in self.INGESTION_MIN_SCORES:
+                    if score_val <= 0.0:
+                        continue
+                    min_ingest = self.INGESTION_MIN_SCORES[engine]
+                    if not is_displayed and score_val < min_ingest:
+                        continue
+
                 records.append((
                     timestamp,
                     symbol,
                     engine,
-                    score,
+                    score_val,
                     action,
                     json.dumps(details)
                 ))
@@ -83,9 +107,10 @@ class HistoryLogger:
         except Exception as e:
             logger.error(f"Lỗi ghi log lịch sử: {e}")
 
-    def get_symbol_history(self, symbol, days=14):
+    def get_symbol_history(self, symbol, days=14, min_score=60.0):
         """
         Lấy tiền sử của mã trong X ngày qua.
+        Chỉ đếm các tín hiệu đạt chuẩn: score >= min_score và không bị từ chối/cảnh báo tử thần.
         Trả về danh sách (engine, timestamp) xếp từ mới đến cũ.
         """
         past_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
@@ -94,9 +119,10 @@ class HistoryLogger:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT engine, timestamp FROM signal_logs 
-                    WHERE symbol = ? AND timestamp >= ?
+                    WHERE symbol = ? AND timestamp >= ? AND score >= ?
+                      AND (action NOT LIKE '%REJECT%' AND action NOT LIKE '%TỪ CHỐI%' AND action NOT LIKE '%CẤP 3%')
                     ORDER BY timestamp DESC
-                """, (symbol, past_date))
+                """, (symbol, past_date, min_score))
                 rows = cursor.fetchall()
                 return rows
         except Exception as e:

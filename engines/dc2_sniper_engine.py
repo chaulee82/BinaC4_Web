@@ -30,9 +30,8 @@ class DC2SniperEngine(BaseEngine):
             result = self.strategy.evaluate_candidate(symbol, timeframe, macro_gate=macro_gate, early_warning_status=ew_status)
             sniper_results.append(result)
 
-        # Sắp xếp theo điểm tổng giảm dần và chỉ lấy Top 5
+        # Sắp xếp theo điểm tổng giảm dần (giữ toàn bộ danh mục cho tầng lưu trữ & bảng điểm)
         sniper_results.sort(key=lambda x: x.get('total_score', 0), reverse=True)
-        sniper_results = sniper_results[:5]
         
         dc2_states = []
         for res in sniper_results:

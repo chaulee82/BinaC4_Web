@@ -28,9 +28,8 @@ class DC3BreakoutEngine(BaseEngine):
             result = self.strategy.evaluate_breakout(symbol, timeframe, btc_gate=btc_gate)
             breakout_results.append(result)
             
-        # Sắp xếp theo sort_score (total_score + rr_ratio) giảm dần, chỉ lấy Top 5
+        # Sắp xếp theo sort_score (total_score + rr_ratio) giảm dần (giữ toàn bộ danh mục cho tầng lưu trữ & bảng điểm)
         breakout_results.sort(key=lambda x: x.get('sort_score', x.get('total_score', 0)), reverse=True)
-        breakout_results = breakout_results[:5]
         
         dc3_states = []
         for res in breakout_results:

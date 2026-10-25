@@ -489,23 +489,23 @@ class HistoricalDataQuery:
                 SELECT 
                     substr(timestamp, 1, 10) as log_date,
                     symbol,
-                    MAX(CASE WHEN engine = '3A' THEN score ELSE 0 END) as b3a_sc,
-                    MAX(CASE WHEN engine = '3B' THEN score ELSE 0 END) as b3b_sc,
+                    MAX(CASE WHEN engine = '3A' AND score >= 60.0 THEN score ELSE 0 END) as b3a_sc,
+                    MAX(CASE WHEN engine = '3B' AND score >= 70.0 THEN score ELSE 0 END) as b3b_sc,
                     AVG(CASE WHEN engine = 'REBALANCE' THEN score ELSE NULL END) as reb_sc,
                     AVG(CASE WHEN engine = '3D_STRICT' THEN score ELSE NULL END) as strict_sc,
-                    SUM(CASE WHEN engine = 'DC2' THEN 1 ELSE 0 END) as dc2_cnt,
-                    SUM(CASE WHEN engine = 'DC3' THEN 1 ELSE 0 END) as dc3_cnt,
-                    SUM(CASE WHEN engine = 'DC4' THEN 1 ELSE 0 END) as dc4_cnt,
-                    SUM(CASE WHEN engine = 'DC5' THEN 1 ELSE 0 END) as dc5_sc,
+                    SUM(CASE WHEN engine = 'DC2' AND score >= 60.0 THEN 1 ELSE 0 END) as dc2_cnt,
+                    SUM(CASE WHEN engine = 'DC3' AND score >= 60.0 THEN 1 ELSE 0 END) as dc3_cnt,
+                    SUM(CASE WHEN engine = 'DC4' AND score >= 60.0 THEN 1 ELSE 0 END) as dc4_cnt,
+                    SUM(CASE WHEN engine = 'DC5' AND score >= 25.0 THEN 1 ELSE 0 END) as dc5_sc,
                     SUM(CASE WHEN engine = 'PENALTY_LVL3' THEN 1 ELSE 0 END) as p_lvl3,
                     SUM(CASE WHEN engine = 'PENALTY_XARAY' THEN 1 ELSE 0 END) as p_xaray,
                     SUM(CASE WHEN engine = 'PENALTY_FAKEOUT' THEN 1 ELSE 0 END) as p_fakeout,
                     MAX(CASE WHEN engine = 'OPTIMAL_CONVERGENCE' THEN action ELSE '' END) as opt_tier,
                     MAX(CASE WHEN action LIKE '%TIỀN BẠO PHÁT%' THEN 1 ELSE 0 END) as has_mf,
-                    MAX(CASE WHEN engine = 'DC2' THEN score ELSE 0 END) as dc2_max_sc,
-                    MAX(CASE WHEN engine = 'DC3' THEN score ELSE 0 END) as dc3_max_sc,
-                    MAX(CASE WHEN engine = 'DC4' THEN score ELSE 0 END) as dc4_max_sc,
-                    MAX(CASE WHEN engine = 'DC5' THEN score ELSE 0 END) as dc5_max_sc
+                    MAX(CASE WHEN engine = 'DC2' AND score >= 60.0 THEN score ELSE 0 END) as dc2_max_sc,
+                    MAX(CASE WHEN engine = 'DC3' AND score >= 60.0 THEN score ELSE 0 END) as dc3_max_sc,
+                    MAX(CASE WHEN engine = 'DC4' AND score >= 60.0 THEN score ELSE 0 END) as dc4_max_sc,
+                    MAX(CASE WHEN engine = 'DC5' AND score >= 25.0 THEN score ELSE 0 END) as dc5_max_sc
                 FROM signal_logs
                 WHERE symbol IS NOT NULL AND timestamp IS NOT NULL
                 GROUP BY log_date, symbol
@@ -734,10 +734,10 @@ class HistoricalDataQuery:
             sc_opt = 10.0 if "HẠNG S" in (opt_tier or '') else (5.0 if any(t in (opt_tier or '') for t in ["HẠNG A", "HẠNG B"]) else 0.0)
             day_base = min(40.0, sc_strict + sc_reb + sc_3ab + sc_opt)
 
-        # 2. Điểm Đẩy (Tối đa 40đ: DC2 10đ, DC3 15đ, DC4 15đ)
-        sc_dc2 = min(10.0, max(5.0, (dc2_sc_val / 100.0) * 10.0 if dc2_sc_val > 0 else (dc2 or 0) * 5.0)) if (dc2_sc_val > 0 or (dc2 or 0) > 0) else 0.0
-        sc_dc3 = min(15.0, max(8.0, (dc3_sc_val / 100.0) * 15.0 if dc3_sc_val > 0 else (dc3 or 0) * 8.0)) if (dc3_sc_val > 0 or (dc3 or 0) > 0) else 0.0
-        sc_dc4 = min(15.0, max(8.0, (dc4_sc_val / 100.0) * 15.0 if dc4_sc_val > 0 else (dc4 or 0) * 8.0)) if (dc4_sc_val > 0 or (dc4 or 0) > 0) else 0.0
+        # 2. Điểm Đẩy (Tối đa 40đ: DC2 10đ, DC3 15đ, DC4 15đ) - Yêu cầu điểm sàn >= 60.0đ
+        sc_dc2 = min(10.0, max(5.0, (dc2_sc_val / 100.0) * 10.0)) if dc2_sc_val >= 60.0 else (min(10.0, (dc2 or 0) * 5.0) if (dc2 or 0) > 0 else 0.0)
+        sc_dc3 = min(15.0, max(8.0, (dc3_sc_val / 100.0) * 15.0)) if dc3_sc_val >= 60.0 else (min(15.0, (dc3 or 0) * 8.0) if (dc3 or 0) > 0 else 0.0)
+        sc_dc4 = min(15.0, max(8.0, (dc4_sc_val / 100.0) * 15.0)) if dc4_sc_val >= 60.0 else (min(15.0, (dc4 or 0) * 8.0) if (dc4 or 0) > 0 else 0.0)
         day_push = min(40.0, sc_dc2 + sc_dc3 + sc_dc4)
 
         # 3. Điểm Tiền (Tối đa 20đ)
@@ -747,13 +747,13 @@ class HistoricalDataQuery:
             cash_sum += 10.0
         if sc_dc3 > 0:
             cash_sum += 5.0
-        # Động cơ 5 phân tầng: Top 1-5 nhận 10đ, Top 6-15 nhận 5đ đệm
+        # Động cơ 5 phân tầng: Top 1-5 nhận 10đ, Top 6-15 nhận 5đ đệm, điểm sàn DC5 >= 25.0đ
         if dc5_rnk_val and dc5_rnk_val <= 5:
             cash_sum += 10.0
         elif dc5_rnk_val and dc5_rnk_val <= 15:
             cash_sum += 5.0
-        elif (dc5_sc_val > 0 or (dc5 or 0) > 0):
-            cash_sum += 10.0 if (dc5_sc_val >= 25.0 or (dc5 or 0) >= 5) else 5.0
+        elif (dc5_sc_val >= 25.0 or (dc5 or 0) > 0):
+            cash_sum += 10.0 if (dc5_sc_val >= 40.0 or (dc5 or 0) >= 5) else 5.0
         if "HẠNG S" in (opt_tier or ''):
             cash_sum += 5.0
         if cash_sum == 0.0 and (reb or 0) >= 45 and pen == 0:
@@ -1468,9 +1468,9 @@ def print_14_day_summary_board(
         except Exception as e_sig:
             logger.warning(f"Không thể đọc tín hiệu phiên từ signal_logs: {e_sig}")
 
-        # Xây dựng bảng xếp hạng Động cơ 5 trong phiên Live (Top 1-5: 10đ, Top 6-15: 5đ)
+        # Xây dựng bảng xếp hạng Động cơ 5 trong phiên Live (Chỉ tính mã có dòng tiền đạt sàn >= 25.0đ)
         dc5_active_syms = sorted(
-            [s for s, d in latest_signals_map.items() if d.get('dc5_sc', 0.0) > 0],
+            [s for s, d in latest_signals_map.items() if d.get('dc5_sc', 0.0) >= 25.0],
             key=lambda s: latest_signals_map[s].get('dc5_sc', 0.0),
             reverse=True
         )
@@ -1567,10 +1567,10 @@ def print_14_day_summary_board(
             p_xaray = sig_data.get('p_xaray', 0)
             p_fakeout = sig_data.get('p_fakeout', 0)
 
-            # Điểm Đẩy: Bắt trọn xung lực kích hoạt (Trigger Points: DC2, DC3, DC4 - Tối đa 40đ)
-            p_dc2 = min(10.0, max(5.0, dc2_sc * 0.10)) if dc2_sc > 0 else 0.0
-            p_dc3 = min(15.0, max(8.0, dc3_sc * 0.15)) if dc3_sc > 0 else 0.0
-            p_dc4 = min(15.0, max(8.0, dc4_sc * 0.15)) if dc4_sc > 0 else 0.0
+            # Điểm Đẩy: Bắt trọn xung lực kích hoạt (Trigger Points: DC2, DC3, DC4 - Tối đa 40đ, yêu cầu sàn >= 60.0đ)
+            p_dc2 = min(10.0, max(5.0, dc2_sc * 0.10)) if dc2_sc >= 60.0 else 0.0
+            p_dc3 = min(15.0, max(8.0, dc3_sc * 0.15)) if dc3_sc >= 60.0 else 0.0
+            p_dc4 = min(15.0, max(8.0, dc4_sc * 0.15)) if dc4_sc >= 60.0 else 0.0
             day_push = min(40.0, p_dc2 + p_dc3 + p_dc4)
 
             # Điểm Tiền: Trạng thái dòng tiền Net Flow & Phạt xả râu (Tối đa 20đ)
@@ -1581,12 +1581,12 @@ def print_14_day_summary_board(
                 cash_sum += 10.0
             if p_dc3 > 0:
                 cash_sum += 5.0
-            # Động cơ 5 phân tầng: Top 1-5 nhận 10đ, Top 6-15 nhận 5đ đệm
+            # Động cơ 5 phân tầng: Top 1-5 nhận 10đ, Top 6-15 nhận 5đ đệm (điểm sàn >= 25.0đ)
             if dc5_rnk <= 5:
                 cash_sum += 10.0
             elif dc5_rnk <= 15:
                 cash_sum += 5.0
-            elif dc5_sc > 0:
+            elif dc5_sc >= 25.0:
                 cash_sum += min(10.0, max(5.0, dc5_sc * 0.10))
             if opt_s:
                 cash_sum += 5.0

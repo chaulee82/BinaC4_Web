@@ -39,9 +39,8 @@ class DC1DarvasEngine(BaseEngine):
                     res['total_score'] = res.get('total_score', 0) - 30
                     res['action'] = f"⛔ GÃY MA7 3D (MA7_3D={d3.get('ma7_3d')}) — TỪ CHỐI"
             
-        # Sắp xếp theo điểm tổng giảm dần và chỉ lấy Top 5
+        # Sắp xếp theo điểm tổng giảm dần (giữ toàn bộ danh mục cho tầng lưu trữ & bảng điểm)
         darvas_results.sort(key=lambda x: x.get('total_score', 0), reverse=True)
-        darvas_results = darvas_results[:5]
         
         dc1_states = []
         for res in darvas_results:
