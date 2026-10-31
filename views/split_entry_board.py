@@ -1,12 +1,13 @@
 """
 Module: views/split_entry_board.py
-Dự án: BinaC4 — Update v2.7 (Split-Entry & Buffer Rules Final)
+Dự án: BinaC4 — Update v2.8 (Split-Entry + Smart Money Flow)
 Mục đích: BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (Split-Entry Tracker) — in ở cuối mỗi phiên báo cáo.
 
 Nguồn dữ liệu (TRD §3.1) — gộp, khử trùng, lấy Top 3 cuối cùng:
     1. Bottom Fishing  : Mã đạt `[HẠNG A1]` (Điểm Chạm Vàng — hội tụ DC2 + DC4/3B)
     2. Pre-Breakout    : delta_72h > 40 (Bảng Báo Gom — Pre-Breakout Radar)
     3. Pullback Trend  : Tier S / Tier A (Bảng Hồ Sơ Tín Nhiệm Momentum)
+    4. Smart Money Flow: Tiền bạo phát > 2.0x VÀ R:R >= 1:2.5 (Động cơ 3 & 4)
 """
 
 import logging
@@ -28,9 +29,13 @@ ICON_NEAR_MAX_PCT   = 4.0     # |dist| ≤ 4%       → 🚨 #1
 ICON_DIP_MAX_PCT    = 6.0     # 4% < |dist| ≤ 6%  → 👀 #2 ; > 6% → 💤 #3
 GRID_SETUP_TEXT     = "Isolated x10 · 24 Lưới · TP ~10% · SL -30%"
 
-STREAM_BOTTOM   = "Bottom Fishing (A1)"
-STREAM_PREBREAK = "Pre-Breakout (Δ72H {d72:+.0f}đ)"
-STREAM_PULLBACK = "Pullback Trend ({tier})"
+STREAM_BOTTOM      = "Bottom Fishing (A1)"
+STREAM_PREBREAK    = "Pre-Breakout (Δ72H {d72:+.0f}đ)"
+STREAM_PULLBACK    = "Pullback Trend ({tier})"
+STREAM_SMART_FLOW  = "Tiền Bạo Phát {mf:.1f}x + R:R 1:{rr:.1f}"
+
+SMART_FLOW_MIN_VOL = 2.0   # Tiền bạo phát > 2.0x
+SMART_FLOW_MIN_RR  = 2.5   # R:R >= 1:2.5
 
 
 def compute_split_grid_params(trig: float, tick_size: float = 0.0) -> Tuple[float, float, float, float]:
@@ -90,12 +95,134 @@ def status_icon(distance_pct: float) -> str:
     return "💤 #3 Chờ Đạp Mạnh"
 
 
-# ── Thu thập ứng viên từ 3 luồng ──────────────────────────────────────────────
+def parse_grid_line_params(line: str) -> Optional[Tuple[float, float, float, float, int]]:
+    """Trích xuất (lower, upper, trig, sl, tp, grids) từ grid_tp2_line nếu có."""
+    if not line:
+        return None
+    try:
+        import re
+        m_range = re.search(r"([\d.]+)\s*-\s*([\d.]+)", line)
+        m_grids = re.search(r"(\d+)\s*L", line, re.IGNORECASE)
+        m_trig = re.search(r"Trig:\s*([\d.]+)", line, re.IGNORECASE)
+        m_sl = re.search(r"SL:\s*([\d.]+)", line, re.IGNORECASE)
+        m_tp = re.search(r"TP:\s*([\d.]+)", line, re.IGNORECASE)
+        if m_range and m_trig:
+            lower = float(m_range.group(1))
+            upper = float(m_range.group(2))
+            trig = float(m_trig.group(1))
+            sl = float(m_sl.group(1)) if m_sl else lower * 0.985
+            tp = float(m_tp.group(1)) if m_tp else upper
+            grids = int(m_grids.group(1)) if m_grids else 24
+            return lower, upper, trig, sl, tp, grids
+    except Exception:
+        pass
+    return None
+
+
+def extract_smart_flow_candidates(
+    top_money_flow: Optional[Iterable[Any]] = None,
+    signals_pool: Optional[Iterable[Any]] = None,
+    dc3_states: Optional[Iterable[Any]] = None,
+    dc4_states: Optional[Iterable[Any]] = None,
+    min_vol: float = SMART_FLOW_MIN_VOL,
+    min_rr: float = SMART_FLOW_MIN_RR,
+    top_n: int = PER_STREAM_TOP_N
+) -> Tuple[List[Tuple[str, float, float]], Dict[str, Tuple[float, float, float, float, int]]]:
+    """
+    TRD v2.8 §3.1 (Luồng 4 - MỚI):
+    Ưu tiên lấy trực tiếp từ `top_money_flow` của BẢNG TỔNG KẾT TỐI ƯU (đã qua Gatekeeper bóp cò).
+    Nếu thiếu hoặc không có, fallback quét từ signals_pool / dc3_states / dc4_states thỏa mãn:
+    - Tín hiệu Volume: Tiền bạo phát > 2.0x
+    - Biên độ an toàn: Tỷ lệ Reward/Risk R:R >= 1:2.5
+    Trả về ([(symbol, money_flow, rr_ratio), ...], {symbol: grid_params}).
+    """
+    cands: Dict[str, Tuple[float, float]] = {}
+    grid_params_map: Dict[str, Tuple[float, float, float, float, int]] = {}
+
+    # 1. Ưu tiên số 1: Lấy trực tiếp từ top_money_flow của Bảng Tổng Kết Tối Ưu
+    for sig in top_money_flow or []:
+        sym = _clean(getattr(sig, "symbol", "") or (sig.get("symbol", "") if isinstance(sig, dict) else ""))
+        if not sym:
+            continue
+        mf = float(getattr(sig, "money_flow", 0.0) or (sig.get("money_flow", 0.0) if isinstance(sig, dict) else 0.0) or 0.0)
+        rr = float(getattr(sig, "rr_ratio", 0.0) or (sig.get("rr_ratio", 0.0) if isinstance(sig, dict) else 0.0) or 0.0)
+        if mf > min_vol and rr >= min_rr:
+            cands[sym] = (mf, rr)
+            g_line = getattr(sig, "grid_tp2_line", "") or (sig.get("grid_tp2_line", "") if isinstance(sig, dict) else "")
+            parsed = parse_grid_line_params(g_line)
+            if parsed:
+                grid_params_map[sym] = parsed
+
+    # 2. Quét từ signals_pool (SignalRecord của console_renderer)
+    for sig in signals_pool or []:
+        eng = getattr(sig, "engine_source", "") or (sig.get("engine_source", "") if isinstance(sig, dict) else "")
+        if eng in ("DC3", "DC4"):
+            sym = _clean(getattr(sig, "symbol", "") or (sig.get("symbol", "") if isinstance(sig, dict) else ""))
+            if not sym or sym in cands:
+                continue
+            mf = float(getattr(sig, "money_flow", 0.0) or (sig.get("money_flow", 0.0) if isinstance(sig, dict) else 0.0) or 0.0)
+            rr = float(getattr(sig, "rr_ratio", 0.0) or (sig.get("rr_ratio", 0.0) if isinstance(sig, dict) else 0.0) or 0.0)
+            if mf > min_vol and rr >= min_rr:
+                cands[sym] = (mf, rr)
+                g_line = getattr(sig, "grid_tp2_line", "") or (sig.get("grid_tp2_line", "") if isinstance(sig, dict) else "")
+                parsed = parse_grid_line_params(g_line)
+                if parsed:
+                    grid_params_map[sym] = parsed
+
+    # 3. Bổ sung từ dc3_states (Momentum Breakout) nếu chưa có
+    for st in (dc3_states or []):
+        sym = _clean(getattr(st, "symbol", ""))
+        if not sym or sym in cands:
+            continue
+        score_ctx = getattr(st, "scores", {}).get("DC3") if hasattr(st, "scores") and isinstance(st.scores, dict) else None
+        setup = getattr(score_ctx, "entry_setup1", None) if score_ctx else None
+        rr = float(getattr(setup, "rr_ratio", 0.0) or 0.0) if setup else 0.0
+        d3 = getattr(st, "d3", {}) or {}
+        expl = (d3.get("explosive") or {}).get("ratio", 0.0) if isinstance(d3, dict) else 0.0
+        try:
+            from views.summary_board import extract_money_flow
+            mf = max(extract_money_flow(getattr(score_ctx, "action_label", ""), getattr(st, "money_flow_tag", "")), float(expl or 0.0))
+        except Exception:
+            mf = float(expl or 0.0)
+        if mf > min_vol and rr >= min_rr:
+            cands[sym] = (mf, rr)
+
+    # 4. Bổ sung từ dc4_states (Hot Trend Pullback) nếu chưa có
+    for st in (dc4_states or []):
+        sym = _clean(getattr(st, "symbol", ""))
+        if not sym or sym in cands:
+            continue
+        score_ctx = getattr(st, "scores", {}).get("DC4") if hasattr(st, "scores") and isinstance(st.scores, dict) else None
+        setup = getattr(score_ctx, "entry_setup1", None) if score_ctx else None
+        rr = float(getattr(setup, "rr_ratio", 0.0) or 0.0) if setup else 0.0
+        d3 = getattr(st, "d3", {}) or {}
+        try:
+            from views.summary_board import extract_money_flow
+            mf = max(extract_money_flow(getattr(score_ctx, "action_label", ""), getattr(st, "money_flow_tag", "")), float(expl or 0.0))
+        except Exception:
+            mf = float(expl or 0.0)
+        if mf > min_vol and rr >= min_rr:
+            cands[sym] = (mf, rr)
+
+    sorted_cands = sorted(
+        [(sym, mf, rr) for sym, (mf, rr) in cands.items()],
+        key=lambda x: (x[1], x[2]),
+        reverse=True
+    )
+    return sorted_cands[:top_n], grid_params_map
+
+
+# ── Thu thập ứng viên từ 4 luồng tinh hoa ─────────────────────────────────────
 def collect_candidates(convergence_ranks: Optional[Dict[str, str]] = None,
                        pre_breakout_pool: Optional[Iterable[Dict[str, Any]]] = None,
                        trust_profiles: Optional[Iterable[Dict[str, Any]]] = None,
-                       per_stream_top: int = PER_STREAM_TOP_N) -> Dict[str, List[str]]:
-    """Trả về {symbol: [nhãn luồng, ...]} theo thứ tự ưu tiên luồng 1 → 2 → 3."""
+                       top_money_flow: Optional[Iterable[Any]] = None,
+                       signals_pool: Optional[Iterable[Any]] = None,
+                       dc3_states: Optional[Iterable[Any]] = None,
+                       dc4_states: Optional[Iterable[Any]] = None,
+                       per_stream_top: int = PER_STREAM_TOP_N,
+                       grid_presets_out: Optional[Dict[str, Any]] = None) -> Dict[str, List[str]]:
+    """Trả về {symbol: [nhãn luồng, ...]} theo thứ tự ưu tiên luồng 1 → 2 → 3 → 4."""
     out: Dict[str, List[str]] = {}
 
     def _add(sym: str, label: str):
@@ -141,6 +268,19 @@ def collect_candidates(convergence_ranks: Optional[Dict[str, str]] = None,
     for c, tier, _ in pb[:per_stream_top]:
         _add(c, STREAM_PULLBACK.format(tier=tier))
 
+    # 4. Dòng Tiền Bạo Phát & R:R (MỚI - TRD v2.8) — Ưu tiên lấy từ BẢNG TỔNG KẾT TỐI ƯU
+    smart_cands, custom_grids = extract_smart_flow_candidates(
+        top_money_flow=top_money_flow,
+        signals_pool=signals_pool,
+        dc3_states=dc3_states,
+        dc4_states=dc4_states,
+        top_n=per_stream_top
+    )
+    if grid_presets_out is not None and custom_grids:
+        grid_presets_out.update(custom_grids)
+    for c, mf, rr in smart_cands:
+        _add(c, STREAM_SMART_FLOW.format(mf=mf, rr=rr))
+
     return out
 
 
@@ -174,7 +314,8 @@ def build_split_entry_rows(candidates: Dict[str, List[str]],
                            oco1_map: Optional[Dict[str, float]] = None,
                            btc_rsi_1h: Optional[float] = None,
                            top_n: int = BOARD_TOP_N,
-                           data_builder=build_symbol_data) -> List[Dict[str, Any]]:
+                           data_builder=build_symbol_data,
+                           grid_presets: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Tính optimal trigger cho từng ứng viên → sort distance_pct DESC (gần 0 trước) → Top N."""
     rows: List[Dict[str, Any]] = []
     for sym, streams in candidates.items():
@@ -184,7 +325,7 @@ def build_split_entry_rows(candidates: Dict[str, List[str]],
             det = calculate_optimal_trigger_detail(data)
             if det.get("optimal_trigger") is None:
                 continue
-            rows.append({
+            r_item = {
                 "symbol": sym,
                 "streams": streams,
                 "live_price": det["live_price"],
@@ -194,7 +335,10 @@ def build_split_entry_rows(candidates: Dict[str, List[str]],
                 "flags": det["flags"],
                 "is_market_dump": det["is_market_dump"],
                 "tick_size": float(data.get("tick_size") or 0.0),
-            })
+            }
+            if grid_presets and sym in grid_presets:
+                r_item["custom_grid"] = grid_presets[sym]
+            rows.append(r_item)
         except Exception as e:
             logger.debug(f"[SplitEntry] {sym}: lỗi tính trigger: {e}")
 
@@ -207,7 +351,7 @@ def build_split_entry_rows(candidates: Dict[str, List[str]],
 
 # ── Render Markdown ───────────────────────────────────────────────────────────
 def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[float] = None) -> str:
-    """TRD §3.3 — Bảng Markdown 7 cột theo mẫu chuẩn v2.7."""
+    """TRD §3.3 — Bảng Markdown 7 cột theo mẫu chuẩn v2.8."""
     if btc_rsi_1h is None:
         btc_ctx = "BTC RSI 1H: N/A"
     elif btc_rsi_1h < BTC_DUMP_RSI_THRESHOLD:
@@ -218,12 +362,12 @@ def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[fl
     sep_line = "=" * 152
     lines = [
         "",
-        "📌 BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (SPLIT-ENTRY TRACKER) - v2.7",
+        "📌 BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (SPLIT-ENTRY TRACKER) - v2.8",
         f"{btc_ctx} | Đệm tối thiểu -3.5% | Chốt chặn Supertrend 1D +1.5%",
         sep_line,
     ]
     if not rows:
-        lines.append("   (Không có mã nào thuộc 3 luồng A1 / Pre-Breakout / Tier S-A trong phiên này)")
+        lines.append("   (Không có mã nào thuộc 4 luồng A1 / Pre-Breakout / Tier S-A / Tiền Bạo Phát trong phiên này)")
         lines.append(sep_line)
         return "\n".join(lines)
 
@@ -232,12 +376,19 @@ def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[fl
     for r in rows:
         tick = r.get("tick_size", 0.0)
         trig = r["optimal_trigger"]
-        grid_low, grid_up, grid_sl, grid_tp = compute_split_grid_params(trig, tick)
+        if r.get("custom_grid"):
+            grid_low, grid_up, _trig_preset, grid_sl, grid_tp, grids = r["custom_grid"]
+            setup_grid_detail = (
+                f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} ({grids} Lưới) | "
+                f"Trig: {fmt_price(trig, tick)} | SL: {fmt_price(grid_sl, tick)} | TP: {fmt_price(grid_tp, tick)}"
+            )
+        else:
+            grid_low, grid_up, grid_sl, grid_tp = compute_split_grid_params(trig, tick)
+            setup_grid_detail = (
+                f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} (24 Lưới) | "
+                f"Trig: {fmt_price(trig, tick)} | SL: {fmt_price(grid_sl, tick)} | TP: {fmt_price(grid_tp, tick)}"
+            )
         status = f"{' + '.join(r['streams'])} · Hỗ trợ: {r['support_label']}"
-        setup_grid_detail = (
-            f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} (24 Lưới) | "
-            f"Trig: {fmt_price(trig, tick)} | SL: {fmt_price(grid_sl, tick)} | TP: {fmt_price(grid_tp, tick)}"
-        )
         lines.append(
             f"| {r['status_icon']} | {r['symbol']}/USDT | "
             f"{fmt_price(r['live_price'], tick)} | {fmt_price(trig, tick)} | "
@@ -250,17 +401,35 @@ def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[fl
 def generate_split_entry_board(convergence_ranks: Optional[Dict[str, str]] = None,
                                pre_breakout_pool: Optional[Iterable[Dict[str, Any]]] = None,
                                trust_profiles: Optional[Iterable[Dict[str, Any]]] = None,
+                               top_money_flow: Optional[Iterable[Any]] = None,
                                dc2_states: Optional[Iterable[Any]] = None,
+                               dc3_states: Optional[Iterable[Any]] = None,
+                               dc4_states: Optional[Iterable[Any]] = None,
+                               signals_pool: Optional[Iterable[Any]] = None,
                                live_data_map: Optional[Dict[str, Any]] = None,
                                btc_rsi_1h: Optional[float] = None,
                                print_output: bool = True) -> List[Dict[str, Any]]:
-    """Entry point: gom 3 luồng → tính trigger → in bảng. Trả về rows để tầng khác tái sử dụng."""
+    """Entry point: gom 4 luồng tinh hoa → tính trigger → in bảng. Trả về rows để tầng khác tái sử dụng."""
     rows: List[Dict[str, Any]] = []
     try:
         if btc_rsi_1h is None:
             btc_rsi_1h = get_btc_rsi_1h()
-        candidates = collect_candidates(convergence_ranks, pre_breakout_pool, trust_profiles)
-        rows = build_split_entry_rows(candidates, live_data_map, build_oco1_map(dc2_states), btc_rsi_1h)
+        grid_presets: Dict[str, Any] = {}
+        candidates = collect_candidates(
+            convergence_ranks=convergence_ranks,
+            pre_breakout_pool=pre_breakout_pool,
+            trust_profiles=trust_profiles,
+            top_money_flow=top_money_flow,
+            signals_pool=signals_pool,
+            dc3_states=dc3_states,
+            dc4_states=dc4_states,
+            grid_presets_out=grid_presets,
+        )
+        oco_map = build_oco1_map(dc2_states)
+        for sym, preset in grid_presets.items():
+            if sym not in oco_map and preset:
+                oco_map[sym] = preset[2] # trig từ preset
+        rows = build_split_entry_rows(candidates, live_data_map, oco_map, btc_rsi_1h, grid_presets=grid_presets)
         if print_output:
             print(render_split_entry_table(rows, btc_rsi_1h))
     except Exception as e:

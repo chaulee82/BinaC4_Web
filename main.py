@@ -639,7 +639,7 @@ def main():
                     logger.error(f"Render Error (Bảng 14 Ngày / Delta Audit): {e}")
 
                 # -------------------------------------------------------------------------
-                # 📌 BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (SPLIT-ENTRY v2.7) — In trước Vùng 1
+                # 📌 BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (SPLIT-ENTRY v2.8) — In trước Vùng 1
                 # -------------------------------------------------------------------------
                 try:
                     from views.split_entry_board import generate_split_entry_board
@@ -647,7 +647,11 @@ def main():
                         convergence_ranks=_summary_board_res.get('convergence_ranks') if '_summary_board_res' in locals() and isinstance(_summary_board_res, dict) else None,
                         pre_breakout_pool=top_gainers if 'top_gainers' in locals() else None,
                         trust_profiles=_v2_profiles if '_v2_profiles' in locals() else None,
+                        top_money_flow=_summary_board_res.get('top_money_flow') if '_summary_board_res' in locals() and isinstance(_summary_board_res, dict) else None,
                         dc2_states=dc2_states if 'dc2_states' in locals() else None,
+                        dc3_states=dc3_states if 'dc3_states' in locals() else None,
+                        dc4_states=dc4_states if 'dc4_states' in locals() else None,
+                        signals_pool=_renderer.signals_pool if _renderer else None,
                         live_data_map=live_data_map,
                     )
                 except Exception as e:
