@@ -11,7 +11,7 @@ Nguồn dữ liệu (TRD §3.1) — gộp, khử trùng, lấy Top 3 cuối cùn
 
 import logging
 import math
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from core.split_entry_trigger import (
     build_symbol_data, calculate_optimal_trigger_detail, get_btc_rsi_1h, BTC_DUMP_RSI_THRESHOLD,
@@ -28,9 +28,27 @@ ICON_NEAR_MAX_PCT   = 4.0     # |dist| ≤ 4%       → 🚨 #1
 ICON_DIP_MAX_PCT    = 6.0     # 4% < |dist| ≤ 6%  → 👀 #2 ; > 6% → 💤 #3
 GRID_SETUP_TEXT     = "Isolated x10 · 24 Lưới · TP ~10% · SL -30%"
 
-STREAM_BOTTOM   = "🎣 Bottom Fishing (A1)"
-STREAM_PREBREAK = "📡 Pre-Breakout (Δ72H {d72:+.0f}đ)"
-STREAM_PULLBACK = "💎 Pullback Trend ({tier})"
+STREAM_BOTTOM   = "Bottom Fishing (A1)"
+STREAM_PREBREAK = "Pre-Breakout (Δ72H {d72:+.0f}đ)"
+STREAM_PULLBACK = "Pullback Trend ({tier})"
+
+
+def compute_split_grid_params(trig: float, tick_size: float = 0.0) -> Tuple[float, float, float, float]:
+    """
+    Thông số Grid chuẩn hình học cho Split-Entry (Isolated x10, 24 Lưới):
+    - Lower Bound (L) : Trig * 0.90 (chiết khấu đón nhúng ~10%)
+    - Upper Bound (U) : Trig * 1.20 (+20% chốt lời đỉnh lưới)
+    - Stop-Loss (SL)  : L * 0.985 (cách đáy lưới 1.5% phòng vệ quét râu)
+    - Take-Profit (TP): U
+    """
+    if trig <= 0:
+        return 0.0, 0.0, 0.0, 0.0
+    from core.split_entry_trigger import round_to_tick
+    grid_low = round_to_tick(trig * 0.90, tick_size)
+    grid_up = round_to_tick(trig * 1.20, tick_size)
+    grid_sl = round_to_tick(grid_low * 0.985, tick_size)
+    grid_tp = grid_up
+    return grid_low, grid_up, grid_sl, grid_tp
 
 
 def _clean(sym: Any) -> str:
@@ -189,7 +207,7 @@ def build_split_entry_rows(candidates: Dict[str, List[str]],
 
 # ── Render Markdown ───────────────────────────────────────────────────────────
 def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[float] = None) -> str:
-    """TRD §3.3 — Bảng Markdown 7 cột."""
+    """TRD §3.3 — Bảng Markdown 7 cột theo mẫu chuẩn v2.7."""
     if btc_rsi_1h is None:
         btc_ctx = "BTC RSI 1H: N/A"
     elif btc_rsi_1h < BTC_DUMP_RSI_THRESHOLD:
@@ -197,29 +215,35 @@ def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[fl
     else:
         btc_ctx = f"🟢 BTC RSI 1H = {btc_rsi_1h:.1f} (Ổn định: dùng mốc MA7 3D)"
 
+    sep_line = "=" * 152
     lines = [
         "",
-        "=" * 120,
-        "📌 BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (SPLIT-ENTRY TRACKER) — v2.7",
-        f"   {btc_ctx} | Đệm tối thiểu -3.5% | Chốt chặn Supertrend 1D +1.5%",
-        "=" * 120,
+        "📌 BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (SPLIT-ENTRY TRACKER) - v2.7",
+        f"{btc_ctx} | Đệm tối thiểu -3.5% | Chốt chặn Supertrend 1D +1.5%",
+        sep_line,
     ]
     if not rows:
         lines.append("   (Không có mã nào thuộc 3 luồng A1 / Pre-Breakout / Tier S-A trong phiên này)")
-        lines.append("=" * 120)
+        lines.append(sep_line)
         return "\n".join(lines)
 
-    lines.append("| Hạng (Ưu tiên) | Mã Bot | Trạng Thái / Hỗ trợ | Mốc Giá Live | 🏷️ Kích Hoạt Tối Ưu | Khoảng cách 📉 | Setup Grid (TP/SL) |")
-    lines.append("| :--- | :--- | :--- | ---: | ---: | ---: | :--- |")
+    lines.append("| Hạng (Ưu tiên) | Mã Bot | Mốc Giá Live | 🏷️ Kích Hoạt Tối Ưu | Khoảng cách 📉 | Setup Grid & Thông Số Chi Tiết (Isolated x10) | Trạng Thái / Hỗ trợ")
+    lines.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
     for r in rows:
         tick = r.get("tick_size", 0.0)
+        trig = r["optimal_trigger"]
+        grid_low, grid_up, grid_sl, grid_tp = compute_split_grid_params(trig, tick)
         status = f"{' + '.join(r['streams'])} · Hỗ trợ: {r['support_label']}"
-        lines.append(
-            f"| {r['status_icon']} | **{r['symbol']}/USDT** | {status} | "
-            f"{fmt_price(r['live_price'], tick)} | **{fmt_price(r['optimal_trigger'], tick)}** | "
-            f"{r['distance_pct']:+.2f}% | {GRID_SETUP_TEXT} |"
+        setup_grid_detail = (
+            f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} (24 Lưới) | "
+            f"Trig: {fmt_price(trig, tick)} | SL: {fmt_price(grid_sl, tick)} | TP: {fmt_price(grid_tp, tick)}"
         )
-    lines.append("=" * 120)
+        lines.append(
+            f"| {r['status_icon']} | {r['symbol']}/USDT | "
+            f"{fmt_price(r['live_price'], tick)} | {fmt_price(trig, tick)} | "
+            f"{r['distance_pct']:+.2f}% | {setup_grid_detail} | {status}"
+        )
+    lines.append(sep_line)
     return "\n".join(lines)
 
 
