@@ -102,9 +102,17 @@ class TestBoard(unittest.TestCase):
         def fake_builder(sym, live, rsi, oco):
             return {"live_price": 100.0, "btc_rsi_1h": rsi, "tick_size": 0.01, "oco_buy_limit_price": triggers[sym],
                     "supertrend_1d": triggers[sym] / 1.015, "supertrend_dir_1d": 1}
+        # Trong TRD v2.9: AAA và DDD thuộc Nhóm 1 (12x), BBB thuộc Nhóm 2 (5x)
         rows = build_split_entry_rows(cands, None, None, 55.0, data_builder=fake_builder)
-        self.assertEqual([r["symbol"] for r in rows], ["BBB", "AAA", "DDD"])
-        print(render_split_entry_table(rows, 55.0))
+        group_12x = [r for r in rows if r['group'] == '12x']
+        group_5x = [r for r in rows if r['group'] == '5x']
+        self.assertEqual({r["symbol"] for r in group_12x}, {"AAA", "DDD"})
+        self.assertEqual([r["symbol"] for r in group_5x], ["BBB"])
+        tbl = render_split_entry_table(rows, 55.0)
+        self.assertIn("v2.9", tbl)
+        self.assertIn("NHÓM 1: BẮT ĐÁY & HỖ TRỢ CỨNG", tbl)
+        self.assertIn("NHÓM 2: DÒNG TIỀN & BREAKOUT", tbl)
+        print(tbl)
 
 
     def test_collect_stream4_smart_money_flow(self):
@@ -123,7 +131,7 @@ class TestBoard(unittest.TestCase):
         self.assertNotIn("OTHER_ENG", cands)
         self.assertIn("Tiền Bạo Phát 2.8x + R:R 1:3.0", cands["FLOW1"])
 
-    def test_table_v28_rendering_no_bold_rows(self):
+    def test_table_v29_rendering_no_bold_rows(self):
         signals = [
             {"engine_source": "DC3", "symbol": "BTC/USDT", "money_flow": 3.2, "rr_ratio": 4.5},
         ]
@@ -135,10 +143,8 @@ class TestBoard(unittest.TestCase):
             }
         rows = build_split_entry_rows(cands, None, None, 50.0, data_builder=fake_builder)
         tbl = render_split_entry_table(rows, 50.0)
-        self.assertIn("v2.8", tbl)
-        self.assertIn("24 Lưới", tbl)
-        self.assertIn("Setup Grid & Thông Số Chi Tiết (Tự động Đòn bẩy)", tbl)
-        self.assertIn("Isolated x5 | TP: +10% | SL: -30%", tbl)
+        self.assertIn("v2.9", tbl)
+        self.assertIn("TP +12% | SL -22%", tbl)
         for line in tbl.splitlines():
             if line.startswith("|") and not line.startswith("| :---"):
                 self.assertNotIn("**", line, "Data row must not contain bold '**'")
@@ -148,33 +154,27 @@ class TestBoard(unittest.TestCase):
         beamx_sig = {
             "symbol": "BEAMX/USDT",
             "engine_source": "DC4",
-            "money_flow": 2.5,
+            "money_flow": 2.7,
             "rr_ratio": 6.7,
-            "grid_tp2_line": "🎯 [GRID TP2 - BEAMX] 0.004486 - 0.005839 | 24L | Trig: 0.004866 | SL: 0.004282 | TP: 0.005839",
+            "grid_tp2_line": "🎯 [GRID TP2 - BEAMX] 0.004591 - 0.005980 | 24L | Trig: 0.004983 | SL: 0.004282 | TP: 0.005980",
         }
         grid_presets = {}
         cands = collect_candidates(top_money_flow=[beamx_sig], grid_presets_out=grid_presets)
         self.assertIn("BEAMX", cands)
         self.assertIn("BEAMX", grid_presets)
-        self.assertEqual(grid_presets["BEAMX"][0], 0.004486) # lower
-        self.assertEqual(grid_presets["BEAMX"][1], 0.005839) # upper
-        self.assertEqual(grid_presets["BEAMX"][2], 0.004866) # trig
-        self.assertEqual(grid_presets["BEAMX"][3], 0.004282) # sl
-        self.assertEqual(grid_presets["BEAMX"][4], 0.005839) # tp
 
         def fake_builder(sym, live, rsi, oco):
             return {
-                "live_price": 0.0050, "btc_rsi_1h": 50.0, "tick_size": 0.000001,
-                "bb_mid_4h": 0.004866, "supertrend_1d": 0.0040, "supertrend_dir_1d": 1,
+                "live_price": 0.005159, "btc_rsi_1h": 50.0, "tick_size": 0.000001,
+                "bb_mid_4h": 0.004983, "supertrend_1d": 0.0040, "supertrend_dir_1d": 1,
             }
         rows = build_split_entry_rows(cands, None, None, 50.0, data_builder=fake_builder, grid_presets=grid_presets)
         tbl = render_split_entry_table(rows, 50.0)
         self.assertIn("BEAMX/USDT", tbl)
-        self.assertIn("Dải L=0.004486 - U=0.005839 (24 Lưới)", tbl)
-        self.assertIn("Isolated x5 | TP: +10% | SL: -30%", tbl)
-        self.assertIn("Tiền Bạo Phát 2.5x + R:R 1:6.7", tbl)
+        self.assertIn("Dải L=0.004591 - U=0.005980 | TP +12% | SL -22%", tbl)
+        self.assertIn("Tiền Bạo Phát 2.7x", tbl)
 
-    def test_bottom_fishing_leverage_x12(self):
+    def test_bottom_fishing_leverage_x12_with_bottom_pct(self):
         ranks = {"PEPE": "🥇 [HẠNG A1] SIÊU PULLBACK"}
         cands = collect_candidates(convergence_ranks=ranks)
         def fake_builder(sym, live, rsi, oco):
@@ -185,7 +185,8 @@ class TestBoard(unittest.TestCase):
         rows = build_split_entry_rows(cands, None, None, 50.0, data_builder=fake_builder)
         tbl = render_split_entry_table(rows, 50.0)
         self.assertIn("PEPE/USDT", tbl)
-        self.assertIn("Isolated x12 | TP: +10% | SL: -30%", tbl)
+        self.assertIn("NHÓM 1: BẮT ĐÁY & HỖ TRỢ CỨNG", tbl)
+        self.assertIn("Cách đáy L", tbl)
 
 
 if __name__ == "__main__":

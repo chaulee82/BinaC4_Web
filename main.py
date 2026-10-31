@@ -639,7 +639,7 @@ def main():
                     logger.error(f"Render Error (Bảng 14 Ngày / Delta Audit): {e}")
 
                 # -------------------------------------------------------------------------
-                # 📌 BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (SPLIT-ENTRY v2.8) — In trước Vùng 1
+                # 📌 BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (SPLIT-ENTRY v2.9) — In trước Vùng 1
                 # -------------------------------------------------------------------------
                 try:
                     from views.split_entry_board import generate_split_entry_board

@@ -1,13 +1,15 @@
 """
 Module: views/split_entry_board.py
-Dự án: BinaC4 — Update v2.8 (Split-Entry + Smart Money Flow)
+Dự án: BinaC4 — Update v2.9 (Split-Entry: 2 Blocks 12x/5x + TP +12% / SL -22%)
 Mục đích: BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (Split-Entry Tracker) — in ở cuối mỗi phiên báo cáo.
 
-Nguồn dữ liệu (TRD §3.1) — gộp, khử trùng, lấy Top 3 cuối cùng:
-    1. Bottom Fishing  : Mã đạt `[HẠNG A1]` (Điểm Chạm Vàng — hội tụ DC2 + DC4/3B)
-    2. Pre-Breakout    : delta_72h > 40 (Bảng Báo Gom — Pre-Breakout Radar)
-    3. Pullback Trend  : Tier S / Tier A (Bảng Hồ Sơ Tín Nhiệm Momentum)
-    4. Smart Money Flow: Tiền bạo phát > 2.0x VÀ R:R >= 1:2.5 (Động cơ 3 & 4)
+Nguồn dữ liệu (TRD §3.1) — gộp, khử trùng, phân thành 2 Nhóm (mỗi nhóm Top 3):
+    🔥 Nhóm 1: Bắt Đáy & Hỗ Trợ Cứng (Isolated x12)
+        - Bottom Fishing: Mã đạt `[HẠNG A1]` hoặc mốc OCO
+        - Sắp xếp: Ưu tiên 1 - Giá kích hoạt gần đáy nhất (bottom_distance) | Ưu tiên 2 - Dòng tiền mạnh
+    🌊 Nhóm 2: Dòng Tiền & Breakout (Isolated x5)
+        - Pre-Breakout / Pullback Trend / Tiền Bạo Phát (DC3, DC4)
+        - Sắp xếp: Ưu tiên 1 - Dòng tiền bạo phát mạnh nhất | Ưu tiên 2 - Khoảng cách chiết khấu (distance_pct)
 """
 
 import logging
@@ -20,14 +22,15 @@ from core.split_entry_trigger import (
 
 logger = logging.getLogger("CN4.SplitEntry.Board")
 
-# ── Cấu hình TRD v2.7 ─────────────────────────────────────────────────────────
-BOARD_TOP_N         = 3       # Tối đa 3 mã trên bảng
+# ── Cấu hình TRD v2.9 ─────────────────────────────────────────────────────────
+BOARD_TOP_N         = 3       # Tối đa 3 mã mỗi nhóm
+PER_GROUP_TOP_N     = 3       # Top 3 cho Nhóm 1 (12x) và Top 3 cho Nhóm 2 (5x)
 PER_STREAM_TOP_N    = 3       # Số ứng viên tối đa lấy từ mỗi luồng trước khi chấm trigger
 PRE_BREAKOUT_D72    = 40.0    # delta_72h > 40
 PULLBACK_TIERS      = ("Tier S", "Tier A")
 ICON_NEAR_MAX_PCT   = 4.0     # |dist| ≤ 4%       → 🚨 #1
 ICON_DIP_MAX_PCT    = 6.0     # 4% < |dist| ≤ 6%  → 👀 #2 ; > 6% → 💤 #3
-GRID_SETUP_TEXT     = "Isolated x10 · 24 Lưới · TP ~10% · SL -30%"
+GRID_SETUP_TEXT     = "TP +12% | SL -22%"
 
 STREAM_BOTTOM      = "Bottom Fishing (A1)"
 STREAM_PREBREAK    = "Pre-Breakout (Δ72H {d72:+.0f}đ)"
@@ -83,6 +86,18 @@ def fmt_price(p: Optional[float], tick_size: float = 0.0) -> str:
     if "." in s and not tick_size:
         s = s.rstrip("0").rstrip(".")
     return s
+
+
+def rank_icon(distance_pct: float, rank_idx: int) -> str:
+    """TRD v2.9 — Decorator icon theo khoảng cách và thứ tự hạng trong nhóm."""
+    d = abs(distance_pct)
+    if d <= ICON_NEAR_MAX_PCT:
+        ic = "🚨"
+    elif d <= ICON_DIP_MAX_PCT:
+        ic = "👀"
+    else:
+        ic = "💤"
+    return f"{ic} #{rank_idx}"
 
 
 def status_icon(distance_pct: float) -> str:
@@ -308,15 +323,95 @@ def _live_price(sym: str, live_data_map: Optional[Dict[str, Any]]) -> Optional[f
         return None
 
 
-# ── Tính toán & Sắp xếp ───────────────────────────────────────────────────────
+# ── Phân loại 2 nhóm & Sắp xếp (TRD v2.9) ───────────────────────────────────
+def partition_and_sort_groups(
+    rows: List[Dict[str, Any]],
+    per_group_top: int = PER_GROUP_TOP_N
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    TRD v2.9: Phân loại 2 nhóm đòn bẩy:
+    - Nhóm 1: Bắt Đáy & Hỗ Trợ Cứng (Isolated x12)
+      * Sắp xếp: Ưu tiên 1 - Giá kích hoạt gần đáy nhất (bottom_distance nhỏ nhất) | Ưu tiên 2 - Dòng tiền mạnh
+    - Nhóm 2: Dòng Tiền & Breakout (Isolated x5)
+      * Sắp xếp: Ưu tiên 1 - Dòng tiền bạo phát mạnh nhất | Ưu tiên 2 - Khoảng cách chiết khấu (distance_pct)
+    """
+    import re
+    group_12x = []
+    group_5x = []
+
+    for item in rows:
+        note = item.get('note') or f"{' + '.join(item.get('streams', []))} {item.get('support_label', '')}"
+        item['note'] = note
+        trigger = float(item.get('optimal_trigger', 0.0) or 0.0)
+        tick = float(item.get('tick_size', 0.0) or 0.0)
+
+        if item.get("custom_grid"):
+            grid_low, grid_up, _trig_preset, _grid_sl, _grid_tp, grids = item["custom_grid"]
+        else:
+            grid_low, grid_up, _grid_sl, _grid_tp = compute_split_grid_params(trigger, tick)
+            grids = 24
+
+        item['grid_lower'] = grid_low
+        item['grid_upper'] = grid_up
+        item['grids'] = grids
+
+        # TÍNH TOÁN TIÊU CHÍ 1: Độ sát đáy (Càng nhỏ càng sát đáy lưới)
+        lower_limit = grid_low
+        item['bottom_distance'] = (trigger - lower_limit) / lower_limit if lower_limit > 0 else 999.0
+        item['bottom_pct'] = item['bottom_distance'] * 100.0
+
+        # TÍNH TOÁN TIÊU CHÍ 2: Hệ số dòng tiền (Bóc tách con số 2.5x, 4.1x từ Note hoặc item)
+        vol_match = re.search(r'Tiền Bạo Phát\s*(\d+(?:\.\d+)?)x', note, re.IGNORECASE)
+        if vol_match:
+            item['money_flow_multiplier'] = float(vol_match.group(1))
+        else:
+            item['money_flow_multiplier'] = float(item.get('money_flow', 0.0) or 0.0)
+
+        # Phân nhóm: Bắt đáy / Hỗ trợ cứng vs Dòng tiền / Breakout
+        is_bottom = "Bottom Fishing" in note or "OCO" in note or "A1" in note
+        item['is_bottom_fishing'] = is_bottom
+
+        if is_bottom:
+            item['group'] = '12x'
+            item['leverage_str'] = 'Isolated x12'
+            group_12x.append(item)
+        else:
+            item['group'] = '5x'
+            item['leverage_str'] = 'Isolated x5'
+            group_5x.append(item)
+
+    # 2. SẮP XẾP (SORTING) ƯU TIÊN THEO YÊU CẦU USER
+    # Nhóm 12x: Ưu tiên 1 - Giá kích hoạt gần đáy nhất (bottom_distance nhỏ nhất) | Ưu tiên 2 - Dòng tiền mạnh
+    group_12x.sort(key=lambda x: (x['bottom_distance'], -x['money_flow_multiplier']))
+
+    # Nhóm 5x: Ưu tiên 1 - Dòng tiền bạo phát mạnh nhất | Ưu tiên 2 - Khoảng cách chiết khấu (distance_pct)
+    group_5x.sort(key=lambda x: (-x['money_flow_multiplier'], -x.get('distance_pct', 0.0)))
+
+    # 3. Rút gọn mỗi nhóm lấy đúng Top N (mặc định Top 3)
+    top_12x = group_12x[:per_group_top]
+    top_5x = group_5x[:per_group_top]
+
+    for idx, r in enumerate(top_12x, 1):
+        r['rank_idx'] = idx
+        r['status_icon'] = rank_icon(r.get('distance_pct', 0.0), idx)
+
+    for idx, r in enumerate(top_5x, 1):
+        r['rank_idx'] = idx
+        r['status_icon'] = rank_icon(r.get('distance_pct', 0.0), idx)
+
+    return top_12x, top_5x
+
+
+# ── Tính toán & Thu thập hàng ─────────────────────────────────────────────────
 def build_split_entry_rows(candidates: Dict[str, List[str]],
                            live_data_map: Optional[Dict[str, Any]] = None,
                            oco1_map: Optional[Dict[str, float]] = None,
                            btc_rsi_1h: Optional[float] = None,
-                           top_n: int = BOARD_TOP_N,
+                           top_n: Optional[int] = None,
                            data_builder=build_symbol_data,
-                           grid_presets: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """Tính optimal trigger cho từng ứng viên → sort distance_pct DESC (gần 0 trước) → Top N."""
+                           grid_presets: Optional[Dict[str, Any]] = None,
+                           per_group_top: int = PER_GROUP_TOP_N) -> List[Dict[str, Any]]:
+    """Tính optimal trigger cho từng ứng viên → phân 2 nhóm 12x & 5x → sort theo TRD v2.9."""
     rows: List[Dict[str, Any]] = []
     for sym, streams in candidates.items():
         try:
@@ -342,64 +437,104 @@ def build_split_entry_rows(candidates: Dict[str, List[str]],
         except Exception as e:
             logger.debug(f"[SplitEntry] {sym}: lỗi tính trigger: {e}")
 
-    rows.sort(key=lambda r: r["distance_pct"], reverse=True)
-    rows = rows[:top_n]
-    for r in rows:
-        r["status_icon"] = status_icon(r["distance_pct"])
-    return rows
+    top_12x, top_5x = partition_and_sort_groups(rows, per_group_top=per_group_top)
+    return top_12x + top_5x
 
 
 # ── Render Markdown ───────────────────────────────────────────────────────────
 def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[float] = None) -> str:
-    """TRD §3.3 — Bảng Markdown 7 cột theo mẫu chuẩn v2.8 (Tự động Đòn bẩy x5/x12)."""
+    """TRD §3.3 — Bảng Markdown phân tách 2 nhóm theo chuẩn v2.9 (Isolated x12 & Isolated x5)."""
     if btc_rsi_1h is None:
         btc_ctx = "BTC RSI 1H: N/A"
     elif btc_rsi_1h < BTC_DUMP_RSI_THRESHOLD:
         btc_ctx = f"🔴 BTC RSI 1H = {btc_rsi_1h:.1f} (< {BTC_DUMP_RSI_THRESHOLD:.0f} → Market Dump: lùi mốc về MA25 3D)"
     else:
-        btc_ctx = f"🟢 BTC RSI 1H = {btc_rsi_1h:.1f} (Ổn định: dùng mốc MA7 3D)"
+        btc_ctx = f"🟢 BTC RSI 1H = {btc_rsi_1h:.1f} (Ổn định)"
 
     sep_line = "=" * 152
+    sub_sep_line = "-" * 152
+
+    # Phân nhóm nếu chưa phân
+    has_groups = any(r.get('group') in ('12x', '5x') for r in rows)
+    if has_groups:
+        top3_12x = [r for r in rows if r.get('group') == '12x'][:PER_GROUP_TOP_N]
+        top3_5x = [r for r in rows if r.get('group') == '5x'][:PER_GROUP_TOP_N]
+    else:
+        top3_12x, top3_5x = partition_and_sort_groups(rows, per_group_top=PER_GROUP_TOP_N)
+
     lines = [
         "",
-        "📌 BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (SPLIT-ENTRY TRACKER) - v2.8",
-        f"{btc_ctx} | Nguồn Setup: Lưới GRID TP2",
+        "📌 BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (SPLIT-ENTRY TRACKER) - v2.9",
+        f"{btc_ctx} | Nguồn Setup: Kế thừa GRID TP2 | Rule mới: TP +12% | SL -22%",
         sep_line,
     ]
-    if not rows:
-        lines.append("   (Không có mã nào thuộc 4 luồng A1 / Pre-Breakout / Tier S-A / Tiền Bạo Phát trong phiên này)")
-        lines.append(sep_line)
-        return "\n".join(lines)
 
-    lines.append("| Hạng (Ưu tiên) | Mã Bot | Mốc Giá Live | 🏷️ Kích Hoạt Tối Ưu | Khoảng cách 📉 | Setup Grid & Thông Số Chi Tiết (Tự động Đòn bẩy) | Trạng Thái / Hỗ trợ")
-    lines.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
-    for r in rows:
-        tick = r.get("tick_size", 0.0)
-        trig = r["optimal_trigger"]
-        if r.get("custom_grid"):
-            grid_low, grid_up, _trig_preset, _grid_sl, _grid_tp, grids = r["custom_grid"]
-        else:
-            grid_low, grid_up, _grid_sl, _grid_tp = compute_split_grid_params(trig, tick)
-            grids = 24
+    header_cols = (
+        "| Hạng | Mã Bot | Live | Kích Hoạt (Trig) | "
+        "Setup Grid (24 Lưới) & Tỷ Lệ Cố Định | Trạng Thái / Dòng Tiền & Hỗ Trợ"
+    )
+    header_align = "| :--- | :--- | :--- | :--- | :--- | :--- |"
 
-        # Nhận diện Lệnh Bắt Đáy (Từ Engine 2 hoặc Hạng A1)
-        note = f"{' + '.join(r.get('streams', []))} {r.get('support_label', '')}"
-        is_bottom_fishing = "Bottom Fishing" in note or "OCO" in note or "A1" in note
-        leverage_str = "Isolated x12" if is_bottom_fishing else "Isolated x5"
+    # --- NHÓM 1: BẮT ĐÁY & HỖ TRỢ CỨNG (ĐÒN BẨY: ISOLATED x12) ---
+    lines.extend([
+        "",
+        "🔥 NHÓM 1: BẮT ĐÁY & HỖ TRỢ CỨNG (ĐÒN BẨY: ISOLATED x12)",
+        "* Tiêu chí: Lệnh OCO đáy cứng. Ưu tiên Giá kích hoạt (Trigger) ép sát nhất vào Đáy lưới.",
+        sub_sep_line,
+        header_cols,
+        header_align,
+    ])
+    if top3_12x:
+        for r in top3_12x:
+            tick = r.get("tick_size", 0.0)
+            trig = r["optimal_trigger"]
+            grid_low = r.get("grid_lower", 0.0)
+            grid_up = r.get("grid_upper", 0.0)
+            grid_str = f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} | TP +12% | SL -22%"
+            status_base = f"{' + '.join(r['streams'])} · Hỗ trợ: {r['support_label']}" if r.get('support_label') else ' + '.join(r['streams'])
+            status_str = f"{status_base} (Cách đáy L {r.get('bottom_pct', 0.0):.1f}%)"
+            lines.append(
+                f"| {r['status_icon']} | {r['symbol']}/USDT | "
+                f"{fmt_price(r['live_price'], tick)} | {fmt_price(trig, tick)} | "
+                f"{grid_str} | {status_str}"
+            )
+    else:
+        lines.append("   (Không có mã nào đạt tiêu chí Bắt đáy trong phiên này)")
 
-        # Định dạng chuẩn mới: Dải L=... - U=... (24 Lưới) | Isolated x5/x12 | TP: +10% | SL: -30%
-        setup_grid_detail = (
-            f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} ({grids} Lưới) | "
-            f"{leverage_str} | TP: +10% | SL: -30%"
-        )
+    lines.extend([
+        "",
+        sep_line,
+    ])
 
-        status = f"{' + '.join(r['streams'])} · Hỗ trợ: {r['support_label']}" if r.get('support_label') else ' + '.join(r['streams'])
-        lines.append(
-            f"| {r['status_icon']} | {r['symbol']}/USDT | "
-            f"{fmt_price(r['live_price'], tick)} | {fmt_price(trig, tick)} | "
-            f"{r['distance_pct']:+.2f}% | {setup_grid_detail} | {status}"
-        )
-    lines.append(sep_line)
+    # --- NHÓM 2: DÒNG TIỀN & BREAKOUT (ĐÒN BẨY: ISOLATED x5) ---
+    lines.extend([
+        "",
+        "🌊 NHÓM 2: DÒNG TIỀN & BREAKOUT (ĐÒN BẨY: ISOLATED x5)",
+        "* Tiêu chí: Đánh theo sóng đẩy. Ưu tiên Hệ số Tiền bạo phát (Volume Mồi) mạnh nhất.",
+        sub_sep_line,
+        header_cols,
+        header_align,
+    ])
+    if top3_5x:
+        for r in top3_5x:
+            tick = r.get("tick_size", 0.0)
+            trig = r["optimal_trigger"]
+            grid_low = r.get("grid_lower", 0.0)
+            grid_up = r.get("grid_upper", 0.0)
+            grid_str = f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} | TP +12% | SL -22%"
+            status_str = f"{' + '.join(r['streams'])} · Hỗ trợ: {r['support_label']}" if r.get('support_label') else ' + '.join(r['streams'])
+            lines.append(
+                f"| {r['status_icon']} | {r['symbol']}/USDT | "
+                f"{fmt_price(r['live_price'], tick)} | {fmt_price(trig, tick)} | "
+                f"{grid_str} | {status_str}"
+            )
+    else:
+        lines.append("   (Không có mã nào đạt tiêu chí Dòng tiền & Breakout trong phiên này)")
+
+    lines.extend([
+        "",
+        sep_line,
+    ])
     return "\n".join(lines)
 
 
