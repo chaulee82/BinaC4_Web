@@ -351,7 +351,7 @@ def build_split_entry_rows(candidates: Dict[str, List[str]],
 
 # ── Render Markdown ───────────────────────────────────────────────────────────
 def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[float] = None) -> str:
-    """TRD §3.3 — Bảng Markdown 7 cột theo mẫu chuẩn v2.8."""
+    """TRD §3.3 — Bảng Markdown 7 cột theo mẫu chuẩn v2.8 (Tự động Đòn bẩy x5/x12)."""
     if btc_rsi_1h is None:
         btc_ctx = "BTC RSI 1H: N/A"
     elif btc_rsi_1h < BTC_DUMP_RSI_THRESHOLD:
@@ -363,7 +363,7 @@ def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[fl
     lines = [
         "",
         "📌 BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (SPLIT-ENTRY TRACKER) - v2.8",
-        f"{btc_ctx} | Đệm tối thiểu -3.5% | Chốt chặn Supertrend 1D +1.5%",
+        f"{btc_ctx} | Nguồn Setup: Lưới GRID TP2",
         sep_line,
     ]
     if not rows:
@@ -371,24 +371,29 @@ def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[fl
         lines.append(sep_line)
         return "\n".join(lines)
 
-    lines.append("| Hạng (Ưu tiên) | Mã Bot | Mốc Giá Live | 🏷️ Kích Hoạt Tối Ưu | Khoảng cách 📉 | Setup Grid & Thông Số Chi Tiết (Isolated x10) | Trạng Thái / Hỗ trợ")
+    lines.append("| Hạng (Ưu tiên) | Mã Bot | Mốc Giá Live | 🏷️ Kích Hoạt Tối Ưu | Khoảng cách 📉 | Setup Grid & Thông Số Chi Tiết (Tự động Đòn bẩy) | Trạng Thái / Hỗ trợ")
     lines.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
     for r in rows:
         tick = r.get("tick_size", 0.0)
         trig = r["optimal_trigger"]
         if r.get("custom_grid"):
-            grid_low, grid_up, _trig_preset, grid_sl, grid_tp, grids = r["custom_grid"]
-            setup_grid_detail = (
-                f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} ({grids} Lưới) | "
-                f"Trig: {fmt_price(trig, tick)} | SL: {fmt_price(grid_sl, tick)} | TP: {fmt_price(grid_tp, tick)}"
-            )
+            grid_low, grid_up, _trig_preset, _grid_sl, _grid_tp, grids = r["custom_grid"]
         else:
-            grid_low, grid_up, grid_sl, grid_tp = compute_split_grid_params(trig, tick)
-            setup_grid_detail = (
-                f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} (24 Lưới) | "
-                f"Trig: {fmt_price(trig, tick)} | SL: {fmt_price(grid_sl, tick)} | TP: {fmt_price(grid_tp, tick)}"
-            )
-        status = f"{' + '.join(r['streams'])} · Hỗ trợ: {r['support_label']}"
+            grid_low, grid_up, _grid_sl, _grid_tp = compute_split_grid_params(trig, tick)
+            grids = 24
+
+        # Nhận diện Lệnh Bắt Đáy (Từ Engine 2 hoặc Hạng A1)
+        note = f"{' + '.join(r.get('streams', []))} {r.get('support_label', '')}"
+        is_bottom_fishing = "Bottom Fishing" in note or "OCO" in note or "A1" in note
+        leverage_str = "Isolated x12" if is_bottom_fishing else "Isolated x5"
+
+        # Định dạng chuẩn mới: Dải L=... - U=... (24 Lưới) | Isolated x5/x12 | TP: +10% | SL: -30%
+        setup_grid_detail = (
+            f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} ({grids} Lưới) | "
+            f"{leverage_str} | TP: +10% | SL: -30%"
+        )
+
+        status = f"{' + '.join(r['streams'])} · Hỗ trợ: {r['support_label']}" if r.get('support_label') else ' + '.join(r['streams'])
         lines.append(
             f"| {r['status_icon']} | {r['symbol']}/USDT | "
             f"{fmt_price(r['live_price'], tick)} | {fmt_price(trig, tick)} | "

@@ -137,6 +137,8 @@ class TestBoard(unittest.TestCase):
         tbl = render_split_entry_table(rows, 50.0)
         self.assertIn("v2.8", tbl)
         self.assertIn("24 Lưới", tbl)
+        self.assertIn("Setup Grid & Thông Số Chi Tiết (Tự động Đòn bẩy)", tbl)
+        self.assertIn("Isolated x5 | TP: +10% | SL: -30%", tbl)
         for line in tbl.splitlines():
             if line.startswith("|") and not line.startswith("| :---"):
                 self.assertNotIn("**", line, "Data row must not contain bold '**'")
@@ -169,9 +171,21 @@ class TestBoard(unittest.TestCase):
         tbl = render_split_entry_table(rows, 50.0)
         self.assertIn("BEAMX/USDT", tbl)
         self.assertIn("Dải L=0.004486 - U=0.005839 (24 Lưới)", tbl)
-        self.assertIn("SL: 0.004282", tbl)
-        self.assertIn("TP: 0.005839", tbl)
+        self.assertIn("Isolated x5 | TP: +10% | SL: -30%", tbl)
         self.assertIn("Tiền Bạo Phát 2.5x + R:R 1:6.7", tbl)
+
+    def test_bottom_fishing_leverage_x12(self):
+        ranks = {"PEPE": "🥇 [HẠNG A1] SIÊU PULLBACK"}
+        cands = collect_candidates(convergence_ranks=ranks)
+        def fake_builder(sym, live, rsi, oco):
+            return {
+                "live_price": 0.000005, "btc_rsi_1h": 50.0, "tick_size": 0.00000001,
+                "bb_mid_4h": 0.0000048, "supertrend_1d": 0.0000040, "supertrend_dir_1d": 1,
+            }
+        rows = build_split_entry_rows(cands, None, None, 50.0, data_builder=fake_builder)
+        tbl = render_split_entry_table(rows, 50.0)
+        self.assertIn("PEPE/USDT", tbl)
+        self.assertIn("Isolated x12 | TP: +10% | SL: -30%", tbl)
 
 
 if __name__ == "__main__":
