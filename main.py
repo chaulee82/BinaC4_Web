@@ -639,6 +639,21 @@ def main():
                     logger.error(f"Render Error (Bảng 14 Ngày / Delta Audit): {e}")
 
                 # -------------------------------------------------------------------------
+                # 📌 BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (SPLIT-ENTRY v2.7) — In trước Vùng 1
+                # -------------------------------------------------------------------------
+                try:
+                    from views.split_entry_board import generate_split_entry_board
+                    generate_split_entry_board(
+                        convergence_ranks=_summary_board_res.get('convergence_ranks') if '_summary_board_res' in locals() and isinstance(_summary_board_res, dict) else None,
+                        pre_breakout_pool=top_gainers if 'top_gainers' in locals() else None,
+                        trust_profiles=_v2_profiles if '_v2_profiles' in locals() else None,
+                        dc2_states=dc2_states if 'dc2_states' in locals() else None,
+                        live_data_map=live_data_map,
+                    )
+                except Exception as e:
+                    logger.error(f"Render Error (Bảng Rải Đinh): {e}", exc_info=True)
+
+                # -------------------------------------------------------------------------
                 # 🛡️ BẢNG DUYỆT LỆNH TỐI ƯU (OPTIMIZED GATEKEEPER - GIAI ĐOẠN 1)
                 # -------------------------------------------------------------------------
                 try:

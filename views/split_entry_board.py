@@ -1,0 +1,244 @@
+"""
+Module: views/split_entry_board.py
+Dự án: BinaC4 — Update v2.7 (Split-Entry & Buffer Rules Final)
+Mục đích: BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (Split-Entry Tracker) — in ở cuối mỗi phiên báo cáo.
+
+Nguồn dữ liệu (TRD §3.1) — gộp, khử trùng, lấy Top 3 cuối cùng:
+    1. Bottom Fishing  : Mã đạt `[HẠNG A1]` (Điểm Chạm Vàng — hội tụ DC2 + DC4/3B)
+    2. Pre-Breakout    : delta_72h > 40 (Bảng Báo Gom — Pre-Breakout Radar)
+    3. Pullback Trend  : Tier S / Tier A (Bảng Hồ Sơ Tín Nhiệm Momentum)
+"""
+
+import logging
+import math
+from typing import Any, Dict, Iterable, List, Optional
+
+from core.split_entry_trigger import (
+    build_symbol_data, calculate_optimal_trigger_detail, get_btc_rsi_1h, BTC_DUMP_RSI_THRESHOLD,
+)
+
+logger = logging.getLogger("CN4.SplitEntry.Board")
+
+# ── Cấu hình TRD v2.7 ─────────────────────────────────────────────────────────
+BOARD_TOP_N         = 3       # Tối đa 3 mã trên bảng
+PER_STREAM_TOP_N    = 3       # Số ứng viên tối đa lấy từ mỗi luồng trước khi chấm trigger
+PRE_BREAKOUT_D72    = 40.0    # delta_72h > 40
+PULLBACK_TIERS      = ("Tier S", "Tier A")
+ICON_NEAR_MAX_PCT   = 4.0     # |dist| ≤ 4%       → 🚨 #1
+ICON_DIP_MAX_PCT    = 6.0     # 4% < |dist| ≤ 6%  → 👀 #2 ; > 6% → 💤 #3
+GRID_SETUP_TEXT     = "Isolated x10 · 24 Lưới · TP ~10% · SL -30%"
+
+STREAM_BOTTOM   = "🎣 Bottom Fishing (A1)"
+STREAM_PREBREAK = "📡 Pre-Breakout (Δ72H {d72:+.0f}đ)"
+STREAM_PULLBACK = "💎 Pullback Trend ({tier})"
+
+
+def _clean(sym: Any) -> str:
+    return str(sym or "").upper().replace("/USDT", "").replace("USDT", "").strip()
+
+
+def _tier_of(tier_raw: Any) -> str:
+    """Chuẩn hóa Tier: 'Tier A-' tách biệt khỏi 'Tier A' (A- không thuộc nhóm tinh hoa)."""
+    t = str(tier_raw or "").replace("💎", "").strip()
+    for prefix in ("Tier S", "Tier A-", "Tier A", "Tier B", "Tier C", "Tier F"):
+        if prefix in t:
+            return prefix
+    return t
+
+
+def fmt_price(p: Optional[float], tick_size: float = 0.0) -> str:
+    """Hiển thị đúng số lẻ theo tick_size; thiếu tick → 4 chữ số có nghĩa."""
+    if p is None or p <= 0:
+        return "-"
+    if tick_size and tick_size > 0:
+        decimals = max(0, -int(math.floor(math.log10(tick_size) + 1e-9)))
+    elif p >= 1:
+        decimals = 4
+    else:
+        decimals = min(12, -int(math.floor(math.log10(p))) + 3)
+    s = f"{p:.{decimals}f}"
+    if "." in s and not tick_size:
+        s = s.rstrip("0").rstrip(".")
+    return s
+
+
+def status_icon(distance_pct: float) -> str:
+    """TRD §3.2 — Decorator theo |distance_pct|."""
+    d = abs(distance_pct)
+    if d <= ICON_NEAR_MAX_PCT:
+        return "🚨 #1 Sắp Khớp Lệnh"
+    if d <= ICON_DIP_MAX_PCT:
+        return "👀 #2 Chờ Nhúng Sâu"
+    return "💤 #3 Chờ Đạp Mạnh"
+
+
+# ── Thu thập ứng viên từ 3 luồng ──────────────────────────────────────────────
+def collect_candidates(convergence_ranks: Optional[Dict[str, str]] = None,
+                       pre_breakout_pool: Optional[Iterable[Dict[str, Any]]] = None,
+                       trust_profiles: Optional[Iterable[Dict[str, Any]]] = None,
+                       per_stream_top: int = PER_STREAM_TOP_N) -> Dict[str, List[str]]:
+    """Trả về {symbol: [nhãn luồng, ...]} theo thứ tự ưu tiên luồng 1 → 2 → 3."""
+    out: Dict[str, List[str]] = {}
+
+    def _add(sym: str, label: str):
+        if sym:
+            out.setdefault(sym, [])
+            if label not in out[sym]:
+                out[sym].append(label)
+
+    # 1. Bottom Fishing — [HẠNG A1] (dict đã sắp xếp ưu tiên; khử key trùng clean/raw)
+    a1, seen = [], set()
+    for sym, rank in (convergence_ranks or {}).items():
+        c = _clean(sym)
+        if "HẠNG A1" in str(rank) and c not in seen:
+            seen.add(c)
+            a1.append(c)
+    for c in a1[:per_stream_top]:
+        _add(c, STREAM_BOTTOM)
+
+    # 2. Pre-Breakout — delta_72h > 40, sắp xếp giảm dần
+    pre = []
+    for it in pre_breakout_pool or []:
+        try:
+            d72 = float(it.get("delta_72h", it.get("delta_4", 0.0)) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if d72 > PRE_BREAKOUT_D72 and _tier_of(it.get("tier")) != "Tier F":
+            pre.append((_clean(it.get("symbol")), d72))
+    pre.sort(key=lambda x: x[1], reverse=True)
+    for c, d72 in pre[:per_stream_top]:
+        _add(c, STREAM_PREBREAK.format(d72=d72))
+
+    # 3. Pullback Trend — Tier S / Tier A, điểm tín nhiệm giảm dần
+    pb = []
+    for p in trust_profiles or []:
+        tier = _tier_of(p.get("tier"))
+        if tier in PULLBACK_TIERS:
+            try:
+                sc = float(p.get("total_score", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                sc = 0.0
+            pb.append((_clean(p.get("symbol")), tier, sc))
+    pb.sort(key=lambda x: x[2], reverse=True)
+    for c, tier, _ in pb[:per_stream_top]:
+        _add(c, STREAM_PULLBACK.format(tier=tier))
+
+    return out
+
+
+def build_oco1_map(dc2_states: Optional[Iterable[Any]]) -> Dict[str, float]:
+    """{symbol: giá Buy Limit OCO-1} từ kết quả Engine 2 (Pullback Sniper)."""
+    out: Dict[str, float] = {}
+    for st in dc2_states or []:
+        try:
+            ctx = st.scores.get("DC2") if isinstance(st.scores, dict) else None
+            setup1 = getattr(ctx, "entry_setup1", None) if ctx else None
+            price = float(getattr(setup1, "entry_price", 0) or 0) if setup1 else 0.0
+            if price > 0:
+                out[_clean(st.symbol)] = price
+        except Exception:
+            continue
+    return out
+
+
+def _live_price(sym: str, live_data_map: Optional[Dict[str, Any]]) -> Optional[float]:
+    info = (live_data_map or {}).get(f"{sym}USDT") or (live_data_map or {}).get(sym) or {}
+    try:
+        v = float((info.get("last_price") if isinstance(info, dict) else getattr(info, "last_price", 0)) or 0)
+        return v if v > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+# ── Tính toán & Sắp xếp ───────────────────────────────────────────────────────
+def build_split_entry_rows(candidates: Dict[str, List[str]],
+                           live_data_map: Optional[Dict[str, Any]] = None,
+                           oco1_map: Optional[Dict[str, float]] = None,
+                           btc_rsi_1h: Optional[float] = None,
+                           top_n: int = BOARD_TOP_N,
+                           data_builder=build_symbol_data) -> List[Dict[str, Any]]:
+    """Tính optimal trigger cho từng ứng viên → sort distance_pct DESC (gần 0 trước) → Top N."""
+    rows: List[Dict[str, Any]] = []
+    for sym, streams in candidates.items():
+        try:
+            data = data_builder(sym, _live_price(sym, live_data_map), btc_rsi_1h,
+                                (oco1_map or {}).get(sym))
+            det = calculate_optimal_trigger_detail(data)
+            if det.get("optimal_trigger") is None:
+                continue
+            rows.append({
+                "symbol": sym,
+                "streams": streams,
+                "live_price": det["live_price"],
+                "optimal_trigger": det["optimal_trigger"],
+                "distance_pct": det["distance_pct"],
+                "support_label": det["selected_label"],
+                "flags": det["flags"],
+                "is_market_dump": det["is_market_dump"],
+                "tick_size": float(data.get("tick_size") or 0.0),
+            })
+        except Exception as e:
+            logger.debug(f"[SplitEntry] {sym}: lỗi tính trigger: {e}")
+
+    rows.sort(key=lambda r: r["distance_pct"], reverse=True)
+    rows = rows[:top_n]
+    for r in rows:
+        r["status_icon"] = status_icon(r["distance_pct"])
+    return rows
+
+
+# ── Render Markdown ───────────────────────────────────────────────────────────
+def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[float] = None) -> str:
+    """TRD §3.3 — Bảng Markdown 7 cột."""
+    if btc_rsi_1h is None:
+        btc_ctx = "BTC RSI 1H: N/A"
+    elif btc_rsi_1h < BTC_DUMP_RSI_THRESHOLD:
+        btc_ctx = f"🔴 BTC RSI 1H = {btc_rsi_1h:.1f} (< {BTC_DUMP_RSI_THRESHOLD:.0f} → Market Dump: lùi mốc về MA25 3D)"
+    else:
+        btc_ctx = f"🟢 BTC RSI 1H = {btc_rsi_1h:.1f} (Ổn định: dùng mốc MA7 3D)"
+
+    lines = [
+        "",
+        "=" * 120,
+        "📌 BẢNG CHIẾN LƯỢC RẢI ĐINH PINGPONG (SPLIT-ENTRY TRACKER) — v2.7",
+        f"   {btc_ctx} | Đệm tối thiểu -3.5% | Chốt chặn Supertrend 1D +1.5%",
+        "=" * 120,
+    ]
+    if not rows:
+        lines.append("   (Không có mã nào thuộc 3 luồng A1 / Pre-Breakout / Tier S-A trong phiên này)")
+        lines.append("=" * 120)
+        return "\n".join(lines)
+
+    lines.append("| Hạng (Ưu tiên) | Mã Bot | Trạng Thái / Hỗ trợ | Mốc Giá Live | 🏷️ Kích Hoạt Tối Ưu | Khoảng cách 📉 | Setup Grid (TP/SL) |")
+    lines.append("| :--- | :--- | :--- | ---: | ---: | ---: | :--- |")
+    for r in rows:
+        tick = r.get("tick_size", 0.0)
+        status = f"{' + '.join(r['streams'])} · Hỗ trợ: {r['support_label']}"
+        lines.append(
+            f"| {r['status_icon']} | **{r['symbol']}/USDT** | {status} | "
+            f"{fmt_price(r['live_price'], tick)} | **{fmt_price(r['optimal_trigger'], tick)}** | "
+            f"{r['distance_pct']:+.2f}% | {GRID_SETUP_TEXT} |"
+        )
+    lines.append("=" * 120)
+    return "\n".join(lines)
+
+
+def generate_split_entry_board(convergence_ranks: Optional[Dict[str, str]] = None,
+                               pre_breakout_pool: Optional[Iterable[Dict[str, Any]]] = None,
+                               trust_profiles: Optional[Iterable[Dict[str, Any]]] = None,
+                               dc2_states: Optional[Iterable[Any]] = None,
+                               live_data_map: Optional[Dict[str, Any]] = None,
+                               btc_rsi_1h: Optional[float] = None,
+                               print_output: bool = True) -> List[Dict[str, Any]]:
+    """Entry point: gom 3 luồng → tính trigger → in bảng. Trả về rows để tầng khác tái sử dụng."""
+    rows: List[Dict[str, Any]] = []
+    try:
+        if btc_rsi_1h is None:
+            btc_rsi_1h = get_btc_rsi_1h()
+        candidates = collect_candidates(convergence_ranks, pre_breakout_pool, trust_profiles)
+        rows = build_split_entry_rows(candidates, live_data_map, build_oco1_map(dc2_states), btc_rsi_1h)
+        if print_output:
+            print(render_split_entry_table(rows, btc_rsi_1h))
+    except Exception as e:
+        logger.error(f"Render Error (Bảng Rải Đinh): {e}", exc_info=True)
+    return rows
