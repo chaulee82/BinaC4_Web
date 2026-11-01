@@ -491,11 +491,13 @@ def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[fl
             grid_low = r.get("grid_lower", 0.0)
             grid_up = r.get("grid_upper", 0.0)
             grid_str = f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} | TP +12% | SL -22%"
+            dist_pct = r.get("distance_pct")
+            trig_display = f"{fmt_price(trig, tick)} ({dist_pct:+.2f}%)" if dist_pct is not None else fmt_price(trig, tick)
             status_base = f"{' + '.join(r['streams'])} · Hỗ trợ: {r['support_label']}" if r.get('support_label') else ' + '.join(r['streams'])
             status_str = f"{status_base} (Cách đáy L {r.get('bottom_pct', 0.0):.1f}%)"
             lines.append(
                 f"| {r['status_icon']} | {r['symbol']}/USDT | "
-                f"{fmt_price(r['live_price'], tick)} | {fmt_price(trig, tick)} | "
+                f"{fmt_price(r['live_price'], tick)} | {trig_display} | "
                 f"{grid_str} | {status_str}"
             )
     else:
@@ -522,10 +524,12 @@ def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[fl
             grid_low = r.get("grid_lower", 0.0)
             grid_up = r.get("grid_upper", 0.0)
             grid_str = f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} | TP +12% | SL -22%"
+            dist_pct = r.get("distance_pct")
+            trig_display = f"{fmt_price(trig, tick)} ({dist_pct:+.2f}%)" if dist_pct is not None else fmt_price(trig, tick)
             status_str = f"{' + '.join(r['streams'])} · Hỗ trợ: {r['support_label']}" if r.get('support_label') else ' + '.join(r['streams'])
             lines.append(
                 f"| {r['status_icon']} | {r['symbol']}/USDT | "
-                f"{fmt_price(r['live_price'], tick)} | {fmt_price(trig, tick)} | "
+                f"{fmt_price(r['live_price'], tick)} | {trig_display} | "
                 f"{grid_str} | {status_str}"
             )
     else:
