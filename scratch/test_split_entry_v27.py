@@ -103,10 +103,11 @@ class TestBoard(unittest.TestCase):
             return {"live_price": 100.0, "btc_rsi_1h": rsi, "tick_size": 0.01, "oco_buy_limit_price": triggers[sym],
                     "supertrend_1d": triggers[sym] / 1.015, "supertrend_dir_1d": 1}
         # Trong TRD v2.9: AAA và DDD thuộc Nhóm 1 (12x), BBB thuộc Nhóm 2 (5x)
+        # Hotfix v2.9.1: AAA (-3.61%) gần live hơn DDD (-8.00%) nên AAA đứng trước DDD!
         rows = build_split_entry_rows(cands, None, None, 55.0, data_builder=fake_builder)
         group_12x = [r for r in rows if r['group'] == '12x']
         group_5x = [r for r in rows if r['group'] == '5x']
-        self.assertEqual({r["symbol"] for r in group_12x}, {"AAA", "DDD"})
+        self.assertEqual([r["symbol"] for r in group_12x], ["AAA", "DDD"])
         self.assertEqual([r["symbol"] for r in group_5x], ["BBB"])
         tbl = render_split_entry_table(rows, 55.0)
         self.assertIn("v2.9", tbl)
@@ -173,6 +174,8 @@ class TestBoard(unittest.TestCase):
         self.assertIn("BEAMX/USDT", tbl)
         self.assertIn("Dải L=0.004591 - U=0.005980 | TP +12% | SL -22%", tbl)
         self.assertIn("Tiền Bạo Phát 2.7x", tbl)
+        self.assertIn("| SL (%) |", tbl)
+        self.assertIn("0.004282 (-14.07%)", tbl)
 
     def test_bottom_fishing_leverage_x12_with_bottom_pct(self):
         ranks = {"PEPE": "🥇 [HẠNG A1] SIÊU PULLBACK"}
@@ -187,6 +190,24 @@ class TestBoard(unittest.TestCase):
         self.assertIn("PEPE/USDT", tbl)
         self.assertIn("NHÓM 1: BẮT ĐÁY & HỖ TRỢ CỨNG", tbl)
         self.assertIn("Cách đáy L", tbl)
+
+    def test_hotfix_v291_pepe_distance_veto(self):
+        # Kiểm tra kịch bản PEPE (-11.42%) vs NEAR (-3.5%): NEAR phải thắng vì gần giá live hơn!
+        cands = {"PEPE": ["Bottom Fishing (A1)"], "NEAR": ["Bottom Fishing (A1)"]}
+        def fake_builder(sym, live, rsi, oco):
+            if sym == "PEPE":
+                return {
+                    "live_price": 0.000005, "btc_rsi_1h": 50.0, "tick_size": 0.00000001,
+                    "oco_buy_limit_price": 0.000004429, # -11.42%
+                }
+            return {
+                "live_price": 4.0, "btc_rsi_1h": 50.0, "tick_size": 0.001,
+                "oco_buy_limit_price": 3.86, # -3.5%
+            }
+        rows = build_split_entry_rows(cands, None, None, 50.0, data_builder=fake_builder)
+        group_12x = [r for r in rows if r['group'] == '12x']
+        self.assertEqual(group_12x[0]["symbol"], "NEAR")
+        self.assertEqual(group_12x[1]["symbol"], "PEPE")
 
 
 if __name__ == "__main__":

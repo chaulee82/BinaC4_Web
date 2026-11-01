@@ -346,14 +346,16 @@ def partition_and_sort_groups(
         tick = float(item.get('tick_size', 0.0) or 0.0)
 
         if item.get("custom_grid"):
-            grid_low, grid_up, _trig_preset, _grid_sl, _grid_tp, grids = item["custom_grid"]
+            grid_low, grid_up, _trig_preset, grid_sl, _grid_tp, grids = item["custom_grid"]
         else:
-            grid_low, grid_up, _grid_sl, _grid_tp = compute_split_grid_params(trigger, tick)
+            grid_low, grid_up, grid_sl, _grid_tp = compute_split_grid_params(trigger, tick)
             grids = 24
 
         item['grid_lower'] = grid_low
         item['grid_upper'] = grid_up
+        item['grid_sl'] = grid_sl
         item['grids'] = grids
+        item['sl_pct'] = ((grid_sl - trigger) / trigger * 100.0) if trigger > 0 else 0.0
 
         # TÍNH TOÁN TIÊU CHÍ 1: Độ sát đáy (Càng nhỏ càng sát đáy lưới)
         lower_limit = grid_low
@@ -380,12 +382,16 @@ def partition_and_sort_groups(
             item['leverage_str'] = 'Isolated x5'
             group_5x.append(item)
 
-    # 2. SẮP XẾP (SORTING) ƯU TIÊN THEO YÊU CẦU USER
-    # Nhóm 12x: Ưu tiên 1 - Giá kích hoạt gần đáy nhất (bottom_distance nhỏ nhất) | Ưu tiên 2 - Dòng tiền mạnh
-    group_12x.sort(key=lambda x: (x['bottom_distance'], -x['money_flow_multiplier']))
+    # 2. SẮP XẾP (SORTING) ƯU TIÊN THEO YÊU CẦU USER (Hotfix v2.9.1)
+    # Ưu tiên 1: Khoảng cách đến giá Live gần nhất (distance_pct -> xếp DESC: -3% đứng trước -11%)
+    # Ưu tiên 2: Cấu trúc lưới ép sát đáy (bottom_distance -> xếp ASC: 8% đứng trước 11%)
+    # Ưu tiên 3: Dòng tiền bạo phát (money_flow_multiplier -> xếp DESC)
 
-    # Nhóm 5x: Ưu tiên 1 - Dòng tiền bạo phát mạnh nhất | Ưu tiên 2 - Khoảng cách chiết khấu (distance_pct)
-    group_5x.sort(key=lambda x: (-x['money_flow_multiplier'], -x.get('distance_pct', 0.0)))
+    # Nhóm 12x (Bắt Đáy):
+    group_12x.sort(key=lambda x: (x.get('distance_pct', -999.0), -x.get('bottom_distance', 999.0), x.get('money_flow_multiplier', 0.0)), reverse=True)
+
+    # Nhóm 5x (Dòng Tiền):
+    group_5x.sort(key=lambda x: (x.get('distance_pct', -999.0), x.get('money_flow_multiplier', 0.0)), reverse=True)
 
     # 3. Rút gọn mỗi nhóm lấy đúng Top N (mặc định Top 3)
     top_12x = group_12x[:per_group_top]
@@ -470,10 +476,10 @@ def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[fl
     ]
 
     header_cols = (
-        "| Hạng | Mã Bot | Live | Kích Hoạt (Trig) | "
+        "| Hạng | Mã Bot | Live | Kích Hoạt (Trig) | SL (%) | "
         "Setup Grid (24 Lưới) & Tỷ Lệ Cố Định | Trạng Thái / Dòng Tiền & Hỗ Trợ"
     )
-    header_align = "| :--- | :--- | :--- | :--- | :--- | :--- |"
+    header_align = "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
 
     # --- NHÓM 1: BẮT ĐÁY & HỖ TRỢ CỨNG (ĐÒN BẨY: ISOLATED x12) ---
     lines.extend([
@@ -490,6 +496,17 @@ def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[fl
             trig = r["optimal_trigger"]
             grid_low = r.get("grid_lower", 0.0)
             grid_up = r.get("grid_upper", 0.0)
+            grid_sl = r.get("grid_sl")
+            if grid_sl is None or grid_sl == 0.0:
+                if r.get("custom_grid"):
+                    grid_sl = r["custom_grid"][3]
+                else:
+                    _, _, grid_sl, _ = compute_split_grid_params(trig, tick)
+            sl_pct = r.get("sl_pct")
+            if sl_pct is None and grid_sl and trig and trig > 0:
+                sl_pct = ((grid_sl - trig) / trig) * 100.0
+            sl_display = f"{fmt_price(grid_sl, tick)} ({sl_pct:+.2f}%)" if (grid_sl and sl_pct is not None) else (fmt_price(grid_sl, tick) if grid_sl else "-")
+
             grid_str = f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} | TP +12% | SL -22%"
             dist_pct = r.get("distance_pct")
             trig_display = f"{fmt_price(trig, tick)} ({dist_pct:+.2f}%)" if dist_pct is not None else fmt_price(trig, tick)
@@ -497,7 +514,7 @@ def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[fl
             status_str = f"{status_base} (Cách đáy L {r.get('bottom_pct', 0.0):.1f}%)"
             lines.append(
                 f"| {r['status_icon']} | {r['symbol']}/USDT | "
-                f"{fmt_price(r['live_price'], tick)} | {trig_display} | "
+                f"{fmt_price(r['live_price'], tick)} | {trig_display} | {sl_display} | "
                 f"{grid_str} | {status_str}"
             )
     else:
@@ -523,13 +540,24 @@ def render_split_entry_table(rows: List[Dict[str, Any]], btc_rsi_1h: Optional[fl
             trig = r["optimal_trigger"]
             grid_low = r.get("grid_lower", 0.0)
             grid_up = r.get("grid_upper", 0.0)
+            grid_sl = r.get("grid_sl")
+            if grid_sl is None or grid_sl == 0.0:
+                if r.get("custom_grid"):
+                    grid_sl = r["custom_grid"][3]
+                else:
+                    _, _, grid_sl, _ = compute_split_grid_params(trig, tick)
+            sl_pct = r.get("sl_pct")
+            if sl_pct is None and grid_sl and trig and trig > 0:
+                sl_pct = ((grid_sl - trig) / trig) * 100.0
+            sl_display = f"{fmt_price(grid_sl, tick)} ({sl_pct:+.2f}%)" if (grid_sl and sl_pct is not None) else (fmt_price(grid_sl, tick) if grid_sl else "-")
+
             grid_str = f"Dải L={fmt_price(grid_low, tick)} - U={fmt_price(grid_up, tick)} | TP +12% | SL -22%"
             dist_pct = r.get("distance_pct")
             trig_display = f"{fmt_price(trig, tick)} ({dist_pct:+.2f}%)" if dist_pct is not None else fmt_price(trig, tick)
             status_str = f"{' + '.join(r['streams'])} · Hỗ trợ: {r['support_label']}" if r.get('support_label') else ' + '.join(r['streams'])
             lines.append(
                 f"| {r['status_icon']} | {r['symbol']}/USDT | "
-                f"{fmt_price(r['live_price'], tick)} | {trig_display} | "
+                f"{fmt_price(r['live_price'], tick)} | {trig_display} | {sl_display} | "
                 f"{grid_str} | {status_str}"
             )
     else:
